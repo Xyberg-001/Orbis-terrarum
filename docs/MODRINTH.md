@@ -40,8 +40,7 @@ First public release.
 - Real-world terrain, OpenStreetMap buildings/roads/water/land cover, aerial-imagery colours.
 - "Orbis Terrarum" world type; Customize opens the place/scale/feature settings.
 - In-game area preview, custom spawn point, pre-generation (/orbis pregen) and a world map (N).
-- Fixed: a mis-decoded elevation tile could build a 2 km stone pillar (the WebP decoder now
-  loads in isolation from other mods' copies, and impossible heights fall back to the coarser tile).
+- Teleporting (/tpll and the map's "Teleport here") is for operators only.
 ```
 
 ---
@@ -91,9 +90,6 @@ Map data © OpenStreetMap contributors (ODbL). Terrain: Mapterhorn and its sourc
 - Generation is network-bound: expect slow chunks while exploring new areas; pre-generate for multiplayer.
 - **Voxy + shaders on 26.2:** Voxy 0.2.19's far terrain disappears with Iris 1.11.4 + Sodium 0.9.2 in any world (not an Orbis bug). Use Iris 1.11.2 + Sodium 0.9.1 until Voxy updates.
 - Minecraft 26.2 only.
-
-### AI disclosure
-Most of Orbis Terrarum's code and this description were written with Anthropic's Claude, an AI coding assistant, and directed, tested and played by the author. The mod runs no AI while you play.
 
 ### Licence
 All Rights Reserved — free to download from this page and play, in singleplayer and on your servers. Please don't re-upload it or bundle the jar in modpacks; link to this page instead. The bundled TwelveMonkeys ImageIO jars are BSD-3.
