@@ -1,0 +1,21 @@
+# Build output and local runs
+build/
+.gradle/
+run/
+logs/
+*.jfr
+out/
+/orbisterrarum-*.jar
+
+# Third-party jars used only to compile (YACL, Mod Menu, Fabric key mapping API)
+libs/*.jar
+
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+bin/

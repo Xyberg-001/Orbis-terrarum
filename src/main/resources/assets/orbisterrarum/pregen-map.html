@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generated area</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --bg:#16181d; --panel:#1e2128; --line:#2d313b; --text:#e3e5ea; --muted:#9aa0ac;
+          --done:#43c35a; --partly:#f0b030; --notyet:#ea5a55; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; background:var(--bg); color:var(--text);
+               font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:10px 22px; padding:10px 16px;
+           border-bottom:1px solid var(--line); background:var(--panel); }
+  h1 { font-size:16px; margin:0; font-weight:600; }
+  #sum { color:var(--muted); font-size:13px; }
+  .ctl { display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; margin-left:auto; font-size:13px; }
+  .ctl label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .ctl input[type=range] { width:120px; }
+  .ctl a { color:#8cc8ff; }
+  #wrap { flex:1; display:flex; min-height:0; }
+  #map { flex:1; min-width:0; background:#0e1014; }
+  aside { width:320px; flex:none; overflow:auto; border-left:1px solid var(--line); background:var(--panel); padding:4px 14px 16px; }
+  .legend { display:flex; flex-direction:column; gap:4px; margin:12px 0 6px; font-size:13px; color:var(--muted); }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:7px; vertical-align:-1px; }
+  h2 { font-size:14px; margin:16px 0 4px; font-weight:600; display:flex; justify-content:space-between; }
+  h2 .n { color:var(--muted); font-weight:400; }
+  .done h2 { color:var(--done); } .partly h2 { color:var(--partly); } .notYet h2 { color:var(--notyet); }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:2px 6px; border-radius:5px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; }
+  li:hover { background:#2a2e37; }
+  li small { color:var(--muted); font-size:12px; white-space:nowrap; }
+  li.major { font-weight:600; }
+  input[type=search] { width:100%; margin-top:12px; padding:6px 9px; border-radius:6px; border:1px solid var(--line);
+                       background:#14161b; color:var(--text); font:inherit; }
+  .leaflet-image-layer { image-rendering:pixelated; }
+  .leaflet-container { font:inherit; }
+  #err { display:none; padding:40px; color:var(--muted); }
+  @media (max-width:760px) { #wrap { flex-direction:column; } aside { width:auto; max-height:40vh; border-left:0; border-top:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Generated area</h1>
+  <div id="sum">loading...</div>
+  <div class="ctl">
+    <label>Overlay <input type="range" id="op" min="0" max="100" value="55"></label>
+    <label><input type="checkbox" id="showDots" checked> Place dots</label>
+    <label><input type="checkbox" id="showOutline" checked> Area outline</label>
+    <a href="map.png" target="_blank">Picture with names</a>
+  </div>
+</header>
+<div id="wrap">
+  <div id="map"><div id="err">The map library could not be loaded (no internet?). The picture with names still works: <a href="map.png">map.png</a>.</div></div>
+  <aside>
+    <input type="search" id="q" placeholder="Find a place">
+    <div class="legend">
+      <span><span class="sw" style="background:var(--done)"></span>Generated</span>
+      <span><span class="sw" style="background:var(--partly)"></span>Partly (edge of the generated area)</span>
+      <span><span class="sw" style="background:var(--notyet)"></span>Not yet</span>
+    </div>
+    <section class="done"><h2>Generated <span class="n" id="nd"></span></h2><ul id="done"></ul></section>
+    <section class="partly"><h2>Partly <span class="n" id="np"></span></h2><ul id="partly"></ul></section>
+    <section class="notYet"><h2>Not yet <span class="n" id="nn"></span></h2><ul id="notYet"></ul></section>
+  </aside>
+</div>
+<script>
+(function () {
+  var hasLeaflet = typeof L !== 'undefined';
+  var COL = { done: '#43c35a', partly: '#f0b030', notYet: '#ea5a55' };
+  var LABEL = { done: 'generated', partly: 'partly generated', notYet: 'not generated yet' };
+  var map, overlay = null, outline = null, dots, minorDots, markers = {}, fitted = false, data = null;
+  var MINOR_ZOOM = 13; // neighbourhoods, hamlets and localities get their dots from this zoom on
+
+  function syncMinor() {
+    var want = document.getElementById('showDots').checked && map.getZoom() >= MINOR_ZOOM;
+    if (want && !map.hasLayer(minorDots)) minorDots.addTo(map);
+    if (!want && map.hasLayer(minorDots)) map.removeLayer(minorDots);
+  }
+
+  if (hasLeaflet) {
+    map = L.map('map', { zoomSnap: 0.5 });
+    var base = {
+      'Street map': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 19, attribution: 'Tiles &copy; Esri, HERE, Garmin, OpenStreetMap contributors' }),
+      'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
+      'Satellite + labels': L.layerGroup([
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+          { maxZoom: 19 }),
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+          { maxZoom: 19, attribution: 'Labels &copy; Esri' })
+      ]),
+      'Topographic': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+        { maxZoom: 19, attribution: 'Tiles &copy; Esri' })
+      // No OpenStreetMap layer: its volunteer-run tile servers block pages opened from a file (no referrer),
+      // as their usage policy allows them to.
+    };
+    var chosen = 'Street map';
+    try { chosen = localStorage.getItem('orbisBase') || chosen; } catch (e) {}
+    (base[chosen] || base['Street map']).addTo(map);
+    map.on('baselayerchange', function (e) { try { localStorage.setItem('orbisBase', e.name); } catch (x) {} });
+    L.control.layers(base, null, { collapsed: false, position: 'topright' }).addTo(map);
+    L.control.scale({ imperial: false }).addTo(map);
+    dots = L.layerGroup().addTo(map);
+    minorDots = L.layerGroup();
+    map.on('zoomend', syncMinor);
+    map.setView([60.39, 5.32], 11);
+    // The map area can be laid out after this script runs (or be hidden at first): re-measure whenever it
+    // changes size, and do the first fit only once it has a real size.
+    if (window.ResizeObserver) new ResizeObserver(function () { map.invalidateSize(); fitOnce(); }).observe(document.getElementById('map'));
+    window.addEventListener('load', function () { map.invalidateSize(); fitOnce(); });
+    ['pointerdown', 'wheel', 'keydown', 'touchstart'].forEach(function (ev) {
+      map.getContainer().addEventListener(ev, function () { fitted = true; }, { passive: true });
+    });
+    [500, 1500, 3000].forEach(function (ms) { setTimeout(fitOnce, ms); });
+  } else {
+    document.getElementById('err').style.display = 'block';
+  }
+
+  function opacity() { return document.getElementById('op').value / 100; }
+  document.getElementById('op').oninput = function () { if (overlay) overlay.setOpacity(opacity()); };
+  document.getElementById('showDots').onchange = function () {
+    if (!hasLeaflet) return;
+    if (this.checked) dots.addTo(map); else map.removeLayer(dots);
+    syncMinor();
+  };
+  document.getElementById('showOutline').onchange = function () {
+    if (!hasLeaflet || !outline) return;
+    if (this.checked) outline.addTo(map); else map.removeLayer(outline);
+  };
+  document.getElementById('q').oninput = function () { renderLists(); };
+
+  function focus(p) {
+    if (!hasLeaflet || p[2] == null) return;
+    fitted = true;
+    map.setView([p[2], p[3]], Math.max(map.getZoom(), 14));
+    syncMinor();
+    var m = markers[p[0] + '@' + p[2]];
+    if (m) m.openTooltip();
+  }
+
+  function renderLists() {
+    if (!data) return;
+    var q = document.getElementById('q').value.trim().toLowerCase();
+    ['done', 'partly', 'notYet'].forEach(function (k) {
+      var ul = document.getElementById(k); ul.innerHTML = '';
+      var list = data[k].filter(function (p) { return !q || p[0].toLowerCase().indexOf(q) >= 0; });
+      list.forEach(function (p) {
+        var li = document.createElement('li');
+        if (p[4] <= 3) li.className = 'major';
+        var n = document.createElement('span'); n.textContent = p[0];
+        var s = document.createElement('small'); s.textContent = p[1];
+        li.appendChild(n); li.appendChild(s);
+        li.onclick = function () { focus(p); };
+        ul.appendChild(li);
+      });
+      document.getElementById(k === 'done' ? 'nd' : k === 'partly' ? 'np' : 'nn').textContent = list.length;
+    });
+  }
+
+  window.orbisMap = function (d) {
+    data = d;
+    document.getElementById('sum').textContent = d.summary + ' · updated ' + d.time;
+    renderLists();
+    if (!hasLeaflet) return;
+    if (d.bounds) {
+      var b = L.latLngBounds([d.bounds[0], d.bounds[1]], [d.bounds[2], d.bounds[3]]);
+      var url = 'overlay.png?' + Date.now();
+      if (!overlay) overlay = L.imageOverlay(url, b, { opacity: opacity(), interactive: false }).addTo(map);
+      else { overlay.setUrl(url); overlay.setBounds(b); }
+    }
+    if (outline) map.removeLayer(outline);
+    outline = null;
+    if (d.outline && d.outline.length) {
+      outline = L.polygon(d.outline, { color: '#ffffff', weight: 2, opacity: 0.9, fill: false, dashArray: '6 5', interactive: false });
+      if (document.getElementById('showOutline').checked) outline.addTo(map);
+    }
+    dots.clearLayers(); minorDots.clearLayers(); markers = {};
+    ['notYet', 'partly', 'done'].forEach(function (k) {
+      d[k].forEach(function (p) {
+        if (p[2] == null) return;
+        var m = L.circleMarker([p[2], p[3]], {
+          radius: p[4] <= 3 ? 6 : 4, color: '#111', weight: 1, fillColor: COL[k], fillOpacity: 0.95
+        }).bindTooltip('<b>' + p[0].replace(/</g, '&lt;') + '</b><br>' + p[1] + ', ' + LABEL[k]);
+        m.addTo(p[4] <= 4 ? dots : minorDots);
+        markers[p[0] + '@' + p[2]] = m;
+      });
+    });
+    fitOnce();
+  };
+
+  // Keeps the view on the whole area until the viewer moves the map themselves (a page opened in a hidden or
+  // still-resizing window has no size yet when the data arrives).
+  function fitOnce() {
+    if (fitted || !hasLeaflet || !data) return;
+    map.invalidateSize();
+    var size = map.getSize();
+    if (size.x < 50 || size.y < 50) { setTimeout(fitOnce, 250); return; }
+    var target = outline ? outline.getBounds()
+        : data.bounds ? L.latLngBounds([data.bounds[0], data.bounds[1]], [data.bounds[2], data.bounds[3]]) : null;
+    if (target) map.fitBounds(target, { padding: [20, 20], animate: false });
+  }
+
+  function load() {
+    var s = document.createElement('script');
+    s.src = 'places.js?' + Date.now(); s.charset = 'utf-8';
+    s.onload = s.onerror = function () { s.remove(); };
+    document.body.appendChild(s);
+  }
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

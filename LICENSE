@@ -1,0 +1,33 @@
+Orbis Terrarum
+Copyright (c) 2026 Berg (GitHub: Xyberg-001). All rights reserved.
+
+You may download Orbis Terrarum from its official pages (Modrinth and the
+GitHub repository of the author) and use it to play Minecraft, in
+singleplayer and on servers, including servers you host for others.
+
+Without the author's prior written permission you may not:
+  - redistribute this software or any part of it, modified or not,
+    including re-uploading it to other sites or bundling the jar in
+    modpacks (modpacks may link to the official Modrinth page instead);
+  - publish modified versions or derivative works;
+  - reuse its source code in other projects.
+
+The source code is published for reading and for reporting issues only;
+publishing it does not grant any of the rights above.
+
+Third-party components keep their own licences:
+  - TwelveMonkeys ImageIO (orbis-libs/*.jar): BSD 3-Clause License,
+    see orbis-libs/LICENSE-TwelveMonkeys.txt.
+
+Map, elevation, imagery and land-cover data are downloaded while you play
+from the services listed in README.md; that data is not part of this
+software and stays under the licence and attribution terms of its providers
+(for example OpenStreetMap data (c) OpenStreetMap contributors, ODbL).
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE, INCLUDING
+LOSS OF OR DAMAGE TO MINECRAFT WORLDS.

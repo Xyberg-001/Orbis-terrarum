@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "orbisterrarum",
+  "version": "${version}",
+  "name": "Orbis Terrarum",
+  "description": "1:1 real-world terrain: bicubic elevation, OpenStreetMap buildings with real colours, roads, bridges and tunnels, water, land cover, trees, street furniture, aerial-imagery colours and landmark schematics. Pick any place on Earth from the world-creation screen.",
+  "authors": [
+    "Berg"
+  ],
+  "contact": {
+    "homepage": "https://modrinth.com/mod/orbis-terrarum",
+    "sources": "https://github.com/Xyberg-001/orbis-terrarum",
+    "issues": "https://github.com/Xyberg-001/orbis-terrarum/issues"
+  },
+  "license": "LicenseRef-All-Rights-Reserved",
+  "icon": "assets/orbisterrarum/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.berg.orbis.OrbisMod"
+    ],
+    "client": [
+      "com.berg.orbis.client.OrbisClient"
+    ],
+    "modmenu": [
+      "com.berg.orbis.client.ModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "orbisterrarum.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "fabric-api": "*",
+    "minecraft": "~26.2"
+  },
+  "recommends": {
+    "yet_another_config_lib_v3": "*",
+    "modmenu": "*"
+  }
+}

@@ -1,0 +1,337 @@
+<title>Orbis Data Sources</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+  :root {
+    --paper: #f5f6f2;
+    --paper-2: #eaece6;
+    --ink: #1c2730;
+    --ink-2: #4a5761;
+    --line: #c9cfc7;
+    --teal: #0e7c86;
+    --teal-soft: #d6ebec;
+    --rust: #b4432f;
+    --rust-soft: #f3ddd7;
+    --moss: #4d7c2a;
+    --moss-soft: #e0ecd3;
+    --grey-soft: #e3e5e0;
+    --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+    --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #151b20;
+      --paper-2: #1e262c;
+      --ink: #e6ebe8;
+      --ink-2: #a8b3ba;
+      --line: #3a464f;
+      --teal: #4fb6bf;
+      --teal-soft: #163a3e;
+      --rust: #e0785f;
+      --rust-soft: #452420;
+      --moss: #8cc45e;
+      --moss-soft: #263a1a;
+      --grey-soft: #2a333a;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #151b20;
+    --paper-2: #1e262c;
+    --ink: #e6ebe8;
+    --ink-2: #a8b3ba;
+    --line: #3a464f;
+    --teal: #4fb6bf;
+    --teal-soft: #163a3e;
+    --rust: #e0785f;
+    --rust-soft: #452420;
+    --moss: #8cc45e;
+    --moss-soft: #263a1a;
+    --grey-soft: #2a333a;
+  }
+  body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding-block: 32px 64px; padding-inline: 20px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 28px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(28px, 4vw, 40px); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  .stamp { font-family: var(--mono); font-size: 12px; color: var(--ink-2); letter-spacing: 0.04em; text-transform: uppercase; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 22px; margin: 40px 0 10px; text-wrap: balance; }
+  p { max-width: 70ch; margin: 0 0 12px; }
+  .lede { font-size: 18px; color: var(--ink-2); max-width: 70ch; }
+  figure { margin: 0; }
+  .figure-scroll { overflow-x: auto; border: 1px solid var(--line); background: var(--paper-2); padding: 12px; }
+  svg { display: block; width: 1220px; max-width: none; height: auto; font-family: var(--body); }
+  @media (min-width: 1280px) { svg { width: 100%; } }
+  figcaption { font-size: 14px; color: var(--ink-2); margin-top: 8px; max-width: 80ch; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  .table-scroll { overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--display); font-weight: 500; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
+  td.mono, code { font-family: var(--mono); font-size: 12.5px; }
+  code { background: var(--paper-2); padding: 1px 5px; border-radius: 3px; }
+  .pill { display: inline-block; font-family: var(--display); font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .ok { background: var(--moss-soft); color: var(--moss); }
+  .down { background: var(--rust-soft); color: var(--rust); }
+  .off { background: var(--grey-soft); color: var(--ink-2); }
+  .auto { background: var(--teal-soft); color: var(--teal); }
+  ol { padding-left: 22px; max-width: 70ch; }
+  li { margin-bottom: 6px; }
+  pre { font-family: var(--mono); font-size: 12.5px; background: var(--paper-2); border: 1px solid var(--line); padding: 10px 12px; overflow-x: auto; margin: 6px 0 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 13.5px; color: var(--ink-2); margin: 10px 0 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .sw { width: 34px; height: 0; border-top: 2px solid var(--ink); }
+  .sw.dashed { border-top-style: dashed; }
+  .sw.dotted { border-top-style: dotted; border-top-width: 3px; }
+  .sw.rust { border-color: var(--rust); }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Orbis Data Sources</h1>
+    <span class="stamp">Orbis Terrarum 0.3.0 · sources as of 24 Sep 2026 (rev 2: bathymetry)</span>
+  </header>
+
+  <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in.</p>
+
+  <figure>
+    <div class="figure-scroll">
+      <svg viewBox="0 0 1220 790" role="img" aria-label="Data flow from twelve external sources through the five build stages (terrain, buildings, roads and rails, land cover and trees, street life) to what the player sees. Automatic sources are drawn with solid arrows, one-time tool imports dashed, the OSM import dotted; sources that are down are drawn in rust.">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
+          </marker>
+          <marker id="arr-rust" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#b4432f" />
+          </marker>
+        </defs>
+        <g fill="currentColor" font-size="11" font-family="Bricolage Grotesque, Arial, sans-serif" letter-spacing="0.08em" opacity="0.7">
+          <text x="24" y="44">EXTERNAL SOURCES</text>
+          <text x="470" y="44">BUILD STAGE · FALLBACK ORDER</text>
+          <text x="940" y="44">IN THE WORLD</text>
+        </g>
+
+        <!-- ===== sources: terrain ===== -->
+        <g font-size="13" fill="currentColor">
+          <rect x="24" y="56" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="72" font-weight="600">Mapterhorn terrain tiles</text>
+          <text x="36" y="88" font-size="11.5" opacity="0.75">national lidar (Kartverket 1 m) over Copernicus 30 m</text>
+
+          <rect x="24" y="104" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="120" font-weight="600">Open Waters Seascape bathymetry</text>
+          <text x="36" y="136" font-size="11.5" opacity="0.75">GEBCO 2026 + regional surveys · sea floor depths</text>
+
+          <rect x="24" y="152" width="270" height="40" rx="3" fill="none" stroke="#b4432f" stroke-width="1.4" stroke-dasharray="5 3" />
+          <text x="36" y="168" font-weight="600" fill="#b4432f">Kartverket WCS: DTM and DOM</text>
+          <text x="36" y="184" font-size="11.5" fill="#b4432f">lidar terrain and surface model · Geonorge down</text>
+        </g>
+
+        <!-- ===== sources: map data ===== -->
+        <g font-size="13" fill="currentColor">
+          <text x="24" y="212" font-size="11" font-family="Bricolage Grotesque, Arial, sans-serif" letter-spacing="0.08em" opacity="0.7">MAP DATA</text>
+          <rect x="24" y="220" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="236" font-weight="600">OpenStreetMap extracts</text>
+          <text x="36" y="252" font-size="11.5" opacity="0.75">bergen-full, norway · Overpass mirrors elsewhere</text>
+
+          <rect x="24" y="268" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="284" font-weight="600">NVDB road database</text>
+          <text x="36" y="300" font-size="11.5" opacity="0.75">Norway only · surveyed widths and lanes</text>
+
+          <rect x="24" y="316" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="332" font-weight="600">Overture Places</text>
+          <text x="36" y="348" font-size="11.5" opacity="0.75">shops, bars, museums OSM lacks · 7,931 in Bergen</text>
+
+          <rect x="24" y="364" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="380" font-weight="600">GlobalBuildingAtlas (TUM)</text>
+          <text x="36" y="396" font-size="11.5" opacity="0.75">a height for every building on Earth</text>
+        </g>
+
+        <!-- ===== sources: cover and colour ===== -->
+        <g font-size="13" fill="currentColor">
+          <text x="24" y="424" font-size="11" font-family="Bricolage Grotesque, Arial, sans-serif" letter-spacing="0.08em" opacity="0.7">COVER AND COLOUR</text>
+          <rect x="24" y="432" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="448" font-weight="600">ESA WorldCover 2021</text>
+          <text x="36" y="464" font-size="11.5" opacity="0.75">10 m land cover, global</text>
+
+          <rect x="24" y="480" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="496" font-weight="600">Meta / WRI canopy height map</text>
+          <text x="36" y="512" font-size="11.5" opacity="0.75">1 m tree heights, global</text>
+
+          <rect x="24" y="528" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="544" font-weight="600">Aerial imagery</text>
+          <text x="36" y="560" font-size="11.5" opacity="0.75">Esri World Imagery global · Norge i bilder down · NAIP USA</text>
+        </g>
+
+        <!-- ===== stages ===== -->
+        <g font-size="12.5" fill="currentColor">
+          <rect x="470" y="56" width="310" height="108" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="76" font-weight="600" font-size="14">1 · Terrain</text>
+          <text x="482" y="96">Height per column: Mapterhorn at zoom 15,</text>
+          <text x="482" y="112">1.2 m per pixel at 60° N; zoom 12 where only 30 m data exists</text>
+          <text x="482" y="130">Kartverket WCS only when switched on</text>
+          <text x="482" y="150">Sea floor: Seascape depth wherever the land data is at 0, down to 300 m</text>
+
+          <rect x="470" y="180" width="310" height="124" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="200" font-weight="600" font-size="14">2 · Buildings</text>
+          <text x="482" y="220">Footprint, use and name: OSM</text>
+          <text x="482" y="238">Height: OSM tags → lidar DOM → atlas → storey guess</text>
+          <text x="482" y="256">Roof shape: OSM tag → lidar DOM profile → default by type</text>
+          <text x="482" y="274">Roof and wall colour: OSM tag → imagery median over the footprint</text>
+          <text x="482" y="292" opacity="0.75">Interiors and door signs from use and places</text>
+
+          <rect x="470" y="320" width="310" height="92" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="340" font-weight="600" font-size="14">3 · Roads, rails, tunnels, bridges</text>
+          <text x="482" y="360">Alignment and class: OSM ways</text>
+          <text x="482" y="378">Width and lanes: OSM tags → NVDB → default by class</text>
+          <text x="482" y="396">Deck and tunnel profiles from the terrain heights</text>
+
+          <rect x="470" y="428" width="310" height="124" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="448" font-weight="600" font-size="14">4 · Land cover and trees</text>
+          <text x="482" y="468">Cover: OSM polygon → WorldCover class → imagery colour</text>
+          <text x="482" y="486">Trees: canopy map (every crown) → lidar DOM−DTM →</text>
+          <text x="482" y="502">random scatter by cover type</text>
+          <text x="482" y="522">Climate and biome from latitude and height</text>
+          <text x="482" y="540" opacity="0.75">Ground blocks by cover, ground class and climate</text>
+
+          <rect x="470" y="568" width="310" height="92" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="588" font-weight="600" font-size="14">5 · Street life</text>
+          <text x="482" y="608">Shops, bars, museums: OSM points → Overture Places</text>
+          <text x="482" y="626">Stations, stops, landmarks: OSM → minecarts, signs, advancements</text>
+          <text x="482" y="644" opacity="0.75">Villagers, tunnel loot, vanilla caves and ores: generated, no source</text>
+        </g>
+
+        <!-- ===== world ===== -->
+        <g font-size="13" fill="currentColor">
+          <rect x="940" y="90" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="1068" y="115" text-anchor="middle" font-weight="600">Ground, hills, fjords, sea</text>
+          <rect x="940" y="222" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="1068" y="247" text-anchor="middle" font-weight="600">Every building, real height and colour</text>
+          <rect x="940" y="346" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="1068" y="371" text-anchor="middle" font-weight="600">Streets, rideable rails, tunnels</text>
+          <rect x="940" y="470" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="1068" y="495" text-anchor="middle" font-weight="600">Forests, fields, rock, snow</text>
+          <rect x="940" y="594" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="1068" y="619" text-anchor="middle" font-weight="600">Shops, signs, stations, loot</text>
+        </g>
+
+        <!-- ===== arrows: sources to stages ===== -->
+        <g fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#arr)">
+          <!-- Mapterhorn -> terrain (automatic) -->
+          <path d="M294,76 L470,76" />
+          <!-- Seascape -> terrain (automatic) -->
+          <path d="M294,124 L440,124 L440,100 L470,100" />
+          <!-- OSM bus: import once (dotted) -->
+          <path d="M294,240 L400,240 L400,640 L470,640" stroke-dasharray="2 4" stroke-width="2" />
+          <path d="M400,240 L470,240" stroke-dasharray="2 4" stroke-width="2" />
+          <path d="M400,360 L470,360" stroke-dasharray="2 4" stroke-width="2" />
+          <path d="M400,468 L470,468" stroke-dasharray="2 4" stroke-width="2" />
+          <!-- NVDB -> roads (automatic) -->
+          <path d="M294,288 L360,288 L360,378 L470,378" />
+          <!-- Places -> life (one-time tool, dashed) -->
+          <path d="M294,336 L340,336 L340,608 L470,608" stroke-dasharray="7 4" />
+          <!-- Atlas -> buildings (one-time tool, dashed) -->
+          <path d="M294,384 L380,384 L380,238 L470,238" stroke-dasharray="7 4" />
+          <!-- WorldCover -> cover (automatic) -->
+          <path d="M294,452 L420,452 L420,484 L470,484" />
+          <!-- Canopy -> trees (one-time tool, dashed) -->
+          <path d="M294,500 L440,500 L440,498 L470,498" stroke-dasharray="7 4" />
+          <!-- Imagery -> cover and buildings colour (automatic) -->
+          <path d="M294,548 L440,548 L440,540 L470,540" />
+          <path d="M455,548 L455,274 L470,274" />
+        </g>
+        <!-- Kartverket (down) -> terrain and buildings, rust -->
+        <g fill="none" stroke="#b4432f" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arr-rust)">
+          <path d="M294,172 L420,172 L420,140 L470,140" />
+          <path d="M360,172 L360,256 L470,256" />
+        </g>
+        <!-- arrow labels -->
+        <g font-size="11" fill="currentColor" opacity="0.85">
+          <text x="382" y="70" text-anchor="middle">height tiles · on demand</text>
+          <text x="367" y="118" text-anchor="middle">depth tiles · on demand</text>
+          <text x="357" y="166" text-anchor="middle" fill="#b4432f">when the flag is on</text>
+          <text x="347" y="234" text-anchor="middle">all features</text>
+          <text x="404" y="316" font-size="10.5" transform="rotate(90 404 316)" opacity="0.7">OSM feeds every stage</text>
+          <text x="327" y="283" text-anchor="middle" font-size="10.5">width · lanes</text>
+          <text x="317" y="331" text-anchor="middle" font-size="10.5">named places</text>
+          <text x="337" y="379" text-anchor="middle" font-size="10.5">height by OSM id</text>
+          <text x="357" y="447" text-anchor="middle" font-size="10.5">class per 10 m cell</text>
+          <text x="367" y="495" text-anchor="middle" font-size="10.5">crown position and height</text>
+          <text x="367" y="543" text-anchor="middle" font-size="10.5">colour per tile pixel</text>
+        </g>
+
+        <!-- ===== arrows: stages to world ===== -->
+        <g fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#arr)">
+          <path d="M780,110 L940,110" />
+          <path d="M780,242 L940,242" />
+          <path d="M780,366 L940,366" />
+          <path d="M780,490 L940,490" />
+          <path d="M780,614 L940,614" />
+        </g>
+        <g font-size="11" fill="currentColor" opacity="0.85">
+          <text x="860" y="104" text-anchor="middle">Y per column</text>
+          <text x="860" y="236" text-anchor="middle">walls, roofs, rooms</text>
+          <text x="860" y="360" text-anchor="middle">surfaces, decks, rails</text>
+          <text x="860" y="484" text-anchor="middle">ground blocks, trees</text>
+          <text x="860" y="608" text-anchor="middle">furniture, carts, signs</text>
+        </g>
+
+        <!-- ===== legend ===== -->
+        <g font-size="12" fill="currentColor">
+          <line x1="24" y1="712" x2="70" y2="712" stroke="currentColor" stroke-width="1.6" />
+          <text x="80" y="716">automatic: fetched on demand as you explore, cached on disk</text>
+          <line x1="24" y1="740" x2="70" y2="740" stroke="currentColor" stroke-width="1.6" stroke-dasharray="7 4" />
+          <text x="80" y="744">one-time tool run per area (tools/…), then read from the config folder</text>
+          <line x1="24" y1="768" x2="70" y2="768" stroke="currentColor" stroke-width="2" stroke-dasharray="2 4" />
+          <text x="80" y="772">imported once with /orbis import (extracts); Overpass streams on demand where there is no extract</text>
+          <line x1="620" y1="712" x2="666" y2="712" stroke="#b4432f" stroke-width="1.6" stroke-dasharray="5 3" />
+          <text x="676" y="716" fill="#b4432f">source down (Geonorge, two weeks and counting); path exists, carries nothing</text>
+          <text x="620" y="744" opacity="0.75">Arrows into a stage are tried in the order written inside the stage.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Twelve sources feed five build stages. Terrain, sea floor, WorldCover, NVDB and imagery arrive by themselves; canopy trees, building heights and places need one tool run per area; the OSM extract is imported once. Everything under Kartverket is dark and the mod no longer depends on it for terrain.</figcaption>
+  </figure>
+
+  <h2>Source register</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Source</th><th>Feeds</th><th>How it gets in</th><th>Where it lives</th><th>Licence</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Mapterhorn</strong> terrain tiles</td><td>Ground height of every column; bridge and tunnel profiles; building bases</td><td><span class="pill auto">automatic</span> 512 px WebP tiles, zoom 15 (16 max), parent tile where a zoom is missing</td><td class="mono">dem-cache/tiles.mapterhorn.com/</td><td>open data, per-source attribution</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Open Waters Seascape</strong> bathymetry</td><td>Sea floor depth wherever the land data sits at sea level: fjords, harbours, open sea (capped at 300 m)</td><td><span class="pill auto">automatic</span> 512 px terrarium WebP, zoom 14 (regional detail) with global GEBCO below</td><td class="mono">dem-cache/tiles.openwaters.io/</td><td>CC BY 4.0, © Open Waters</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Kartverket WCS</strong> DTM and DOM</td><td>Finer terrain where on; roof shapes and heights from the surface model</td><td><span class="pill off">off by default</span> GeoTIFF web service, <code>useHighResElevation</code></td><td class="mono">dem-hires-cache/, dsm-cache/</td><td>CC BY 4.0</td><td><span class="pill down">Geonorge down</span></td></tr>
+      <tr><td><strong>OpenStreetMap</strong> extracts</td><td>Buildings, roads, rails, water, land use, trees, furniture, shops, stations, landmarks</td><td>imported once: <code>/orbis import &lt;pbf&gt;</code>; Overpass on demand elsewhere</td><td class="mono">extracts/bergen-full, extracts/norway, osm-cache/</td><td>ODbL</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>NVDB</strong> road database</td><td>Real road widths and lane counts (Norway)</td><td><span class="pill auto">automatic</span> API v4, fetched with each region</td><td class="mono">nvdb-cache/</td><td>NLOD</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Overture Places</strong></td><td>Shops, bars, museums, clinics OSM lacks: interiors and door signs</td><td>one-time: <code>overturemaps download --type=place</code> then <code>/orbis import-places</code></td><td class="mono">places/</td><td>CDLA-Permissive 2.0</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>GlobalBuildingAtlas</strong> (TUM)</td><td>Height for every building without a height tag</td><td>one-time: <code>tools/gba_heights.py --bbox …</code> (range reads, a few MB per city)</td><td class="mono">heights/</td><td>CC BY-NC 4.0 (not for sale)</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
+      <tr><td><strong>ESA WorldCover</strong> 2021</td><td>Forest, meadow, farmland, rock, wetland, snow wherever OSM has no polygon</td><td><span class="pill auto">automatic</span> range reads of the 3° cloud GeoTIFFs</td><td class="mono">worldcover-cache/</td><td>CC BY 4.0</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Meta / WRI</strong> canopy height map</td><td>Every tree's position and height</td><td>one-time: <code>tools/canopy_tiles.py --bbox …</code> (one 434 MB source tile per 5° area)</td><td class="mono">canopy-cache/, canopy-src/</td><td>CC BY 4.0</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
+      <tr><td><strong>Aerial imagery</strong> Esri, Norge i bilder, NAIP</td><td>Roof and wall colours; ground colour classes for unmapped ground</td><td><span class="pill auto">automatic</span> zoom-18 tiles</td><td class="mono">imagery-cache/</td><td>Esri terms; NIB and NAIP open</td><td><span class="pill ok">Esri working</span> <span class="pill down">NIB down</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Retired or not in use</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Source</th><th>Was for</th><th>Why it is out</th></tr></thead>
+    <tbody>
+      <tr><td>AWS terrain tiles (Mapzen terrarium, 30 m)</td><td>Terrain until 23 Sep 2026</td><td>Replaced by Mapterhorn; old cache left in place for old worlds</td></tr>
+      <tr><td>FLAIR segmentation model over the imagery</td><td>Ground classes</td><td>Predictions unusable on Esri imagery under every preprocessing tried; WorldCover does the job</td></tr>
+      <tr><td>Overture land cover</td><td>Same gap filling</td><td>The CLI returned no data for the layer; ESA's own rasters are read directly instead</td></tr>
+      <tr><td>Kartverket point elevation API / MCP server</td><td>Nothing</td><td>One coordinate per request, same dead hosts</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Setting up a new place anywhere on Earth</h2>
+  <p>Terrain, land cover, imagery and (in Norway) road widths arrive by themselves. Two optional runs make the place complete, and each takes one command with the place's box (south, west, north, east):</p>
+  <ol>
+    <li>Trees where they really stand:<pre>python tools/canopy_tiles.py --bbox S W N E --out &lt;instance&gt;/config/orbisterrarum/canopy-cache</pre></li>
+    <li>Real building heights:<pre>python tools/gba_heights.py --bbox S W N E --out &lt;instance&gt;/config/orbisterrarum/heights</pre></li>
+    <li>Optional, for shops and door signs: <code>python -m overturemaps download --bbox=W,S,E,N -f geojson --type=place -o places.geojson</code> then <code>/orbis import-places places.geojson</code> in game.</li>
+    <li>Optional, for a whole country offline: import its OpenStreetMap extract with <code>/orbis import &lt;file.osm.pbf&gt;</code>; without one, regions stream from Overpass as you explore.</li>
+  </ol>
+
+  <h2>What still has no source</h2>
+  <p>Lakes and rivers still use a fixed depth per water body (Seascape covers the seas). Roof shapes measured from lidar wait for Geonorge to come back. The dimension holds 332 blocks under sea level, so the deepest fjords stop at 300 m. Everything else that is generated rather than downloaded, such as villagers, interiors, tunnel loot, caves, ores and structures, is by design.</p>
+</div>
