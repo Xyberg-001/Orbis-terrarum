@@ -45,6 +45,7 @@ public final class Decorator {
                 BlockState existing = level.getBlockState(pos);
                 if (!existing.isAir() && !(existing.getBlock() instanceof net.minecraft.world.level.block.LeavesBlock)
                         && !existing.is(Blocks.SHORT_GRASS) && !existing.is(Blocks.FERN) && !existing.is(Blocks.SNOW)
+                        && !existing.is(Blocks.SNOW_BLOCK)
                         && !existing.is(Blocks.TALL_GRASS) && !existing.is(Blocks.LEAF_LITTER)) {
                     return false;
                 }
@@ -68,6 +69,8 @@ public final class Decorator {
         final RegionRaster raster = r;
         guarded("Interiors", chunkMinX, chunkMinZ, () -> Interiors.place(cfg, level, raster, chunkMinX, chunkMinZ));
         guarded("Signage", chunkMinX, chunkMinZ, () -> Signage.place(cfg, level, raster, chunkMinX, chunkMinZ));
+        guarded("Awnings", chunkMinX, chunkMinZ, () -> Awnings.place(cfg, level, raster, chunkMinX, chunkMinZ));
+        guarded("RoadRamps", chunkMinX, chunkMinZ, () -> RoadRamps.place(cfg, level, raster, chunkMinX, chunkMinZ));
         guarded("Transit", chunkMinX, chunkMinZ, () -> Transit.place(cfg, level, raster, chunkMinX, chunkMinZ));
         guarded("StreetLife", chunkMinX, chunkMinZ, () -> StreetLife.place(cfg, level, raster, chunkMinX, chunkMinZ));
         guarded("Grounds", chunkMinX, chunkMinZ, () -> Grounds.place(cfg, level, raster, chunkMinX, chunkMinZ, built));
@@ -87,6 +90,11 @@ public final class Decorator {
                 if (surfaceY <= cfg.minY || surfaceY >= maxY - 2) continue;
                 pos.set(x, surfaceY, z);
                 BlockState ground = level.getBlockState(pos);
+                // Deep real snow: trees and street furniture stand on the ground under it, poking through.
+                for (int i = 0; i < 24 && ground.is(Blocks.SNOW_BLOCK) && surfaceY - 1 > cfg.minY; i++) {
+                    pos.set(x, --surfaceY, z);
+                    ground = level.getBlockState(pos);
+                }
                 pos.set(x, surfaceY + 1, z);
                 BlockState above = level.getBlockState(pos);
                 if (!above.getFluidState().isEmpty()) continue; // under water
@@ -128,11 +136,92 @@ public final class Decorator {
                 if (!treeChosen(x, z, density, r, lc)) continue;
                 TreeBuilder.Species species = pickSpecies(lc, climate, x, z);
                 if (species == null) continue;
+                // Autumn woods: some of the trees lie on the ground, mushrooms on and beside them.
+                if (cfg.autumnColours && lc.isForest() && Math.floorMod(ColumnPainter.hash(x, z, 0xFA11), 100) < 9
+                        && fallenTree(level, r, x, surfaceY, z, species, ColumnPainter.hash(x, z, 0xFA12))) {
+                    continue;
+                }
                 int hint = 0;
                 if (lc == LandCover.ORCHARD) hint = 5;
-                TreeBuilder.place(treeSink, x, surfaceY + 1, z, species, hint, ColumnPainter.hash(x, z, 0x7EE5));
+                TreeBuilder.place(treeSink, x, surfaceY + 1, z, species, hint, ColumnPainter.hash(x, z, 0x7EE5), cfg.autumnColours);
+                if (cfg.autumnColours && TreeBuilder.isBroadleaf(species)) litterRing(level, x, surfaceY, z, ColumnPainter.hash(x, z, 0x11FE));
             }
         }
+    }
+
+    /**
+     * Autumn: fallen leaves around a broadleaf tree, thickest near the trunk, on the ground wherever it is (slopes
+     * included) and only where nothing else grows.
+     */
+    private static void litterRing(WorldGenLevel level, int x, int surfaceY, int z, long seed) {
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dz = -3; dz <= 3; dz++) {
+                int d2 = dx * dx + dz * dz;
+                if (d2 == 0 || d2 > 9) continue;
+                long h = Materials.mix(seed ^ (dx * 0x9E3779B1L) ^ (dz * 0x85EBCA77L));
+                if (Math.floorMod(h, 100) >= (d2 <= 2 ? 60 : 35)) continue;
+                int cx = x + dx, cz = z + dz;
+                int top = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz);
+                if (Math.abs(top - (surfaceY + 1)) > 2) continue;
+                p.set(cx, top - 1, cz);
+                BlockState ground = level.getBlockState(p);
+                if (!(ground.is(Blocks.GRASS_BLOCK) || ground.is(Blocks.DIRT) || ground.is(Blocks.PODZOL) || ground.is(Blocks.COARSE_DIRT)
+                        || ground.is(Blocks.ROOTED_DIRT) || ground.is(Blocks.MOSS_BLOCK))) continue;
+                p.set(cx, top, cz);
+                BlockState at = level.getBlockState(p);
+                if (!at.isAir() && !at.is(Blocks.SHORT_GRASS) && !at.is(Blocks.FERN)) continue;
+                level.setBlock(p, ColumnPainter.leafLitter(h, true), Block.UPDATE_CLIENTS);
+            }
+        }
+    }
+
+    /**
+     * Autumn: a fallen tree of the forest's species, four to seven logs long, lying along x or z on level ground (it
+     * is not placed where the ground steps or anything is in the way). Brown mushrooms grow on one log in ten and a
+     * shelf mushroom on its side (Minecraft 26.3), as on 26.3's fallen poplars.
+     */
+    private boolean fallenTree(WorldGenLevel level, RegionRaster r, int x, int surfaceY, int z, TreeBuilder.Species species, long h) {
+        boolean alongX = (h & 1) == 0;
+        int length = 4 + (int) Math.floorMod(h >>> 8, 4);
+        int stepX = alongX ? 1 : 0, stepZ = alongX ? 0 : 1;
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        for (int i = 0; i < length; i++) {
+            int cx = x + stepX * i, cz = z + stepZ * i;
+            if (r != null) {
+                int idx = r.index(cx, cz);
+                if (idx < 0 || r.road[idx] != 0 || r.building[idx] != 0 || r.water[idx] != 0) return false;
+            }
+            if (level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) != surfaceY + 1) return false;
+            p.set(cx, surfaceY + 1, cz);
+            BlockState at = level.getBlockState(p);
+            if (!at.isAir() && !at.is(Blocks.SHORT_GRASS) && !at.is(Blocks.FERN) && !at.is(Blocks.LEAF_LITTER)) return false;
+        }
+        BlockState log = TreeBuilder.logOf(species).setValue(net.minecraft.world.level.block.RotatedPillarBlock.AXIS,
+                alongX ? net.minecraft.core.Direction.Axis.X : net.minecraft.core.Direction.Axis.Z);
+        for (int i = 0; i < length; i++) {
+            int cx = x + stepX * i, cz = z + stepZ * i;
+            set(level, cx, surfaceY + 1, cz, log);
+            p.set(cx, surfaceY + 2, cz);
+            if (Math.floorMod(h >>> (12 + i), 10) == 0 && level.getBlockState(p).isAir()) {
+                set(level, cx, surfaceY + 2, cz, Blocks.BROWN_MUSHROOM.defaultBlockState());
+            }
+        }
+        if (NewBlocks.SHELF_MUSHROOM != null && Math.floorMod(h >>> 24, 10) < 8) {
+            int i = 1 + (int) Math.floorMod(h >>> 28, Math.max(1, length - 2));
+            net.minecraft.core.Direction side = alongX ? ((h >>> 32 & 1) == 0 ? net.minecraft.core.Direction.NORTH : net.minecraft.core.Direction.SOUTH)
+                    : ((h >>> 32 & 1) == 0 ? net.minecraft.core.Direction.EAST : net.minecraft.core.Direction.WEST);
+            int mx = x + stepX * i + side.getStepX(), mz = z + stepZ * i + side.getStepZ();
+            p.set(mx, surfaceY + 1, mz);
+            if (level.getBlockState(p).isAir()) {
+                BlockState m = NewBlocks.SHELF_MUSHROOM;
+                if (m.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING)) {
+                    m = m.setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING, side);
+                }
+                set(level, mx, surfaceY + 1, mz, m);
+            }
+        }
+        return true;
     }
 
     private static void guarded(String pass, int chunkMinX, int chunkMinZ, Runnable body) {
@@ -243,12 +332,29 @@ public final class Decorator {
                 if (species == null) species = pickSpecies(r.landCoverAt(idx) == LandCover.NONE ? LandCover.PARK : r.landCoverAt(idx), climate, x, z);
                 if (species == null) return false;
                 int hint = (data >> 4) * 2;
-                TreeBuilder.place(treeSink, x, y, z, species, hint, ColumnPainter.hash(x, z, 0x7EE5));
+                TreeBuilder.place(treeSink, x, y, z, species, hint, ColumnPainter.hash(x, z, 0x7EE5), cfg.autumnColours);
+                if (cfg.autumnColours && TreeBuilder.isBroadleaf(species)) litterRing(level, x, surfaceY, z, ColumnPainter.hash(x, z, 0x11FE));
                 return true;
             }
             case BUSH -> {
                 if (!isPlantable(ground)) return false;
-                TreeBuilder.place(treeSink, x, y, z, TreeBuilder.Species.BUSH, 0, ColumnPainter.hash(x, z, 0xB05));
+                TreeBuilder.place(treeSink, x, y, z, TreeBuilder.Species.BUSH, 0, ColumnPainter.hash(x, z, 0xB05), cfg.autumnColours);
+                return true;
+            }
+            case STREET_SIGN -> {
+                // A metal post two blocks high and the name on a sign on top, along the street, both sides written.
+                String name = r.labels.get(idx);
+                if (name == null || y + 2 >= cfg.maxY()) return false;
+                // Only where nothing stands yet (a station's name sign, a lamp, a fence): the post would replace it.
+                for (int i = 0; i <= 2; i++) {
+                    BlockState there = level.getBlockState(new BlockPos(x, y + i, z));
+                    if (!there.isAir() && !there.canBeReplaced()) return false;
+                }
+                for (int i = 0; i < 2; i++) set(level, x, y + i, z, Blocks.IRON_BARS.defaultBlockState());
+                BlockPos at = new BlockPos(x, y + 2, z);
+                level.setBlock(at, Blocks.SPRUCE_SIGN.defaultBlockState().setValue(net.minecraft.world.level.block.StandingSignBlock.ROTATION, data & 15),
+                        Block.UPDATE_ALL | Block.UPDATE_KNOWN_SHAPE);
+                if (level.getBlockEntity(at) instanceof net.minecraft.world.level.block.entity.SignBlockEntity be) Signage.writeBothSides(be, name);
                 return true;
             }
             case LAMP -> {

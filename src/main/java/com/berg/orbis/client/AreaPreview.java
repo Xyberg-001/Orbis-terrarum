@@ -4,7 +4,7 @@ import com.berg.orbis.OrbisMod;
 import com.berg.orbis.net.AreaOutline;
 import com.berg.orbis.net.Geocoder;
 import com.berg.orbis.osm.CoordinateMapper;
-import net.minecraft.util.Util;
+import com.berg.orbis.mc.McClient;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,7 +16,7 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * The Location tab's area preview: before a world exists, which chunks {@code /orbis pregen area <place>} (or a
+ * The World tab's area preview: before a world exists, which chunks {@code /orbis pregen area <place>} (or a
  * radius sweep) would generate at the origin and scale being set up. {@link #plan} works the area out (by default
  * the city or municipality around the chosen location); {@link AreaPreviewScreen} shows it in the game, and
  * {@link #openInBrowser} writes the same preview as a web page.
@@ -85,8 +85,8 @@ public final class AreaPreview {
 
     /** Writes the preview as a web page into the config folder and opens it in the browser. */
     public static Path openInBrowser(PreviewPlan plan) throws IOException {
-        Path page = write(plan, OrbisMod.configDir().resolve("preview"));
-        Util.getPlatform().openPath(page.toAbsolutePath());
+        Path page = write(plan, OrbisMod.dataDir().resolve("preview"));
+        McClient.openPath(page.toAbsolutePath());
         return page;
     }
 

@@ -57,6 +57,20 @@ public final class RegionRaster {
     public short[] roadUnder;
     public byte[] roadUnderDist;
     public short[] roadUnderY;
+    /** Columns this many blocks (1..SHOULDER) outside a graded road blend from the road height back to the ground. */
+    public byte[] shoulderDist;
+    /** The road height a shoulder column blends from. */
+    public short[] shoulderY;
+    /** Width of a graded road's side slopes, in blocks. */
+    public static final int SHOULDER = 3;
+    /** The bedrock under each column (Rocks.Rock ordinal, 0 = unknown: plain stone); null where no map covers the region. */
+    public byte[] rock;
+    /** Distance of a sea column from the nearest shore, in blocks (1..127, 0 = not sea); null where the region has no sea. */
+    public byte[] seaShore;
+    /** Depth of the lake or river bed below the water surface per column, in blocks (0 = the water body's own depth); null when not shaped. */
+    public short[] bedDepth;
+    /** The streets' colour in this region's aerial photo (0xRRGGBB), the neutral reference for roof colours; -1 = none. */
+    public int imageryStreetColour = -2;
 
     public final List<RoadFeature> roads = new ArrayList<>();
     public final List<WaterFeature> waters = new ArrayList<>();
@@ -171,6 +185,14 @@ public final class RegionRaster {
         return sea[idx] != 0;
     }
 
+    /** Allocates the road shoulder layers (only regions with graded roads need them). */
+    public void ensureShoulders() {
+        if (shoulderDist != null) return;
+        int n = stride * stride;
+        shoulderDist = new byte[n];
+        shoulderY = new short[n];
+    }
+
     public int roofExtraAt(int idx) {
         return roofExtra[idx] & 0xFF;
     }
@@ -183,12 +205,20 @@ public final class RegionRaster {
         return roadT[idx] & 0xFF;
     }
 
+    public int bedDepthAt(int idx) {
+        return bedDepth == null ? 0 : bedDepth[idx];
+    }
+
+    public int rockAt(int idx) {
+        return rock == null ? 0 : rock[idx];
+    }
+
     public int roadDirAt(int idx) {
         return roadDir[idx] & 0xFF;
     }
 
     public long approxBytes() {
         long n = (long) stride * stride;
-        return n * (1 + 2 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + (roadUnder != null ? 5 : 0));
+        return n * (1 + 2 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + (roadUnder != null ? 5 : 0) + (rock != null ? 1 : 0) + (bedDepth != null ? 2 : 0));
     }
 }

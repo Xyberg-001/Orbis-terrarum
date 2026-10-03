@@ -8,9 +8,10 @@ import net.minecraft.resources.Identifier;
 /**
  * Where the world sits on Earth, sent by the server to players who have Orbis Terrarum installed (for the world
  * map): the origin (block 0, 0), the scale and the projection. Players without the mod never get it (the server
- * checks that the client can receive it first), so they keep joining with plain Minecraft.
+ * checks that the client can receive it first), so they keep joining with plain Minecraft. {@code worldId} names
+ * this world (not its name, which a new world can reuse), for the game's cache of the world map.
  */
-public record WorldInfoPayload(double originLat, double originLon, double metersPerBlock, String projection) implements CustomPacketPayload {
+public record WorldInfoPayload(double originLat, double originLon, double metersPerBlock, String projection, String worldId) implements CustomPacketPayload {
     public static final Type<WorldInfoPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath("orbisterrarum", "world_info"));
     public static final StreamCodec<RegistryFriendlyByteBuf, WorldInfoPayload> CODEC = CustomPacketPayload.codec(WorldInfoPayload::write, WorldInfoPayload::read);
 
@@ -19,10 +20,11 @@ public record WorldInfoPayload(double originLat, double originLon, double meters
         buf.writeDouble(originLon);
         buf.writeDouble(metersPerBlock);
         buf.writeUtf(projection == null ? "equirectangular" : projection);
+        buf.writeUtf(worldId == null ? "" : worldId);
     }
 
     private static WorldInfoPayload read(RegistryFriendlyByteBuf buf) {
-        return new WorldInfoPayload(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readUtf());
+        return new WorldInfoPayload(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readUtf(), buf.readUtf());
     }
 
     @Override

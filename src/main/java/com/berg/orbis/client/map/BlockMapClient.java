@@ -8,7 +8,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.level.material.MapColor;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -34,18 +33,27 @@ import java.util.zip.InflaterInputStream;
 public final class BlockMapClient {
     private static final int MAX_TILES = 400, MAX_PENDING = 48;
     private static final long PENDING_TIMEOUT_MS = 30_000;
+    /**
+     * How often a region on screen is checked again while the map is open: the world keeps being generated and built
+     * in, and a tile and a mask fetched at different moments disagreed (chunks unveiled but not yet coloured).
+     * An unchanged region costs the server a version compare and a small answer.
+     */
+    private static final long REFRESH_MS = 4_000;
     private static final AtomicInteger IDS = new AtomicInteger();
 
     private static final class Tile {
         Identifier id;
         int version;
         long used;
+        long checked; // when it was last asked for or answered (ms)
     }
 
     private static final class Mask {
         long[] bits;
         Identifier grey;
+        Object limit; // the hard-limit area the veil was made for (chunks outside it get none)
         long used;
+        long checked;
     }
 
     private static final Map<Long, Tile> TILES = new HashMap<>();
@@ -72,7 +80,10 @@ public final class BlockMapClient {
     /** Call once per frame before asking for tiles: notices a change of world. */
     public static void beginFrame(Minecraft mc) {
         frame++;
-        String key = MapMarks.worldKey(mc);
+        // The server's id for its world, so a new world with an old one's name (or a server that started over)
+        // never shows the old world's cached map; the name only for a server too old to send one.
+        var info = com.berg.orbis.client.OrbisClient.worldInfo;
+        String key = info != null && !info.worldId().isEmpty() ? "id_" + info.worldId() : MapMarks.worldKey(mc);
         if (!key.equals(world)) {
             clear(mc);
             world = key;
@@ -86,8 +97,14 @@ public final class BlockMapClient {
             t = fromDisk(rx, rz, level);
             if (t != null) TILES.put(tk(rx, rz, level), t);
         }
-        if (t == null || t.version < 0) want(WANT_BLOCKS, rx, rz, level, t == null ? 0 : Math.max(0, t.version));
-        else if (t.used == 0) want(WANT_BLOCKS, rx, rz, level, t.version); // loaded from disk: check it is current, once
+        long now = System.currentTimeMillis();
+        if (t == null || t.version < 0) {
+            want(WANT_BLOCKS, rx, rz, level, t == null ? 0 : Math.max(0, t.version));
+        } else if (now - t.checked > REFRESH_MS) {
+            // (a tile loaded from disk has never been checked: it is asked for at once)
+            t.checked = now;
+            want(WANT_BLOCKS, rx, rz, level, t.version);
+        }
         if (t != null && t.id != null) {
             t.used = frame;
             return t.id;
@@ -116,8 +133,18 @@ public final class BlockMapClient {
             want(WANT_MASK, rx, rz, 0, 0);
             return null;
         }
+        recheck(m, rx, rz);
         m.used = frame;
         return m.bits;
+    }
+
+    /** Asks for a mask again now and then (every answer about a region, with colours or without, carries it). */
+    private static void recheck(Mask m, int rx, int rz) {
+        long now = System.currentTimeMillis();
+        if (now - m.checked > 2 * REFRESH_MS) {
+            m.checked = now;
+            want(WANT_MASK, rx, rz, 0, 0);
+        }
     }
 
     /** The grey veil over a region's ungenerated chunks (32 x 32 pixels), or null while unknown. */
@@ -127,7 +154,9 @@ public final class BlockMapClient {
             want(WANT_MASK, rx, rz, 0, 0);
             return null;
         }
+        recheck(m, rx, rz);
         m.used = frame;
+        if (m.bits != null && m.limit != com.berg.orbis.client.OrbisClient.allowedArea) veil(Minecraft.getInstance(), m, rx, rz);
         return m.grey;
     }
 
@@ -186,6 +215,7 @@ public final class BlockMapClient {
         long key = tk(d.rx(), d.rz(), d.level());
         PENDING.remove(key);
         Tile t = TILES.computeIfAbsent(key, k -> new Tile());
+        t.checked = System.currentTimeMillis();
         if (d.sameColours() && t.id != null) {
             t.version = d.version();
             t.used = Math.max(t.used, 1);
@@ -203,12 +233,24 @@ public final class BlockMapClient {
 
     private static void setMask(Minecraft mc, int rx, int rz, long[] bits) {
         Mask m = MASKS.computeIfAbsent(rk(rx, rz), k -> new Mask());
+        m.checked = System.currentTimeMillis();
         if (m.bits != null && java.util.Arrays.equals(m.bits, bits)) return;
         m.bits = bits.clone();
+        veil(mc, m, rx, rz);
+    }
+
+    /** Light grey haze over the region's ungenerated chunks inside the hard limit (outside it the map shades red). */
+    private static final int VEIL = 0x8CD4D8DC;
+
+    private static void veil(Minecraft mc, Mask m, int rx, int rz) {
+        com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
+        m.limit = limit;
+        boolean on = limit != null && limit.on() && !limit.area().isEmpty();
         int[] px = new int[32 * 32];
         for (int i = 0; i < 1024; i++) {
-            boolean generated = (bits[i >> 6] & (1L << (i & 63))) != 0;
-            px[i] = generated ? 0 : 0xB4202328;
+            boolean generated = (m.bits[i >> 6] & (1L << (i & 63))) != 0;
+            boolean outside = on && !limit.area().contains(rx * 32 + (i & 31), rz * 32 + (i >> 5));
+            px[i] = generated || outside ? 0 : VEIL;
         }
         NativeImage img = MapTiles.image(32, 32, MapTiles.toAbgr(px));
         if (m.grey == null) m.grey = Identifier.fromNamespaceAndPath("orbisterrarum", "map/grey_" + IDS.incrementAndGet());
@@ -218,8 +260,8 @@ public final class BlockMapClient {
     private static void upload(Minecraft mc, Tile t, byte[] packed, int size) {
         int[] px = new int[size * size];
         for (int i = 0; i < px.length; i++) {
-            int id = packed[i] & 0xFF;
-            px[i] = id < 4 ? 0 : MapColor.getColorFromPackedId(id) | 0xFF000000;
+            int v = (packed[2 * i] & 0xFF) << 8 | (packed[2 * i + 1] & 0xFF); // RGB565, 0 = nothing drawn
+            px[i] = v == 0 ? 0 : 0xFF000000 | ((v >> 11) * 255 / 31) << 16 | (((v >> 5) & 63) * 255 / 63) << 8 | ((v & 31) * 255 / 31);
         }
         NativeImage img = MapTiles.image(size, size, MapTiles.toAbgr(px));
         if (t.id == null) t.id = Identifier.fromNamespaceAndPath("orbisterrarum", "map/blocks_" + IDS.incrementAndGet());
@@ -228,8 +270,8 @@ public final class BlockMapClient {
 
     private static byte[] inflate(byte[] deflated, int size) {
         try (InputStream in = new InflaterInputStream(new ByteArrayInputStream(deflated))) {
-            byte[] out = in.readNBytes(size * size);
-            return out.length == size * size ? out : null;
+            byte[] out = in.readNBytes(size * size * 2);
+            return out.length == size * size * 2 ? out : null;
         } catch (IOException e) {
             return null;
         }
@@ -261,7 +303,7 @@ public final class BlockMapClient {
 
     private static Path file(int rx, int rz, int level) {
         String w = world == null ? "unknown" : world.replaceAll("[^A-Za-z0-9._-]", "_");
-        return OrbisMod.configDir().resolve("mc-map-cache").resolve(w).resolve("L" + level).resolve("r." + rx + "." + rz + ".bin");
+        return OrbisMod.dataDir().resolve("mc-map-cache").resolve(w).resolve("rgb-L" + level).resolve("r." + rx + "." + rz + ".bin");
     }
 
     private static Tile fromDisk(int rx, int rz, int level) {
@@ -271,9 +313,9 @@ public final class BlockMapClient {
             int version = in.readInt();
             byte[] packed;
             try (InputStream z = new InflaterInputStream(in)) {
-                packed = z.readNBytes(tileSize(level) * tileSize(level));
+                packed = z.readNBytes(tileSize(level) * tileSize(level) * 2);
             }
-            if (packed.length != tileSize(level) * tileSize(level)) return null;
+            if (packed.length != tileSize(level) * tileSize(level) * 2) return null;
             Tile t = new Tile();
             upload(Minecraft.getInstance(), t, packed, tileSize(level));
             t.version = version;

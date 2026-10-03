@@ -95,10 +95,9 @@
           { maxZoom: 19 }),
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
           { maxZoom: 19, attribution: 'Labels &copy; Esri' })
-      ]),
-      'Topographic': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-        { maxZoom: 19, attribution: 'Tiles &copy; Esri' })
-      // No OpenStreetMap layer: its volunteer-run tile servers block pages opened from a file (no referrer),
+      ])
+      // No topographic layer (dropped on 3 Oct 2026, as in the game; a page that remembered it falls back to the street
+      // map). No OpenStreetMap layer: its volunteer-run tile servers block pages opened from a file (no referrer),
       // as their usage policy allows them to.
     };
     var chosen = 'Street map';

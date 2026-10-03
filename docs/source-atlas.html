@@ -1,0 +1,387 @@
+<title>Orbis Source Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a survey register. Summary and build order first, then the full register as a filterable table. */
+:root {
+  --paper: #f3f5f2;
+  --sheet: #ffffff;
+  --ink: #1c2622;
+  --ink-soft: #4d5c55;
+  --rule: #d5ddd7;
+  --contour: #a4532a;      /* accent: contour-line brown */
+  --water: #2b6a8f;        /* links */
+  --ok: #2f7a4a; --ok-bg: #e2f1e6;
+  --part: #8a6a12; --part-bg: #f6edcf;
+  --no: #a23b3b; --no-bg: #f6dfdf;
+  --c-geo: #8b5a2b; --c-dsm: #6a4a9a; --c-bldg: #7a3e66; --c-ortho: #1f7a72; --c-roads: #b0452b; --c-lake: #2b6a8f;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #131916; --sheet: #1a221e; --ink: #e3eae5; --ink-soft: #a5b3ac; --rule: #2e3a34;
+    --contour: #e08a5a; --water: #7cb6d8;
+    --ok: #7fd09a; --ok-bg: #1c3526; --part: #e0c063; --part-bg: #3a3218; --no: #f09a9a; --no-bg: #3d2121;
+    --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #131916; --sheet: #1a221e; --ink: #e3eae5; --ink-soft: #a5b3ac; --rule: #2e3a34;
+  --contour: #e08a5a; --water: #7cb6d8;
+  --ok: #7fd09a; --ok-bg: #1c3526; --part: #e0c063; --part-bg: #3a3218; --no: #f09a9a; --no-bg: #3d2121;
+  --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font: 400 15px/1.55 var(--body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; letter-spacing: .01em; text-wrap: balance; margin: 0; line-height: 1.1; }
+h1 { font-size: clamp(34px, 5vw, 52px); }
+h2 { font-size: 28px; }
+h3 { font-size: 20px; }
+p { margin: 0; max-width: 70ch; }
+a { color: var(--water); }
+.eyebrow { font: 600 12px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--contour); }
+header { display: grid; gap: 14px; border-bottom: 2px solid var(--ink); padding-bottom: 22px; }
+header .lede { color: var(--ink-soft); font-size: 17px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--ink-soft); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+
+.findings { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.finding { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; display: grid; gap: 6px; align-content: start; }
+.finding h3 { font-size: 18px; }
+.finding p { font-size: 14px; color: var(--ink-soft); }
+
+section { display: grid; gap: 16px; min-width: 0; }
+.plan { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.step { display: grid; grid-template-columns: 52px minmax(0, 1fr) minmax(0, 220px); gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--rule); align-items: start; }
+.step .n { font: 700 34px/1 var(--display); color: var(--contour); }
+.step .body { display: grid; gap: 6px; min-width: 0; }
+.step .body p { font-size: 14px; color: var(--ink-soft); }
+.step .meta { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft); }
+.step .meta b { color: var(--ink); font-weight: 600; }
+@media (max-width: 720px) { .step { grid-template-columns: 40px minmax(0, 1fr); } .step .meta { grid-column: 2; } }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; position: sticky; top: env(safe-area-inset-top, 0px); background: var(--paper); padding-block: 10px; z-index: 2; border-bottom: 1px solid var(--rule); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 500 13px/1 var(--body); padding: 7px 11px; border-radius: 999px; border: 1px solid var(--rule); background: var(--sheet); color: var(--ink); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.chip[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.chip:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
+select, input[type="search"] { font: 14px var(--body); padding: 7px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); color: var(--ink); }
+input[type="search"] { min-width: 0; flex: 1 1 180px; }
+.count { font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; margin-left: auto; }
+
+.table-box { overflow-x: auto; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; min-width: 980px; font-size: 13.5px; }
+th { text-align: left; font: 600 12px/1.2 var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); padding: 10px 12px; border-bottom: 1px solid var(--rule); background: var(--sheet); }
+td { padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.country { font-weight: 600; white-space: nowrap; }
+td.country small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 12px; }
+.cat { font: 600 11px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px 4px 9px; border-left: 3px solid currentColor; white-space: nowrap; }
+.cat.geo { color: var(--c-geo); } .cat.dsm { color: var(--c-dsm); } .cat.bldg { color: var(--c-bldg); }
+.cat.ortho { color: var(--c-ortho); } .cat.roads { color: var(--c-roads); } .cat.lake { color: var(--c-lake); }
+.ep { font: 12px/1.4 var(--mono); word-break: break-all; color: var(--ink-soft); }
+.note { color: var(--ink-soft); font-size: 13px; }
+.pill { font: 600 11px/1 var(--body); padding: 4px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; }
+.v-yes { color: var(--ok); background: var(--ok-bg); } .v-part { color: var(--part); background: var(--part-bg); } .v-no { color: var(--no); background: var(--no-bg); }
+.acc { font-size: 12.5px; white-space: nowrap; }
+.empty { padding: 28px; text-align: center; color: var(--ink-soft); }
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+.cols ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; color: var(--ink-soft); }
+.cols ul b { color: var(--ink); font-weight: 600; }
+footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Orbis Terrarum · research, 1 October 2026</span>
+    <h1>Orbis Source Atlas</h1>
+    <p class="lede">Open national services, country by country, that could give the rest of the world what Norway already has: measured building heights and roofs, sharp aerial photos, road widths and lanes, bedrock and lake depths. Eight research passes covered every region; each endpoint was tried from your own network.</p>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--c-dsm)"></i>Surface model (lidar)</span>
+      <span><i class="sw" style="background:var(--c-bldg)"></i>Building heights</span>
+      <span><i class="sw" style="background:var(--c-ortho)"></i>Orthophotos</span>
+      <span><i class="sw" style="background:var(--c-roads)"></i>Roads: width, lanes</span>
+      <span><i class="sw" style="background:var(--c-geo)"></i>Bedrock geology</span>
+      <span><i class="sw" style="background:var(--c-lake)"></i>Lake depths</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="h-find">
+    <h2 id="h-find">What the research found</h2>
+    <div class="findings">
+      <div class="finding"><span class="eyebrow">Geology</span><h3>One service covers every country</h3><p>Macrostrat answers a point query with the rock type and age, using the best map it has for that spot (1:10M worldwide, 1:1M or finer in many countries). About 25 national surveys add 1:25k to 1:250k detail.</p></div>
+      <div class="finding"><span class="eyebrow">Building heights</span><h3>Norway-grade in about 15 countries</h3><p>Open lidar surface models: Netherlands, Flanders, Wallonia, France, Spain, Czechia, Estonia, England, Switzerland, New Zealand, Canada, North Rhine-Westphalia, Denmark (free token) and several US states. Spain and Estonia even serve building heights ready-made.</p></div>
+      <div class="finding"><span class="eyebrow">Roads</span><h3>Widths or lanes in about 12 countries</h3><p>Finland's Digiroad and France's BD TOPO have both, with no key. The USA has lane counts for every state's main roads; Spain, Brazil, British Columbia, Japan and Switzerland have lanes or width classes.</p></div>
+      <div class="finding"><span class="eyebrow">Photos</span><h3>About 30 open orthophoto services</h3><p>Mostly Europe, Japan, Taiwan, Hong Kong, Australian states, Ontario and Québec, several US states and Uruguay. Most are 10 to 25 cm, far sharper than what Orbis uses now.</p></div>
+      <div class="finding"><span class="eyebrow">Lakes</span><h3>Rare: six places</h3><p>Switzerland, Finland, Minnesota, Ontario, Saskatchewan and the IJsselmeer. Everywhere else keeps the GLOBathy estimate.</p></div>
+      <div class="finding"><span class="eyebrow">Gaps</span><h3>Little in Asia, Africa, Latin America</h3><p>China, Korea and most of South Asia, Africa and Latin America have nothing open, or block foreign networks. They keep the global sources. Several Polish, Portuguese, Balkan and Latin American servers did not answer from your network at all.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-plan">
+    <h2 id="h-plan">Suggested build order</h2>
+    <p>Most services fall into a few kinds of connector. Building a connector once makes each further country mostly a configuration entry. The order puts reach and low cost first.</p>
+    <div class="plan">
+      <div class="step"><span class="n">1</span><div class="body"><h3>Rock types everywhere</h3><p>A point-query connector (REST JSON, ArcGIS identify, WMS GetFeatureInfo, WFS) plus a table that turns lithology text in many languages into rocks: granito, Sandstein, kalkstein. Macrostrat alone covers every country; national surveys refine it.</p></div><div class="meta"><span><b>Reach</b> every country</span><span><b>Effort</b> medium</span><span><b>Orbis has</b> NGU + Macrostrat world tiles (built); national surveys next</span></div></div>
+      <div class="step"><span class="n">2</span><div class="body"><h3>Sharper aerial photos</h3><p>WMTS, XYZ and WMS photo services as entries in the existing imagery list, each with its coverage area. Licences differ: the non-commercial ones (Tasmania, EOX after 2017) stay out.</p></div><div class="meta"><span><b>Reach</b> about 30 services</span><span><b>Effort</b> low</span><span><b>Orbis has</b> 21 of them built in (1 Oct 2026)</span></div></div>
+      <div class="step"><span class="n">3</span><div class="body"><h3>Building heights and roofs from surface models</h3><p>One raster connector for WCS, ArcGIS ImageServer, IGN's WMS-R and cloud GeoTIFFs, generalising the Kartverket surface-model code. Most services answer only in their national grid, so this step adds map-projection support.</p></div><div class="meta"><span><b>Reach</b> about 15 countries</span><span><b>Effort</b> medium–high</span><span><b>Orbis has</b> 11 built in: 9 web services and 2 file sets in national grids (CH, CA); New Zealand waits for a LERC decoder</span></div></div>
+      <div class="step"><span class="n">4</span><div class="body"><h3>Buildings with heights and floors</h3><p>Vector services that carry each building's height or storeys (France, Netherlands, Spain, Slovenia, Vienna, New York, San Francisco, Abu Dhabi, Cape Town, Melbourne, Singapore, Japan's PLATEAU), matched to OSM buildings the way the building atlas already is.</p></div><div class="meta"><span><b>Reach</b> about 12 countries and cities</span><span><b>Effort</b> medium</span><span><b>Orbis has</b> 5 registers built in (FR, NL, SI, Vienna, NYC)</span></div></div>
+      <div class="step"><span class="n">5</span><div class="body"><h3>Road widths and lanes</h3><p>The NVDB matcher made general: any service that returns road lines with a width or lane count. Finland, France, USA, Spain, Brazil, British Columbia, Japan, Switzerland, Estonia, Chile.</p></div><div class="meta"><span><b>Reach</b> about 12 countries</span><span><b>Effort</b> medium</span><span><b>Orbis has</b> NVDB + 4 databases (FR, FI, US, BC) on the same matcher</span></div></div>
+      <div class="step"><span class="n">6</span><div class="body"><h3>Lake depths</h3><p>Depth contours and bathymetry grids, generalising the NVE connector.</p></div><div class="meta"><span><b>Reach</b> six places</span><span><b>Effort</b> medium</span><span><b>Orbis has</b> NVE + Finland + Minnesota + Ontario</span></div></div>
+      <div class="step"><span class="n">7</span><div class="body"><h3>Later: bulk downloads</h3><p>Datasets offered only as files (German 3D buildings, Dutch road widths, Polish BDOT10k, Hong Kong's 0.5 m lidar, US point clouds, Korea and Mexico roads) need import tools like the building-atlas script, not live streaming.</p></div><div class="meta"><span><b>Reach</b> high value, per country</span><span><b>Effort</b> high</span><span><b>Orbis has</b> tools/lod2_heights.py (German LoD2, NRW and Bavaria)</span></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-reg">
+    <h2 id="h-reg">The register</h2>
+    <p>Every usable service the research found. "Answered" means it returned real data from your network; "partly" means it answered without values, or only its catalogue did; "no answer" means it was unreachable here and may work from inside the country.</p>
+    <div class="controls" role="group" aria-label="Filter the register">
+      <div class="chips" id="cats"></div>
+      <select id="region" aria-label="Region"></select>
+      <select id="access" aria-label="Access">
+        <option value="">Any access</option>
+        <option value="open">Open, no key</option>
+        <option value="key">Free key or account</option>
+      </select>
+      <input type="search" id="q" placeholder="Search country, provider, protocol" aria-label="Search">
+      <span class="count" id="count"></span>
+    </div>
+    <div class="table-box">
+      <table>
+        <thead><tr><th>Country</th><th>Data</th><th>Provider and dataset</th><th>Protocol</th><th>Endpoint</th><th>Access</th><th>Detail</th><th>Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-notes">
+    <h2 id="h-notes">Before building</h2>
+    <div class="cols">
+      <div><h3>Practical issues</h3><ul>
+        <li><b>National map grids.</b> Most European services answer only in their own projection (Netherlands 28992, France 2154, Spain 25830, Czechia 5514, Switzerland 2056 and more). Orbis needs a projection library for step 3.</li>
+        <li><b>Units.</b> Oregon, Kentucky and New York give heights in feet.</li>
+        <li><b>Tile order.</b> Japan's geology and Taiwan's photos use z/y/x, the rest z/x/y.</li>
+        <li><b>Server quirks.</b> IGN France needs <code>STYLES=normal</code>; Flanders' geology answers gzip; Australian and Tasmanian servers refuse plain HTTP clients without a browser-like user agent.</li>
+      </ul></div>
+      <div><h3>Access and licences</h3><ul>
+        <li><b>Free keys</b>: Denmark, Finland's photos, Sweden, Portugal, New Zealand's basemaps and road data, Korea. A key would be a setting each player fills in.</li>
+        <li><b>Not usable</b>: Tasmania's photos and EOX's 2018–2025 layers (non-commercial), Britain's OS data (premium), China's Tianditu (blocks foreign networks), Korea's VWorld (seems to block foreign networks).</li>
+        <li><b>To confirm before shipping</b>: Abu Dhabi, Cape Town, Catastro, Italy's national portal, São Paulo's lidar (labelled GPL-3), South Africa's photo proxy (meant for OSM mapping).</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <footer>Compiled from eight research passes on 1 October 2026. Orbis already uses Mapterhorn terrain (which includes many of these countries' lidar ground models), ESA WorldCover, Esri imagery, OpenStreetMap, GlobalBuildingAtlas, Open Waters, MET Norway and Open-Meteo; none of those are repeated here. In the mod since then: Macrostrat's map polygons (step 1, rock types worldwide) 21 orthophoto services (step 2; Berlin's and New York State's left out, see their rows) 11 lidar surface models (step 3) 5 building registers (step 4) 4 road databases (step 5) 2 lake surveys (step 6) and the German LoD2 import (step 7).</footer>
+</div>
+
+<script>
+const CATS = { geo: "Geology", dsm: "Surface model", bldg: "Buildings", ortho: "Photos", roads: "Roads", lake: "Lakes" };
+// [region, country, sub, cat, provider, protocol, endpoint, access(open|key|reg|blocked), detail, status(yes|part|no)]
+const R = [
+["World","World","Macrostrat","geo","Macrostrat geologic units, best map per area","REST JSON point query","https://macrostrat.org/api/v2/geologic_units/map?lat={lat}&lng={lng}","open","Lithology, age, colour · 1:10M world, finer locally · CC BY 4.0","yes"],
+["World","World","Macrostrat","geo","Macrostrat map polygons","Vector tiles","https://tiles.macrostrat.org/carto/{z}/{x}/{y}","open","CC BY 4.0 · in Orbis since 1 Oct 2026 (zoom 10/8/6/4 per place)","yes"],
+["World","World","EOX","ortho","Sentinel-2 cloudless 2016 and 2017","WMTS","https://tiles.maps.eox.at/wmts/1.0.0/WMTSCapabilities.xml","open","10 m · only 2016/2017 are CC BY; later years non-commercial","yes"],
+["World","World","GLOBathy","lake","GLOBathy modelled lake bathymetry","Download (16.7 GB)","https://springernature.figshare.com/articles/dataset/GLOBathy_Bathymetry_Rasters/13404635","open","1.4 M lakes, modelled · CC0 · Orbis already uses its depths","yes"],
+["World","World","Overture","bldg","Overture buildings (height, floors)","GeoParquet on S3","s3://overturemaps-us-west-2/release/2026-09-23.0/theme=buildings/","open","Heights sparse outside OSM · ODbL","yes"],
+["World","Arctic","Greenland, Alaska, Arctic Canada","dsm","PGC ArcticDEM mosaics","STAC + cloud GeoTIFF","https://stac.pgc.umn.edu/api/v1/","open","2 m stereo surface model · cite PGC","yes"],
+["Africa","Africa","continent","ortho","Digital Earth Africa GeoMAD annual","WMS","https://ows.digitalearth.africa/wms","open","10 m · CC BY 4.0 · retry on CloudFront 403","yes"],
+["Africa","Africa","continent","geo","BRGM/CGMW Geological Map of Africa","WMS (http only)","http://mapsref.brgm.fr/wxs/1GG/IGC35_CGMW_BRGM_Africa_Geology","open","1:10M","yes"],
+
+["Northern Europe","Sweden","","ortho","Lantmäteriet orthophoto","STAC + cloud GeoTIFF","https://api.lantmateriet.se/stac-bild/v1/collections","key","0.16 m · CC BY 4.0 · free Geotorget account","part"],
+["Northern Europe","Sweden","","roads","Trafikverket NVDB: Vägbredd, AntalKörfält2","REST (POST)","https://api.trafikverket.se/v2/data.json","key","Width and lanes · free key","no"],
+["Northern Europe","Sweden","","geo","SGU bedrock 1:50k–250k","WMS GetFeatureInfo","https://resource.sgu.se/service/wms/130/berggrund-50-250-tusen","open","1:50k","yes"],
+["Northern Europe","Denmark","","dsm","SDFI DHM Overflade (surface) and Terræn","WCS 1.0","https://api.dataforsyningen.dk/dhm_wcs_DAF","key","0.4 m · free token","part"],
+["Northern Europe","Denmark","","ortho","SDFI spring orthophoto","WMTS","https://api.dataforsyningen.dk/orto_foraar_wmts_DAF","key","12.5 cm · same token","part"],
+["Northern Europe","Finland","","roads","Digiroad width (cm) and lane count","OGC API Features","https://avoinapi.vaylapilvi.fi/vaylatiedot/ogc/features/v1/collections/digiroad:dr_leveys/items?f=json","open","Width + lanes · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Northern Europe","Finland","","ortho","MML orthophoto","WMTS","https://avoin-karttakuva.maanmittauslaitos.fi/avoin/wmts/1.0.0/WMTSCapabilities.xml","key","0.5 m · free API key","part"],
+["Northern Europe","Finland","","geo","GTK bedrock 1:200k","ArcGIS REST, WFS","https://gtkdata.gtk.fi/arcgis/rest/services/Rajapinnat/GTK_Kalliopera_WMS/MapServer","open","CC BY 4.0","yes"],
+["Northern Europe","Finland","","lake","SYKE lake depth areas and contours","WFS 2.0","https://paikkatiedot.ymparisto.fi/geoserver/inspire_el/wfs","open","CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Northern Europe","Iceland","","geo","Bedrock 1:600k (SiO₂, age)","WFS","https://gis.lmi.is/geoserver/wfs","open","1:600k","yes"],
+["Northern Europe","Estonia","","dsm","Maa- ja Ruumiamet DSM and nDSM","WCS 2.0","https://teenus.maaamet.ee/ows/wcs-dsm","open","5 m · nDSM gives heights directly · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Northern Europe","Estonia","","bldg","3D buildings LoD1/LoD2","Download per municipality","geoportaal.maaamet.ee (3D data download page)","open","CC BY 4.0","part"],
+["Northern Europe","Estonia","","ortho","Orthophoto","WMTS","https://tiles.maaamet.ee/tm/wmts/1.0.0/WMTSCapabilities.xml","open","~25 cm · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Northern Europe","Estonia","","roads","Teeregister pavement width","WFS 2.0","https://teeregister-api.mnt.ee/teenus/wfs","open","Width · left out of Orbis for now: no width layer found in the WFS","yes"],
+["Northern Europe","Estonia","","geo","Bedrock layer of the geological base map","WMS","https://teenus.maaamet.ee/ows/wms-geoloogia","open","1:50k–400k · no longer updated","yes"],
+["Northern Europe","Latvia","","ortho","LĢIA orthophoto (older cycles)","ArcGIS tile cache","https://wms.lgia.gov.lv/open/rest/services/OPEN_DATA/Ortofoto3_rgb/MapServer","open","to 0.26 m · newer cycles need a licence","yes"],
+["Northern Europe","Lithuania","","ortho","NŽT ORT10LT 2024–2026","ArcGIS export","https://www.geoportal.lt/arcgis/rest/services/NZT/ORT10LT_2024_2026/MapServer","open","0.5 m","yes"],
+["Northern Europe","Lithuania","","geo","LGT lithogenetic units","WMS","https://www.inspire-geoportal.lt/geoserver/ge/wms","open","1:200k","yes"],
+["Northern Europe","United Kingdom","England","dsm","Environment Agency lidar composite DSM","WCS 2.0","https://environment.data.gov.uk/spatialdata/lidar-composite-digital-surface-model-first-return-dsm-1m/wcs","open","1 m · OGL v3 · left out of Orbis: errors on every lat/lon request","yes"],
+["Northern Europe","United Kingdom","Scotland","dsm","Scottish Remote Sensing Portal DSM","S3 tiles","https://srsp-open-data.s3.eu-west-2.amazonaws.com/lidar/","open","0.25–2 m · OGL","yes"],
+["Northern Europe","United Kingdom","","geo","BGS bedrock 1:625k","OGC API Features","https://ogcapi.bgs.ac.uk/collections/bgsgeology625kbedrock/items?f=json","open","OGL","yes"],
+["Northern Europe","United Kingdom","","geo","BGS detailed geology 1:50k","WMS, ArcGIS REST","https://map.bgs.ac.uk/arcgis/rest/services/BGS_Detailed_Geology/MapServer","open","Check 1:50k terms","yes"],
+["Northern Europe","Ireland","","geo","GSI bedrock 1:100k","ArcGIS REST","https://gsi.geodata.gov.ie/server/rest/services/Bedrock/IE_GSI_Bedrock_Geology_Datasets_100K_IE26_ITM/MapServer","open","CC BY 4.0","yes"],
+["Northern Europe","Ireland","","dsm","GSI/OPW lidar DSM tiles","Tile index → ZIP downloads","https://gsi.geodata.gov.ie/server/rest/services/Lidar","open","0.13–2 m, partial coverage · CC BY 4.0","yes"],
+
+["Western Europe","Netherlands","","dsm","AHN surface and terrain models","WCS 2.0","https://service.pdok.nl/rws/ahn/wcs/v1_0?request=GetCapabilities&service=WCS","open","0.5 m · CC0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Netherlands","","bldg","3DBAG (roof heights per building)","OGC API Features","https://api.3dbag.nl/collections","open","LoD1.2/2.2 · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Netherlands","","ortho","PDOK Luchtfoto RGB","WMTS","https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0?request=GetCapabilities&service=wmts","open","25 cm, 7.5 cm HR · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Netherlands","","roads","RWS road widths and lanes (WKD)","Bulk GeoPackage","https://downloads.rijkswaterstaatdata.nl/wkd/geogegevens/Geopackage/","open","Width + lanes, monthly · CC0","yes"],
+["Western Europe","Netherlands","","lake","IJsselmeer bed height","WCS 2.0","https://geo.rijkswaterstaat.nl/services/ogc/gdr/bodemhoogte_ijsselmeergebied/ows","open","100 m · not in Orbis yet: bed heights need the lake level","yes"],
+["Western Europe","Belgium","Flanders","dsm","DHMV II DSM and DTM","WCS 2.0.1","https://geo.api.vlaanderen.be/DHMV/wcs","open","1 m · left out of Orbis: refuses non-browser clients (403)","yes"],
+["Western Europe","Belgium","Flanders","ortho","Orthophotos","WMTS","https://geo.api.vlaanderen.be/omw/wmts","open","25 cm · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Belgium","Flanders","geo","DOV geology","WMS (gzip)","https://www.dov.vlaanderen.be/geoserver/wms","open","1:50k","yes"],
+["Western Europe","Belgium","Wallonia","dsm","MNS surface model 2021–22","ArcGIS MapServer identify","https://geoservices.wallonie.be/arcgis/rest/services/RELIEF/WALLONIE_MNS_2021_2022/MapServer","open","50 cm","yes"],
+["Western Europe","Belgium","Wallonia","ortho","Orthophotos 2012–2026","ArcGIS MapServer","https://geoservices.wallonie.be/arcgis/rest/services/IMAGERIE/ORTHO_MAILLAGE_TUILAGE_2025_ETE/MapServer","open","CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Luxembourg","","ortho","Orthophoto","WMTS","https://wmts1.geoportail.lu/opendata/service?request=GetCapabilities&service=WMTS","open","20 cm · CC0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Luxembourg","","geo","Surface geology (lithology)","WMS GetFeatureInfo","https://wms.inspire.geoportail.lu/geoserver/ge/wms","open","1:25k · CC0","yes"],
+["Western Europe","Luxembourg","","dsm","Lidar DSM 2024","WMS (no WCS)","https://wms.inspire.geoportail.lu/geoserver/el/wms","open","~50 cm · CC0 · values via tile downloads","part"],
+["Western Europe","France","","dsm","IGN RGE ALTI HR surface model (MNS)","WMS-R float BIL","https://data.geopf.fr/wms-r/wms","open","~0.5–1 m · Licence Ouverte 2.0 · needs STYLES=normal · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","France","","bldg","BD TOPO batiment (height, floors, roof material)","WFS 2.0 JSON","https://data.geopf.fr/wfs/ows","open","Licence Ouverte 2.0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","France","","roads","BD TOPO troncon_de_route (width, lanes)","WFS 2.0 JSON","https://data.geopf.fr/wfs/ows","open","Width + lanes · Licence Ouverte 2.0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","France","","ortho","BD ORTHO","WMTS","https://data.geopf.fr/wmts","open","20 cm · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","France","","geo","BRGM lithology 1:1M","WFS","http://geoservices.brgm.fr/geologie?service=WFS","open","1:1M (1:50k only as scans)","yes"],
+["Western Europe","Germany","","geo","BGR GÜK250","WMS GetFeatureInfo","https://services.bgr.de/wms/geologie/guek250/?REQUEST=GetCapabilities&SERVICE=WMS","open","1:250k · dl-de/by-2.0","yes"],
+["Western Europe","Germany","14 states","ortho","State orthophotos (DOP)","WMS","e.g. https://geoservices.bayern.de/od/wms/dop/v1/dop20","open","20 cm · Hamburg, Bremen not found · Bavaria and NRW in Orbis; Berlin left out (its certificate chain fails in Java)","yes"],
+["Western Europe","Germany","NRW","dsm","NRW nDSM and DSM","WCS","https://www.wcs.nrw.de/geobasis/wcs_nw_ndom","open","dl-de/zero · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Germany","all states","bldg","LoD2 3D buildings","Bulk CityGML tiles","https://www.opengeodata.nrw.de/produkte/geobasis/3dg/lod2_gml/lod2_gml/index.json","open","Every state open under EU high-value rules · in Orbis since 1 Oct 2026 for NRW and Bavaria: tools/lod2_heights.py","yes"],
+["Western Europe","Switzerland","","dsm","swissSURFACE3D raster","STAC + cloud GeoTIFF","https://data.geo.admin.ch/api/stac/v0.9/collections/ch.swisstopo.swisssurface3d-raster","open","0.5 m · OGD · in Orbis since 1 Oct 2026 (files read block by block)","yes"],
+["Western Europe","Switzerland","","bldg","swissBUILDINGS3D 3.0 (roofs)","STAC","https://data.geo.admin.ch/api/stac/v0.9/collections/ch.swisstopo.swissbuildings3d_3_0","open","LoD2 · beta","yes"],
+["Western Europe","Switzerland","","ortho","SWISSIMAGE","WMTS","https://wmts.geo.admin.ch/EPSG/3857/1.0.0/WMTSCapabilities.xml","open","10 cm · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Switzerland","","roads","swissTLM3D roads (width classes)","REST identify","https://api3.geo.admin.ch/rest/services/api/MapServer/identify","open","Width class, no lanes","yes"],
+["Western Europe","Switzerland","","geo","GeoCover lithology","REST identify","https://api3.geo.admin.ch/rest/services/api/MapServer/identify","open","layer ch.swisstopo.geologie-geocover","yes"],
+["Western Europe","Switzerland","","lake","swissBATHY3D lake bathymetry","STAC","https://data.geo.admin.ch/api/stac/v0.9/collections/ch.swisstopo.swissbathy3d","open","OGD · not in Orbis yet: bed heights need each lake level","yes"],
+["Western Europe","Austria","","dsm","BEV airborne lidar DSM","Tile downloads","https://data.bev.gv.at/download/ALS/DSM/20190915/","open","1 m · CC BY 4.0","part"],
+["Western Europe","Austria","Vienna","bldg","Vienna building-body model (roof heights)","WFS","https://data.wien.gv.at/daten/geo","open","CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Austria","","ortho","basemap.at orthophoto","WMTS","https://maps.wien.gv.at/basemap/1.0.0/WMTSCapabilities.xml","open","30 cm · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Western Europe","Austria","","geo","GeoSphere geology 1:500k","ArcGIS identify","https://gis.geosphere.at/maps/rest/services/geologie/karte_500/MapServer","open","LITHOL_EN field","yes"],
+["Western Europe","Liechtenstein","","ortho","LLV orthophotos and geology","WMS","https://service.geo.llv.li/service/wms","open","Orthophoto 2025","yes"],
+
+["Southern & Eastern Europe","Spain","","dsm","IGN MDSn building nDSM (heights direct)","WCS 2.0","https://wcs-mds.idee.es/mds?request=GetCapabilities&service=WCS&version=2.0.1","open","2.5 m nDSM, 5 m DSM · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Southern & Eastern Europe","Spain","","bldg","Catastro building parts (floors)","WFS 2.0","https://ovc.catastro.meh.es/INSPIRE/wfsBU.aspx","open","Floors above ground · Catastro licence · left out of Orbis for now: needs a parcel reference per query; licence to confirm","yes"],
+["Southern & Eastern Europe","Spain","","ortho","PNOA maximum actuality","WMTS","https://www.ign.es/wmts/pnoa-ma?request=GetCapabilities&service=WMTS","open","15–25 cm · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Southern & Eastern Europe","Spain","","roads","IGN INSPIRE roads (lane count)","WFS 2.0","https://servicios.idee.es/wfs-inspire/transportes","open","Lanes, no width · left out of Orbis: GML only, lanes only","yes"],
+["Southern & Eastern Europe","Spain","","geo","IGME GEODE 1:50k","ArcGIS REST","https://mapas.igme.es/gis/rest/services/Cartografia_Geologica/IGME_Geode_50/MapServer","open","1:50k · CC BY 4.0","yes"],
+["Southern & Eastern Europe","Portugal","","dsm","DGT lidar DSM 50 cm","STAC-like REST","https://cdd.dgterritorio.gov.pt/dgt-be/v1/collections","key","50 cm · free account for downloads","part"],
+["Southern & Eastern Europe","Portugal","","geo","LNEG geological map 1:50k–1:1M","ArcGIS REST","https://sig.lneg.pt/server/rest/services/CGP50k/MapServer","open","Licence unclear","part"],
+["Southern & Eastern Europe","Poland","","dsm","GUGiK NMPT surface model","WCS","https://mapy.geoportal.gov.pl/wss/service/PZGIK/NMPT/GRID1/WCS/DigitalSurfaceModel","open","~0.5–1 m · unreachable from your network","no"],
+["Southern & Eastern Europe","Poland","","roads","BDOT10k roadways (width, lanes)","Bulk GML per county","opendata.geoportal.gov.pl","open","Width + lanes · unreachable here","no"],
+["Southern & Eastern Europe","Poland","","geo","PIG-PIB detailed map 1:50k","ArcGIS REST","https://cbdgmapa.pgi.gov.pl/arcgis/rest/services/kartografia/smgp50k/MapServer","open","1:50k","yes"],
+["Southern & Eastern Europe","Czechia","","dsm","ČÚZK DMP 1G surface model (+ DMR 5G terrain)","ArcGIS ImageServer","https://ags.cuzk.cz/arcgis2/rest/services/dmp1g/ImageServer","open","2 m · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Southern & Eastern Europe","Czechia","","ortho","ČÚZK orthophoto","WMTS","https://ags.cuzk.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer/WMTS/1.0.0/WMTSCapabilities.xml","open","12.5–25 cm · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Southern & Eastern Europe","Slovenia","","bldg","GURS building cadastre (floors, 3D geometry)","WFS 2.0","https://ipi.eprostor.gov.si/wfs-si-gurs-kn/wfs","open","CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Southern & Eastern Europe","Slovenia","","ortho","GURS DOF025","WMS","https://ipi.eprostor.gov.si/wms-si-gurs-dts/wms","open","25 cm · CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Southern & Eastern Europe","Italy","Tuscany, South Tyrol","ortho","Regional orthophotos","WMS","https://geoservices.buergernetz.bz.it/mapproxy/wms","open","20 cm","yes"],
+["Southern & Eastern Europe","Italy","","geo","ISPRA geology 1:100k","ArcGIS REST","https://sgi2.isprambiente.it/arcgis/rest/services/servizi/carta_geologica_100k/MapServer","open","CC BY","yes"],
+["Southern & Eastern Europe","Slovakia","","geo","ŠGÚDŠ geological maps","ArcGIS REST","https://ags.geology.sk/arcgis/rest/services/GeologickeMapy","open","GM50","yes"],
+["Southern & Eastern Europe","Croatia","","ortho","DGU orthophoto 2021–22","WMS","https://geoportal.dgu.hr/services/inspire/orthophoto_2021_2022/ows","open","","yes"],
+["Southern & Eastern Europe","Cyprus","","ortho","DLS orthophotos","ArcGIS REST","https://eservices.dls.moi.gov.cy/arcgis/rest/services/BASEMAPS","open","10 cm (2014)","yes"],
+
+["North America","United States","","roads","FHWA HPMS (lanes, lane width)","ArcGIS FeatureServer per state","https://geo.dot.gov/server/rest/services/Hosted/HPMS_FULL_<ST>_2024/FeatureServer/0","open","Lanes on all federal-aid roads, PR included · public domain · in Orbis since 1 Oct 2026","yes"],
+["North America","United States","","dsm","USGS 3DEP point clouds","Entwine point tiles on S3","https://s3-us-west-2.amazonaws.com/usgs-lidar-public/","open","National raw lidar · needs a point-to-surface step","yes"],
+["North America","United States","Oregon","dsm","DOGAMI surface model","ArcGIS ImageServer","https://gis.dogami.oregon.gov/arcgis/rest/services/lidar/DIGITAL_SURFACE_MODEL_MOSAIC/ImageServer","open","~3 ft · values in feet · in Orbis since 1 Oct 2026","yes"],
+["North America","United States","Kentucky","dsm","KyFromAbove first-return DSM","ArcGIS ImageServer","https://kyraster.ky.gov/arcgis/rest/services/ElevationServices/Ky_DSM_First_Return_2FT_Phase2/ImageServer","open","2 ft · values in feet · in Orbis since 1 Oct 2026","yes"],
+["North America","United States","Washington DC","dsm","DC nDSM 2024","ArcGIS ImageServer","https://imagery.dcgis.dc.gov/dcgis/rest/services/Lidar/nDSM_2024/ImageServer","open","1 m · in Orbis since 1 Oct 2026","yes"],
+["North America","United States","New York City","bldg","NYC building footprints (roof height)","Socrata JSON","https://data.cityofnewyork.us/resource/5zhs-2jue.json","open","height_roof in feet · in Orbis since 1 Oct 2026","yes"],
+["North America","United States","San Francisco","bldg","SF lidar building heights","Socrata JSON","https://data.sfgov.org/resource/ynuv-fyni.json","open","per building · left out of Orbis: no outlines (parcel numbers only)","yes"],
+["North America","United States","","ortho","USGS Imagery Only (NAIP + city imagery)","Tiled MapServer","https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer","open","public domain","yes"],
+["North America","United States","Massachusetts","ortho","MassGIS 2023","Tile cache","https://tiles.arcgis.com/tiles/hGdibHYSPO59RG1h/arcgis/rest/services/orthos2023/MapServer/tile/{z}/{y}/{x}","open","15 cm · in Orbis since 1 Oct 2026","yes"],
+["North America","United States","New York State","ortho","NYS ITS latest orthos","MapServer, WMS","https://orthos.its.ny.gov/arcgis/rest/services/wms/Latest/MapServer","open","6–12 in · left out of Orbis: 7 s a tile (NAIP covers the state)","yes"],
+["North America","United States","Minnesota","lake","MN DNR lake bathymetry","ArcGIS MapServer","https://enterprise.gisdata.mn.gov/aghost/rest/services/us_mn_state_dnr/water_lake_bathymetry/MapServer","open","~1,900 lakes, contours + DEM · in Orbis since 1 Oct 2026","yes"],
+["North America","Canada","","dsm","NRCan HRDEM surface and terrain models","WCS 1.1.1, STAC + cloud GeoTIFF","https://datacube.services.geo.ca/wrapper/ogc/elevation-hrdem-mosaic?service=WCS&request=GetCapabilities","open","1–2 m · OGL-Canada · in Orbis since 1 Oct 2026 (files read block by block)","yes"],
+["North America","Canada","New Brunswick","dsm","Lidar DSM","ArcGIS ImageServer","https://gis-erd-der.gnb.ca/server/rest/services/LidarProducts/DSM/ImageServer","open","1 m · in Orbis since 1 Oct 2026","yes"],
+["North America","Canada","Ontario","ortho","GEO Imagery Data Service","ArcGIS ImageServer","https://ws.geoservices.lrc.gov.on.ca/arcgis5/rest/services/AerialImagery/GEO_Imagery_Data_Service_2023to2027/ImageServer","open","16 cm · OGL-Ontario · in Orbis since 1 Oct 2026","yes"],
+["North America","Canada","Québec","ortho","Québec orthos","WMTS","https://geoegl.msp.gouv.qc.ca/apis/carto/wmts/1.0.0/?SERVICE=WMTS&REQUEST=GetCapabilities","open","","yes"],
+["North America","Canada","British Columbia","roads","BC Digital Road Atlas (lanes)","WFS GeoJSON","https://openmaps.gov.bc.ca/geo/pub/wfs","open","Lanes · OGL-BC · in Orbis since 1 Oct 2026","yes"],
+["North America","Canada","Ontario","lake","MNRF bathymetry contours","ArcGIS MapServer","https://ws.lioservices.lrc.gov.on.ca/arcgis2/rest/services/LIO_OPEN_DATA/LIO_Open01/MapServer/30","open","~240k contour lines · in Orbis since 1 Oct 2026","yes"],
+["North America","Canada","Saskatchewan","lake","Bathymetric surveys","ArcGIS MapServer","https://gis.saskatchewan.ca/arcgis/rest/services/Bathymetric/MapServer/0","open"," · left out of Orbis: an index of paper maps, no depths","yes"],
+["North America","Mexico","","geo","SGM lithology 1:50k/1:250k","ArcGIS identify","https://portal.sgm.gob.mx/arcgis/rest/services/SGM/SUNGeologiaContinuoMineDatosEs/MapServer","open","Terms unclear","yes"],
+["North America","Mexico","","roads","INEGI Red Nacional de Caminos (lanes, width)","Bulk shapefile","https://www.inegi.org.mx/programas/rnc/#descargas","open","Unreachable from your network","no"],
+
+["Latin America","Brazil","","geo","SGB litoestratigrafia 1:1M to 1:25k","ArcGIS REST, WFS","https://geoportal.sgb.gov.br/server/rest/services/geologia/litoestratigrafia_1000000/MapServer/0","open","LITOTIPOS field","yes"],
+["Latin America","Brazil","","roads","IBGE BC250 roads (lanes, carriageways)","WFS GeoJSON","https://geoservicos.ibge.gov.br/geoserver/wfs","open","nrfaixas, nrpistas · 1:250k · left out of Orbis: 1:250 000 lines are too far from OSM roads to match","yes"],
+["Latin America","Brazil","São Paulo","dsm","M3DC lidar 2017","Entwine point tiles on S3","https://ept-m3dc-pmsp.s3.sa-east-1.amazonaws.com/ept.json","open","Labelled GPL-3; check before use","yes"],
+["Latin America","Chile","","roads","MOP Red Vial (carriageways, surface)","ArcGIS REST","https://rest-sit.mop.gob.cl/arcgis/rest/services/VIALIDAD/Red_Vial_Chile/MapServer","open","Single/dual carriageway","yes"],
+["Latin America","Argentina","","geo","SEGEMAR SIGAM units","WFS GeoJSON","https://sigam.segemar.gov.ar/geoserver217/ows","open","1:2.5M, 1:250k · CC attribution","yes"],
+["Latin America","Argentina","Buenos Aires","bldg","Tejido urbano (height, floors)","Download","https://data.buenosaires.gob.ar/dataset/tejido-urbano","open","per building","part"],
+["Latin America","Colombia","","geo","SGC geological map 2023","ArcGIS REST","https://srvags.sgc.gov.co/arcgis/rest/services/Mapa_Geologico_Colombia/Mapa_Geologico_Colombia_V2023/MapServer/733","open","1:1M","yes"],
+["Latin America","Peru","","geo","INGEMMET geology 1:100k","ArcGIS REST","https://geocatmin.ingemmet.gob.pe/arcgis/rest/services/SERV_GEOLOGIA_100K_INTEGRADA/MapServer/6","open","1:100k","yes"],
+["Latin America","Uruguay","","ortho","IDEuy national orthophoto","WMS, WMTS","https://mapas.ide.uy/geoserver-raster/gwc/service/wmts","open","~10–32 cm","yes"],
+
+["East Asia","Japan","","bldg","PLATEAU 3D city models (measured height, storeys)","Catalogue → 3D Tiles","https://api.plateauview.mlit.go.jp/datacatalog/plateau-datasets","open","~300 cities · CC BY-compatible","yes"],
+["East Asia","Japan","","ortho","GSI seamless photo","XYZ","https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg","open","to z18 · in Orbis since 1 Oct 2026","yes"],
+["East Asia","Japan","","roads","GSI optimal vector tiles (width classes)","Vector tiles","https://cyberjapandata.gsi.go.jp/xyz/optimal_bvmap-v1/{z}/{x}/{y}.pbf","open","Width class, deck level, no lanes","yes"],
+["East Asia","Japan","","geo","GSJ Seamless Geological Map v2","REST JSON point query","https://gbank.gsj.jp/seamless/v2/api/1.2.1/legend.json?point={lat},{lon}","open","1:200k · English lithology","yes"],
+["East Asia","Japan","","lake","GSI lake surveys","XYZ raster (rendered)","https://cyberjapandata.gsi.go.jp/xyz/lakedata/{z}/{x}/{y}.png","open","~65 lakes · depth from colour bands only","part"],
+["East Asia","Hong Kong","","dsm","CEDD 2020 lidar DSM","Bulk GeoTIFF (ZIP)","https://bulkdata.csdi.gov.hk/cedd/lidar/2020dsm/","open","0.5 m · HK1980 grid","yes"],
+["East Asia","Hong Kong","","bldg","LandsD 3D spatial data","3D Tiles","https://data.map.gov.hk/api/3d-data/3dsd/WGS84/building/tileset.json","key","Docs ask for a free key","yes"],
+["East Asia","Hong Kong","","ortho","LandsD imagery","XYZ","https://mapapi.geodata.gov.hk/gs/api/v1.0.0/xyz/imagery/WGS84/{z}/{x}/{y}.png","open","to z18+ · in Orbis since 1 Oct 2026","yes"],
+["East Asia","Hong Kong","","geo","CEDD geology 1:20,000","ArcGIS identify","https://portal.csdi.gov.hk/server/rest/services/common/cedd_rcd_1636520885302_41109/MapServer","open","","yes"],
+["East Asia","Taiwan","","ortho","NLSC orthophoto","WMTS (z/y/x)","https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}","open","Yearly layers to 2025 · in Orbis since 1 Oct 2026","yes"],
+["East Asia","Taiwan","","geo","GSMMA geological maps","WMS (no GetFeatureInfo)","https://geomap.gsmma.gov.tw/mapguide/mapagent/mapagent.fcgi?SERVICE=WMS&REQUEST=GetCapabilities","open","Rock type from legend colours only","part"],
+["East Asia","South Korea","","roads","ITS standard node-link (lanes)","Bulk shapefile","https://www.its.go.kr/nodelink/nodelinkRef","open","Unreachable from your network","no"],
+
+["Oceania & South Asia","New Zealand","","dsm","LINZ national 1 m DSM","Cloud GeoTIFF on S3","https://nz-elevation.s3-ap-southeast-2.amazonaws.com/new-zealand/new-zealand/dsm_1m/2193/","open","1 m · CC BY 4.0 · left out of Orbis for now: LERC-compressed files","yes"],
+["Oceania & South Asia","New Zealand","","ortho","LINZ imagery","Cloud GeoTIFF on S3","https://nz-imagery.s3-ap-southeast-2.amazonaws.com/","open","7.5 cm–10 m · CC BY 4.0","yes"],
+["Oceania & South Asia","New Zealand","","geo","GNS 1:250K geology 2023","ArcGIS FeatureServer","https://gis.gns.cri.nz/server/rest/services/NZL_GNS_250K_Geology_2023/NZL_GNS_250K_geology_FeatureService_NZ/FeatureServer/55","open","mainrock, rockclass","yes"],
+["Oceania & South Asia","New Zealand","","roads","Topo50 road centrelines (lanes)","WFS","https://data.linz.govt.nz/layer/50329-nz-road-centrelines-topo-150k/","key","Lane count, no width · free key","part"],
+["Oceania & South Asia","Australia","","geo","GA surface geology 1:1M","ArcGIS REST, WMS","https://services.ga.gov.au/gis/rest/services/GA_Surface_Geology/MapServer","open","Needs a browser-like user agent","yes"],
+["Oceania & South Asia","Australia","Victoria","geo","GSV seamless geology 1:50k","WFS","https://opendata.maps.vic.gov.au/geoserver/wfs","open","CC BY 4.0","yes"],
+["Oceania & South Asia","Australia","Western Australia","geo","GSWA bedrock 1:100k","ArcGIS REST","https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Geology_and_Soils_Map/MapServer","open","CC BY 4.0","yes"],
+["Oceania & South Asia","Australia","New South Wales","ortho","NSW imagery","Tile cache (z/y/x)","https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Imagery/MapServer/tile/{z}/{y}/{x}","open","~10 cm urban · in Orbis since 1 Oct 2026","yes"],
+["Oceania & South Asia","Australia","Victoria","ortho","Vicmap aerial","WMTS KVP","https://base.maps.vic.gov.au/service?SERVICE=WMTS&REQUEST=GetCapabilities","open","CC BY 4.0 · in Orbis since 1 Oct 2026","yes"],
+["Oceania & South Asia","Australia","Queensland","ortho","Latest state programme","ImageServer tiles","https://spatial-img.information.qld.gov.au/arcgis/rest/services/Basemaps/LatestStateProgram_AllUsers/ImageServer","open","Gaps filled with non-open imagery","yes"],
+["Oceania & South Asia","Australia","New South Wales","roads","NSW road segments (lane count)","ArcGIS REST","https://portal.spatial.nsw.gov.au/server/rest/services/NSW_Transport_Theme/MapServer/5","open","Lanes only 0/1/2","yes"],
+["Oceania & South Asia","Australia","Melbourne","bldg","Building footprints with heights","Opendatasoft REST","https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/2023-building-footprints/records","open","CBD only","yes"],
+["Oceania & South Asia","Singapore","","ortho","OneMap satellite","XYZ (undocumented)","https://www.onemap.gov.sg/maps/tiles/Satellite/{z}/{x}/{y}.png","open","Terms of use, may change","yes"],
+["Oceania & South Asia","Singapore","","bldg","HDB blocks (storeys)","data.gov.sg API","https://api-open.data.gov.sg/v1/public/api/datasets/d_17f5382f26140b1fdae0ba2ef6239d2f/poll-download","open","~13,400 blocks","yes"],
+["Oceania & South Asia","Indonesia","","geo","BIG Peta Geologi","ArcGIS REST","https://kspservices.big.go.id/satupeta/rest/services/PUBLIK/SUMBER_DAYA_ALAM_DAN_LINGKUNGAN/MapServer/8","open","Formation name, age","yes"],
+
+["Middle East","United Arab Emirates","Abu Dhabi","bldg","AD-SDI buildings (floors)","ArcGIS REST query","https://arcgis.sdi.abudhabi.ae/agspublish/rest/services/OpenData/ADSDI_OpenData/MapServer/353","open","785,004 buildings · terms not checked","yes"],
+["Middle East","United Arab Emirates","Abu Dhabi","roads","AD-SDI road surface polygons","ArcGIS REST query","https://arcgis.sdi.abudhabi.ae/agspublish/rest/services/OpenData/ADSDI_OpenData/MapServer/111","open","True width from polygons","yes"],
+["Africa","South Africa","Cape Town","bldg","Building footprints (BLD_HGT metres)","ArcGIS REST","https://citymaps.capetown.gov.za/agsext/rest/services/Theme_Based/ODP_SPLIT_6/MapServer/2","open","287,328 buildings · terms not checked","yes"],
+["Africa","South Africa","","ortho","NGI aerial imagery (via OSM proxy)","XYZ","https://aerial.openstreetmap.org.za/layer/ngi-aerial/{z}/{x}/{y}.jpg","reg","25–50 cm · proxy meant for OSM; ask NGI","yes"]
+];
+
+const STATUS = { yes: ["Answered", "v-yes"], part: ["Partly", "v-part"], no: ["No answer", "v-no"] };
+const ACCESS = { open: "Open, no key", key: "Free key or account", reg: "Ask first" };
+const state = { cat: "", region: "", access: "", q: "" };
+try { const s = JSON.parse(localStorage.getItem("atlas-filters") || "{}"); Object.assign(state, s); } catch (e) {}
+
+const catsEl = document.getElementById("cats");
+function chip(key, label) {
+  const b = document.createElement("button");
+  b.className = "chip"; b.type = "button"; b.dataset.cat = key;
+  b.innerHTML = key ? `<span class="cat ${key}" style="border:0;padding:0">●</span>${label}` : label;
+  b.addEventListener("click", () => { state.cat = state.cat === key ? "" : key; render(); });
+  catsEl.appendChild(b);
+}
+chip("", "All data");
+Object.entries(CATS).forEach(([k, v]) => chip(k, v));
+
+const regionEl = document.getElementById("region");
+regionEl.innerHTML = `<option value="">All regions</option>` + [...new Set(R.map(r => r[0]))].map(r => `<option>${r}</option>`).join("");
+const accessEl = document.getElementById("access"), qEl = document.getElementById("q");
+regionEl.addEventListener("change", e => { state.region = e.target.value; render(); });
+accessEl.addEventListener("change", e => { state.access = e.target.value; render(); });
+qEl.addEventListener("input", e => { state.q = e.target.value; render(); });
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function render() {
+  regionEl.value = state.region; accessEl.value = state.access; qEl.value = state.q;
+  catsEl.querySelectorAll(".chip").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.cat === state.cat)));
+  const q = state.q.trim().toLowerCase();
+  const rows = R.filter(r => (!state.cat || r[3] === state.cat) && (!state.region || r[0] === state.region)
+    && (!state.access || (state.access === "key" ? r[7] !== "open" : r[7] === "open"))
+    && (!q || r.join(" ").toLowerCase().includes(q)));
+  const tb = document.getElementById("rows");
+  tb.innerHTML = rows.length ? rows.map(r => {
+    const [, country, sub, cat, prov, proto, ep, acc, detail, st] = r;
+    const link = /^https?:\/\//.test(ep) && !ep.includes("{") && !ep.includes("<") ? `<a class="ep" href="${esc(ep)}" target="_blank" rel="noopener">${esc(ep)}</a>` : `<span class="ep">${esc(ep)}</span>`;
+    return `<tr><td class="country">${esc(country)}${sub ? `<small>${esc(sub)}</small>` : ""}</td>`
+      + `<td><span class="cat ${cat}">${CATS[cat]}</span></td><td>${esc(prov)}</td><td class="note">${esc(proto)}</td>`
+      + `<td>${link}</td><td class="acc">${ACCESS[acc]}</td><td class="note">${esc(detail)}</td>`
+      + `<td><span class="pill ${STATUS[st][1]}">${STATUS[st][0]}</span></td></tr>`;
+  }).join("") : `<tr><td colspan="8" class="empty">Nothing matches these filters. Clear the search or pick "All data".</td></tr>`;
+  document.getElementById("count").textContent = `${rows.length} of ${R.length} services`;
+  try { localStorage.setItem("atlas-filters", JSON.stringify(state)); } catch (e) {}
+}
+render();
+</script>

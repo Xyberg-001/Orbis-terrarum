@@ -122,6 +122,26 @@ public final class BlockMapService {
         }
     }
 
+    /**
+     * This world's id: a random one made the first time it is asked for and kept in {@code <world>/orbis-map/world-id}
+     * (a world's name can be reused by a new world, and a server can start over under the same address).
+     */
+    public static synchronized String worldId(MinecraftServer server) {
+        Path f = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-map").resolve("world-id");
+        try {
+            if (Files.exists(f)) {
+                String id = Files.readString(f).trim();
+                if (!id.isEmpty()) return id;
+            }
+            String id = java.util.UUID.randomUUID().toString();
+            Files.createDirectories(f.getParent());
+            Files.writeString(f, id);
+            return id;
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
     /** Draws every region of the overworld that has not been drawn yet, in the background. */
     public static Component renderAll(MinecraftServer server) {
         BlockMapStore s = store;

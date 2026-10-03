@@ -188,11 +188,19 @@ public final class CaveCarver {
         }
     }
 
-    /** Blocks the carver may remove (vanilla's carver tag, plus the plain rock the mod lays down, for offline tests). */
+    /**
+     * Blocks the carver may remove: vanilla's overworld carver list as of 26.2 (26.3 dropped the tag), plus the plain
+     * rock the mod lays down, for offline tests.
+     */
     static boolean replaceable(BlockState state) {
         return state.is(Blocks.STONE) || state.is(Blocks.DEEPSLATE) || state.is(Blocks.TUFF) || state.is(Blocks.GRAVEL)
                 || state.is(Blocks.DIRT) || state.is(Blocks.ANDESITE) || state.is(Blocks.DIORITE) || state.is(Blocks.GRANITE)
-                || state.is(BlockTags.OVERWORLD_CARVER_REPLACEABLES);
+                || state.is(BlockTags.BASE_STONE_OVERWORLD) || state.is(BlockTags.SUBSTRATE_OVERWORLD) || state.is(BlockTags.SAND)
+                || state.is(BlockTags.TERRACOTTA) || state.is(BlockTags.IRON_ORES) || state.is(BlockTags.COPPER_ORES)
+                || state.is(BlockTags.SNOW) || state.is(Blocks.WATER) || state.is(Blocks.SUSPICIOUS_GRAVEL)
+                || state.is(Blocks.SANDSTONE) || state.is(Blocks.RED_SANDSTONE) || state.is(Blocks.CALCITE) || state.is(Blocks.SMOOTH_BASALT)
+                || state.is(Blocks.PACKED_ICE) || state.is(Blocks.RAW_IRON_BLOCK) || state.is(Blocks.RAW_COPPER_BLOCK)
+                || state.is(Blocks.CINNABAR) || state.is(Blocks.SULFUR) || state.is(Blocks.POTENT_SULFUR);
     }
 
     private static final class Chunk {

@@ -10,4 +10,8 @@ public interface DemSource {
 
     /** Whether this source has real data coverage at this coordinate. */
     boolean hasCoverage(double lat, double lon);
+
+    /** Loads what the given lat/lon boxes (south, west, north, east) need, in parallel, and waits (sources with downloads). */
+    default void prefetch(java.util.List<double[]> boxes) {
+    }
 }

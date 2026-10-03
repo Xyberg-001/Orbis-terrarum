@@ -24,9 +24,24 @@ public final class AreaSweep {
     private final double[] ex0, ez0, ex1, ez1;
     private final double bandMinZ, bandSize;
     private final int[][] bands;
+    /** A drawn selection's chunks, swept exactly as selected (no widening); null for an outline. */
+    private final ChunkSelection selection;
+
+    /** A sweep over exactly the chunks of a selection drawn on the world map; {@code outline} is only drawn. */
+    public AreaSweep(ChunkSelection selection, List<double[][]> outline) {
+        this.polys = outline;
+        this.selection = selection;
+        this.firstRow = selection.firstRow();
+        this.lastRow = selection.lastRow();
+        ex0 = ez0 = ex1 = ez1 = new double[0];
+        bandMinZ = 0;
+        bandSize = 1;
+        bands = new int[0][];
+    }
 
     public AreaSweep(List<double[][]> polysInBlocks) {
         this.polys = polysInBlocks;
+        this.selection = null;
         double minZ = Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
         for (double[][] poly : polys) {
             for (double[] p : poly) {
@@ -107,6 +122,7 @@ public final class AreaSweep {
 
     /** Inclusive chunk-X ranges of row {@code cz}, sorted and merged. */
     public List<int[]> rowRanges(int cz) {
+        if (selection != null) return selection.runs(cz);
         List<int[]> ranges = new ArrayList<>();
         for (int sample = 2; sample <= 14; sample += 6) {
             double z = cz * 16 + sample + 0.5;

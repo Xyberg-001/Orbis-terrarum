@@ -6,7 +6,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.Util;
+import com.berg.orbis.mc.McClient;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Files;
@@ -43,7 +43,7 @@ public final class OpenMapCommand {
             source.sendError(Component.literal("No map yet: run /orbis pregen map first."));
             return 0;
         }
-        Util.getPlatform().openPath(page);
+        McClient.openPath(page);
         source.sendFeedback(Component.literal("Opening the map in your browser.").withStyle(net.minecraft.ChatFormatting.GRAY));
         return 1;
     }

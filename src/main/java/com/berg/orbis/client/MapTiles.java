@@ -1,8 +1,7 @@
 package com.berg.orbis.client;
 
 import com.mojang.blaze3d.platform.NativeImage;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.FilterMode;
+import com.berg.orbis.mc.McClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
@@ -20,7 +19,8 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Web map tiles (Esri street map, satellite photos with place names, topographic map) for the in-game area
+ * Web map tiles (Esri street map, satellite photos with place names, and the elevation layer drawn from the terrain
+ * tiles; Esri's topographic map was dropped for it on 3 Oct 2026) for the in-game area
  * preview: downloaded by a few background threads, newest requests first, decoded off the render thread and
  * uploaded as textures a few per frame. Tiles are kept on disk like a browser keeps them (TileDiskCache, up to
  * 300 MB) and the latest few MB in memory, so reopening the preview is instant; textures are freed on close.
@@ -29,7 +29,8 @@ public final class MapTiles {
     public enum Layer {
         STREET("Street map", "World_Street_Map", null),
         SATELLITE("Satellite", "World_Imagery", "Reference/World_Boundaries_and_Places"),
-        TOPO("Topographic", "World_Topo_Map", null);
+        /** Heights in colour with hillshading, drawn here from the world's terrain tiles (see {@link ElevationTiles}). */
+        ELEVATION("Elevation", ElevationTiles.SERVICE, "Reference/World_Boundaries_and_Places");
 
         public final String label, service, labels;
 
@@ -82,12 +83,14 @@ public final class MapTiles {
     private static final class TileTexture extends DynamicTexture {
         TileTexture(String name, NativeImage image) {
             super(() -> name, image);
-            this.sampler = RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);
+            this.sampler = McClient.linearClampSampler();
         }
     }
 
     private final Map<String, Tile> tiles = new ConcurrentHashMap<>();
-    private final TileDiskCache disk = new TileDiskCache(com.berg.orbis.OrbisMod.configDir().resolve("map-tile-cache"), USER_AGENT);
+    /** Heights of the elevation tiles on the GPU (ElevationTiles.GRID a side, metres), for the cursor readout. */
+    private final Map<String, short[]> heights = new ConcurrentHashMap<>();
+    private final TileDiskCache disk = new TileDiskCache(com.berg.orbis.OrbisMod.dataDir().resolve("map-tile-cache"), USER_AGENT);
     private final LinkedBlockingDeque<Tile> queue = new LinkedBlockingDeque<>();
     private final ConcurrentLinkedQueue<Tile> decoded = new ConcurrentLinkedQueue<>();
     private final List<Thread> workers = new ArrayList<>();
@@ -162,6 +165,7 @@ public final class MapTiles {
                 Tile t = old.get(i);
                 mc.getTextureManager().release(t.id);
                 tiles.remove(key(t.service, t.z, t.x, t.y));
+                heights.remove(key(t.service, t.z, t.x, t.y));
                 ready--;
             }
         }
@@ -181,6 +185,10 @@ public final class MapTiles {
                 continue;
             }
             String k = key(t.service, t.z, t.x, t.y);
+            if (ElevationTiles.SERVICE.equals(t.service)) {
+                elevationTile(t, k);
+                continue;
+            }
             try {
                 byte[] bytes;
                 synchronized (BYTES) {
@@ -203,7 +211,7 @@ public final class MapTiles {
                     continue;
                 }
                 int w = img.getWidth(), h = img.getHeight();
-                t.argb = toAbgr(img.getRGB(0, 0, w, h, null, 0, w));
+                t.argb = toAbgr(com.berg.orbis.dem.TileImages.argbPixels(img));
                 t.w = w;
                 t.h = h;
                 t.state = State.DECODED;
@@ -215,6 +223,47 @@ public final class MapTiles {
                 t.state = State.FAILED;
             }
         }
+    }
+
+    /** An elevation tile: the terrain tile coloured (and its heights kept for the readout). */
+    private void elevationTile(Tile t, String k) {
+        try {
+            byte[] bytes = ElevationTiles.fetch(t.z, t.x, t.y);
+            if (bytes == null) {
+                t.retryAt = 0; // no terrain at this zoom: the parent is drawn instead
+                t.state = State.FAILED;
+                return;
+            }
+            ElevationTiles.Rendered r = ElevationTiles.render(bytes, t.z, t.x, t.y);
+            heights.put(k, r.grid());
+            t.argb = toAbgr(r.argb());
+            t.w = r.w();
+            t.h = r.h();
+            t.state = State.DECODED;
+            decoded.add(t);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            t.retryAt = System.currentTimeMillis() + 15_000;
+            t.state = State.FAILED;
+        }
+    }
+
+    /**
+     * The height in metres at a place from the elevation tiles loaded (the finest of zoom {@code z} and the eight
+     * above it), or NaN while none covers it.
+     */
+    public double elevationAt(double lat, double lon, int z) {
+        for (int zz = Math.min(MAX_ZOOM, z); zz >= Math.max(0, z - 8); zz--) {
+            double[] f = com.berg.orbis.dem.DemTileProvider.latLonToTileFraction(lat, lon, zz);
+            int tx = (int) Math.floor(f[0]), ty = (int) Math.floor(f[1]);
+            short[] grid = heights.get(key(ElevationTiles.SERVICE, zz, Math.floorMod(tx, 1 << zz), ty));
+            if (grid == null) continue;
+            int gx = Math.min(ElevationTiles.GRID - 1, (int) ((f[0] - tx) * ElevationTiles.GRID));
+            int gy = Math.min(ElevationTiles.GRID - 1, (int) ((f[1] - ty) * ElevationTiles.GRID));
+            return grid[gy * ElevationTiles.GRID + gx];
+        }
+        return Double.NaN;
     }
 
     /** ARGB (Java images) to the byte order NativeImage keeps in memory (R, G, B, A = ABGR as a little-endian int), in place. */
@@ -249,6 +298,7 @@ public final class MapTiles {
             if (t.state == State.READY && t.id != null) mc.getTextureManager().release(t.id);
         }
         tiles.clear();
+        heights.clear();
         ready = 0;
     }
 }

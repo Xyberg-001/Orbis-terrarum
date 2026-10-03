@@ -72,6 +72,11 @@ public final class WorldSettings {
     public int seaLevelY = OrbisConfig.DEFAULT_SEA_LEVEL_Y;
     /** Height of the world in blocks; 0 = fit to the terrain around the origin when the world is created (resolved and stored then). */
     public int worldHeight = 0;
+    /**
+     * This world's squeeze range below the ceiling (see VerticalMapping), set when a fitted world is created; 0 = the
+     * installation's softCeilingBlocks, which is what every world made before 1.1 used.
+     */
+    public int softCeilingBlocks = 0;
     public String verticalMode = "relative";
     public double reliefKneeMeters = 1500;
     public double reliefSmoothingKm = 25;
@@ -87,6 +92,7 @@ public final class WorldSettings {
     public double residentsPerChunk = 0.3;
     public boolean residentJobs = false;
     public boolean buildingSigns = true;
+    public boolean streetSigns = true;
     public boolean furnishInteriors = true;
     public boolean streetLife = true;
     public boolean transitLines = true;
@@ -96,15 +102,31 @@ public final class WorldSettings {
     public boolean externalPlaces = true;
     public boolean treesFromCanopy = true;
     public boolean roofsFromSurfaceModel = true;
-    public boolean groundClassesFromModel = true;
     public boolean generateWater = true;
     public boolean generateLandCover = true;
     public boolean generateTrees = true;
+    public boolean autumnColours = false;
     public boolean generateStreetFurniture = true;
     public boolean generateSchematics = true;
     public boolean generateBedrock = true;
     public boolean generateOres = true;
     public boolean spawnAnimals = true;
+    public boolean shopAwnings = true;
+    public boolean roadRamps = true;
+    public boolean roadGrading = true;
+    public boolean bedrockTypes = true;
+    public boolean realWaterDepths = true;
+    public boolean realDaylight = true;
+    public boolean realWeather = true;
+    public boolean realSeasons = true;
+    public boolean realSnow = true;
+    public boolean villagerClockHours = true;
+    public boolean pregenOnCreate = false;
+    public boolean pregenHardLimit = false;
+    public boolean pregenSkipOpenSea = true;
+    public boolean pregenSelectionSkipsSea = false;
+    public String pregenArea = "";
+    public java.util.List<OrbisConfig.PregenShape> pregenShapes = new java.util.ArrayList<>();
     public boolean vanillaStructures = true;
     public boolean vanillaCaves = true;
     public boolean interiorLights = true;
@@ -127,6 +149,7 @@ public final class WorldSettings {
     // ---- data ----
     public boolean useAerialImagery = true;
     public boolean useHighResElevation = false;
+    public boolean lidarSurfaceModel = false;
     public boolean worldCoverLandCover = true;
     public boolean atlasBuildingHeights = true;
     public boolean useBathymetry = true;
@@ -155,6 +178,7 @@ public final class WorldSettings {
         s.residentsPerChunk = c.residentsPerChunk;
         s.residentJobs = c.residentJobs;
         s.buildingSigns = c.buildingSigns;
+        s.streetSigns = c.streetSigns;
         s.furnishInteriors = c.furnishInteriors;
         s.streetLife = c.streetLife;
         s.transitLines = c.transitLines;
@@ -164,15 +188,31 @@ public final class WorldSettings {
         s.externalPlaces = c.externalPlaces;
         s.treesFromCanopy = c.treesFromCanopy;
         s.roofsFromSurfaceModel = c.roofsFromSurfaceModel;
-        s.groundClassesFromModel = c.groundClassesFromModel;
         s.generateWater = c.generateWater;
         s.generateLandCover = c.generateLandCover;
         s.generateTrees = c.generateTrees;
+        s.autumnColours = c.autumnColours;
         s.generateStreetFurniture = c.generateStreetFurniture;
         s.generateSchematics = c.generateSchematics;
         s.generateBedrock = c.generateBedrock;
         s.generateOres = c.generateOres;
         s.spawnAnimals = c.spawnAnimals;
+        s.shopAwnings = c.shopAwnings;
+        s.roadRamps = c.roadRamps;
+        s.roadGrading = c.roadGrading;
+        s.bedrockTypes = c.bedrockTypes;
+        s.realWaterDepths = c.realWaterDepths;
+        s.realDaylight = c.realDaylight;
+        s.realWeather = c.realWeather;
+        s.realSeasons = c.realSeasons;
+        s.realSnow = c.realSnow;
+        s.villagerClockHours = c.villagerClockHours;
+        s.pregenOnCreate = c.pregenOnCreate;
+        s.pregenHardLimit = c.pregenHardLimit;
+        s.pregenSkipOpenSea = c.pregenSkipOpenSea;
+        s.pregenSelectionSkipsSea = c.pregenSelectionSkipsSea;
+        s.pregenArea = c.pregenArea == null ? "" : c.pregenArea;
+        s.pregenShapes = c.pregenShapes == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(c.pregenShapes);
         s.vanillaStructures = c.vanillaStructures;
         s.vanillaCaves = c.vanillaCaves;
         s.interiorLights = c.interiorLights;
@@ -191,6 +231,7 @@ public final class WorldSettings {
         s.metersPerStorey = c.metersPerStorey;
         s.useAerialImagery = c.useAerialImagery;
         s.useHighResElevation = c.useHighResElevation;
+        s.lidarSurfaceModel = c.lidarSurfaceModel;
         s.worldCoverLandCover = c.worldCoverLandCover;
         s.atlasBuildingHeights = c.atlasBuildingHeights;
         s.useBathymetry = c.useBathymetry;
@@ -208,6 +249,7 @@ public final class WorldSettings {
         c.exactSpawn = exactSpawn;
         c.seaLevelY = seaLevelY;
         c.worldHeight = worldHeight > 0 ? worldHeight : OrbisConfig.DIMENSION_HEIGHT;
+        if (softCeilingBlocks > 0) c.softCeilingBlocks = softCeilingBlocks;
         c.verticalMode = verticalMode;
         c.reliefKneeMeters = reliefKneeMeters;
         c.reliefSmoothingKm = reliefSmoothingKm;
@@ -221,6 +263,7 @@ public final class WorldSettings {
         c.residentsPerChunk = residentsPerChunk;
         c.residentJobs = residentJobs;
         c.buildingSigns = buildingSigns;
+        c.streetSigns = streetSigns;
         c.furnishInteriors = furnishInteriors;
         c.streetLife = streetLife;
         c.transitLines = transitLines;
@@ -230,15 +273,31 @@ public final class WorldSettings {
         c.externalPlaces = externalPlaces;
         c.treesFromCanopy = treesFromCanopy;
         c.roofsFromSurfaceModel = roofsFromSurfaceModel;
-        c.groundClassesFromModel = groundClassesFromModel;
         c.generateWater = generateWater;
         c.generateLandCover = generateLandCover;
         c.generateTrees = generateTrees;
+        c.autumnColours = autumnColours;
         c.generateStreetFurniture = generateStreetFurniture;
         c.generateSchematics = generateSchematics;
         c.generateBedrock = generateBedrock;
         c.generateOres = generateOres;
         c.spawnAnimals = spawnAnimals;
+        c.shopAwnings = shopAwnings;
+        c.roadRamps = roadRamps;
+        c.roadGrading = roadGrading;
+        c.bedrockTypes = bedrockTypes;
+        c.realWaterDepths = realWaterDepths;
+        c.realDaylight = realDaylight;
+        c.realWeather = realWeather;
+        c.realSeasons = realSeasons;
+        c.realSnow = realSnow;
+        c.villagerClockHours = villagerClockHours;
+        c.pregenOnCreate = pregenOnCreate;
+        c.pregenHardLimit = pregenHardLimit;
+        c.pregenSkipOpenSea = pregenSkipOpenSea;
+        c.pregenSelectionSkipsSea = pregenSelectionSkipsSea;
+        c.pregenArea = pregenArea == null ? "" : pregenArea;
+        c.pregenShapes = pregenShapes == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(pregenShapes);
         c.vanillaStructures = vanillaStructures;
         c.vanillaCaves = vanillaCaves;
         c.interiorLights = interiorLights;
@@ -257,6 +316,7 @@ public final class WorldSettings {
         c.metersPerStorey = metersPerStorey;
         c.useAerialImagery = useAerialImagery;
         c.useHighResElevation = useHighResElevation;
+        c.lidarSurfaceModel = lidarSurfaceModel;
         c.worldCoverLandCover = worldCoverLandCover;
         c.atlasBuildingHeights = atlasBuildingHeights;
         c.useBathymetry = useBathymetry;

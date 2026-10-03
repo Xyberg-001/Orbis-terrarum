@@ -54,10 +54,118 @@ public final class OrbisHttp {
         }
     }
 
+    /**
+     * Public root certificates Java's own list lacks while browsers, Windows and Mozilla trust them (resources
+     * orbis-roots, from Mozilla's bundle): HARICA's 2021 roots, which GÉANT's certificates for Europe's universities
+     * and public bodies chain to since 2025 (Finland's environment institute, Spain's IDEE), and Deutsche Telekom's
+     * newer roots (Berlin's geoportal). Certificates are still checked in full, host name included: a server is
+     * trusted when Java's list or one of these roots vouches for it.
+     */
+    private static final String[] EXTRA_ROOTS = {"HARICA_TLS_RSA_Root_CA_2021.pem", "HARICA_TLS_ECC_Root_CA_2021.pem",
+            "Telekom_Security_TLS_RSA_Root_2023.pem", "Telekom_Security_TLS_ECC_Root_2020.pem"};
+    private static final javax.net.ssl.SSLContext TLS = tls();
+
     private static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .followRedirects(HttpClient.Redirect.NORMAL)
+            .sslContext(TLS)
             .build();
+
+    private static javax.net.ssl.SSLContext tls() {
+        try {
+            javax.net.ssl.X509ExtendedTrustManager builtIn = trustManager(null);
+            java.security.KeyStore extra = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType());
+            extra.load(null, null);
+            java.security.cert.CertificateFactory cf = java.security.cert.CertificateFactory.getInstance("X.509");
+            for (String name : EXTRA_ROOTS) {
+                try (InputStream in = OrbisHttp.class.getResourceAsStream("/orbis-roots/" + name)) {
+                    if (in != null) extra.setCertificateEntry(name, cf.generateCertificate(in));
+                }
+            }
+            javax.net.ssl.X509ExtendedTrustManager added = trustManager(extra);
+            javax.net.ssl.SSLContext ctx = javax.net.ssl.SSLContext.getInstance("TLS");
+            ctx.init(null, new javax.net.ssl.TrustManager[]{new EitherTrustManager(builtIn, added)}, null);
+            return ctx;
+        } catch (Exception e) {
+            System.err.println("[orbis] Extra root certificates not loaded (" + e + "); Java's own list only");
+            try {
+                return javax.net.ssl.SSLContext.getDefault();
+            } catch (java.security.NoSuchAlgorithmException ex) {
+                throw new IllegalStateException(ex);
+            }
+        }
+    }
+
+    private static javax.net.ssl.X509ExtendedTrustManager trustManager(java.security.KeyStore store) throws Exception {
+        javax.net.ssl.TrustManagerFactory f = javax.net.ssl.TrustManagerFactory.getInstance(javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm());
+        f.init(store);
+        for (javax.net.ssl.TrustManager tm : f.getTrustManagers()) {
+            if (tm instanceof javax.net.ssl.X509ExtendedTrustManager x) return x;
+        }
+        throw new IllegalStateException("no X509 trust manager");
+    }
+
+    /** Trusts a server when either list does (each checks the whole chain and, for HTTPS, the host name). */
+    private static final class EitherTrustManager extends javax.net.ssl.X509ExtendedTrustManager {
+        private final javax.net.ssl.X509ExtendedTrustManager a, b;
+
+        EitherTrustManager(javax.net.ssl.X509ExtendedTrustManager a, javax.net.ssl.X509ExtendedTrustManager b) {
+            this.a = a;
+            this.b = b;
+        }
+
+        @Override
+        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType, Socket socket) throws java.security.cert.CertificateException {
+            try {
+                a.checkServerTrusted(chain, authType, socket);
+            } catch (java.security.cert.CertificateException e) {
+                b.checkServerTrusted(chain, authType, socket);
+            }
+        }
+
+        @Override
+        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType, javax.net.ssl.SSLEngine engine)
+                throws java.security.cert.CertificateException {
+            try {
+                a.checkServerTrusted(chain, authType, engine);
+            } catch (java.security.cert.CertificateException e) {
+                b.checkServerTrusted(chain, authType, engine);
+            }
+        }
+
+        @Override
+        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+            try {
+                a.checkServerTrusted(chain, authType);
+            } catch (java.security.cert.CertificateException e) {
+                b.checkServerTrusted(chain, authType);
+            }
+        }
+
+        @Override
+        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType, Socket socket) throws java.security.cert.CertificateException {
+            a.checkClientTrusted(chain, authType, socket);
+        }
+
+        @Override
+        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType, javax.net.ssl.SSLEngine engine)
+                throws java.security.cert.CertificateException {
+            a.checkClientTrusted(chain, authType, engine);
+        }
+
+        @Override
+        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws java.security.cert.CertificateException {
+            a.checkClientTrusted(chain, authType);
+        }
+
+        @Override
+        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+            java.security.cert.X509Certificate[] x = a.getAcceptedIssuers(), y = b.getAcceptedIssuers();
+            java.security.cert.X509Certificate[] out = java.util.Arrays.copyOf(x, x.length + y.length);
+            System.arraycopy(y, 0, out, x.length, y.length);
+            return out;
+        }
+    }
 
     /** host -> [ip, expiry millis] */
     private static final ConcurrentHashMap<String, Object[]> DOH_CACHE = new ConcurrentHashMap<>();
@@ -174,7 +282,7 @@ public final class OrbisHttp {
         plain.setSoTimeout(timeoutSeconds * 1000);
         final Socket socket;
         if (tls) {
-            SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+            SSLSocketFactory factory = TLS.getSocketFactory();
             SSLSocket ssl = (SSLSocket) factory.createSocket(plain, host, port, true);
             SSLParameters params = ssl.getSSLParameters();
             params.setServerNames(List.of(new SNIHostName(host)));

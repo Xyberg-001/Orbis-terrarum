@@ -49,7 +49,8 @@ import net.minecraft.world.level.levelgen.structure.StructurePiece;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.TerrainAdjustment;
 import net.minecraft.core.Holder;
-import net.minecraft.world.level.NaturalSpawner;
+import com.berg.orbis.mc.ChunkGeneratorBridge;
+import com.berg.orbis.mc.Mc;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
 import net.minecraft.world.level.levelgen.RandomSupport;
@@ -74,7 +75,7 @@ import java.util.concurrent.CompletableFuture;
  * mineshafts, strongholds) is kept, moved into the {@link UndergroundBand}
  * 100 blocks under the lowest nearby ground.
  */
-public class RealWorldChunkGenerator extends ChunkGenerator {
+public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
 
     public static final MapCodec<RealWorldChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(instance ->
             instance.group(
@@ -131,10 +132,9 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
      * surface, so no tunnel opens in a street or under a building.
      */
     @Override
-    public void applyCarvers(WorldGenRegion level, long seed, RandomState randomState, BiomeManager biomeManager,
-                             StructureManager structureManager, ChunkAccess chunk) {
+    protected void carve(long seed, ChunkAccess chunk) {
         WorldModel model = model();
-        if (!model.cfg().vanillaCaves) return;
+        if (!model.cfg().vanillaCaves || HardLimit.blocks(chunk.getPos().x(), chunk.getPos().z())) return;
         ChunkPos pos = chunk.getPos();
         int chunkX = pos.getMinBlockX() >> 4, chunkZ = pos.getMinBlockZ() >> 4;
         int top = model.band().top(chunkX, chunkZ);
@@ -164,20 +164,16 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
     }
 
     @Override
-    public void buildSurface(WorldGenRegion level, StructureManager structureManager, RandomState randomState, ChunkAccess chunk) {
-        // The painter writes final surface blocks directly in fillFromNoise.
-    }
-
-    @Override
     public void spawnOriginalMobs(WorldGenRegion level) {
         // Animals at generation, exactly as vanilla does it (they only appear where the
         // biome's spawn rules allow: grass, sky light), plus natural spawning during play.
         if (!model().cfg().spawnAnimals) return;
         ChunkPos center = level.getCenter();
-        Holder<Biome> biome = level.getBiome(center.getWorldPosition().atY(level.getMaxY()));
+        if (HardLimit.blocks(center.x(), center.z())) return;
+        BlockPos biomePos = center.getWorldPosition().atY(level.getMaxY());
         WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(RandomSupport.generateUniqueSeed()));
         random.setDecorationSeed(level.getSeed(), center.getMinBlockX(), center.getMinBlockZ());
-        NaturalSpawner.spawnMobsForChunkGeneration(level, biome, center, random);
+        Mc.spawnMobsForChunkGeneration(level, biomePos, center, random);
     }
 
     /**
@@ -189,9 +185,15 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
      *   lowest ground within ~100 m of the start. They keep their vanilla depth
      *   relationships, stay reachable from any surface, and never float in the
      *   sky the way their absolute vanilla Y ranges would put them here.</li>
-     *   <li>Surface ones (villages, temples, outposts, ruined portals,
-     *   shipwrecks, monuments, ...) only where the map has nothing: a start whose
-     *   footprint touches a real building, road or water body is dropped.</li>
+     *   <li>Surface ones (villages, temples, outposts, ruined portals, ...) only
+     *   where the map has nothing: a start whose footprint touches a real
+     *   building, road or water body is dropped. Trail ruins count as surface
+     *   ones: vanilla buries them a few blocks under the ground for brushing,
+     *   which is where they stay (they used to be moved down with the caves).</li>
+     *   <li>Sea ones (shipwrecks, ocean ruins, monuments) only in open water deep
+     *   enough to cover them. Vanilla builds a monument at a fixed Y 39..61 (for
+     *   sea level 63); it is moved to the same place under this world's sea
+     *   level.</li>
      * </ul>
      */
     @Override
@@ -199,7 +201,7 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
                                  StructureManager structureManager, ChunkAccess chunk, StructureTemplateManager templateManager,
                                  ResourceKey<Level> dimension) {
         WorldModel model = model();
-        if (!model.cfg().vanillaStructures) return;
+        if (!model.cfg().vanillaStructures || HardLimit.blocks(chunk.getPos().x(), chunk.getPos().z())) return;
         super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager, dimension);
         java.util.Map<Structure, StructureStart> starts = chunk.getAllStarts();
         if (starts.isEmpty()) return;
@@ -216,7 +218,8 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
             // Underground by step or by terrain adaptation (the stronghold is a "surface_structures" that vanilla
             // buries below the generator's sea level, i.e. below Y -1700 here), or anything vanilla already put
             // under the band top: all of it is moved into the band.
-            boolean underground = isUnderground(e.getKey()) || start.getBoundingBox().maxY() < bandTop;
+            String path = registry.getKey(e.getKey()).getPath();
+            boolean underground = !path.equals("trail_ruins") && (isUnderground(e.getKey()) || start.getBoundingBox().maxY() < bandTop);
             if (underground) {
                 BoundingBox before = start.getBoundingBox();
                 sinkBelowGround(model, start, bandTop);
@@ -228,14 +231,46 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
                 }
                 kept.put(e.getKey(), start);
             } else if (isWaterStructure(registry.getKey(e.getKey()).getPath())
-                    ? footprintIsOpenWater(model, start.getBoundingBox())
+                    ? footprintIsOpenWater(model, start.getBoundingBox(), depthNeeded(registry.getKey(e.getKey()).getPath(), start.getBoundingBox()))
                     : footprintIsFree(model, start.getBoundingBox())) {
+                if (registry.getKey(e.getKey()).getPath().equals("monument")) moveMonumentToSeaLevel(start, getSeaLevel());
+                if (path.equals("trail_ruins")) buryJustBelowGround(model, start);
                 kept.put(e.getKey(), start);
             } else {
                 kept.put(e.getKey(), StructureStart.INVALID_START);
             }
         }
         chunk.setAllStarts(kept);
+    }
+
+    /**
+     * Trail ruins under the ground, as shallow as they can be: the ruin goes up or down until its top is two blocks
+     * under the lowest ground over its footprint. Vanilla starts them 15 blocks under the surface and relies on its
+     * "bury" terrain adjustment, which Orbis's own terrain does not apply; left there, their tops lay 14 to 41
+     * blocks down (Bergen 1:2, 2 Oct 2026), out of reach of anyone looking for them with a brush.
+     */
+    private static void buryJustBelowGround(WorldModel model, StructureStart start) {
+        // The ruin's own blocks: the start's box is 12 blocks bigger on every side for the bury adjustment, which put
+        // the first version of this 14 to 41 blocks down again (top 12 too high, ground taken over a wider area).
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (StructurePiece piece : start.getPieces()) {
+            BoundingBox b = piece.getBoundingBox();
+            minX = Math.min(minX, b.minX()); minY = Math.min(minY, b.minY()); minZ = Math.min(minZ, b.minZ());
+            maxX = Math.max(maxX, b.maxX()); maxY = Math.max(maxY, b.maxY()); maxZ = Math.max(maxZ, b.maxZ());
+        }
+        if (minX > maxX) return;
+        int ground = Integer.MAX_VALUE;
+        for (int x = minX; x <= maxX; x += 2) {
+            for (int z = minZ; z <= maxZ; z += 2) ground = Math.min(ground, model.terrainHeight(x, z));
+        }
+        if (ground == Integer.MAX_VALUE) return;
+        int dy = (ground - 2) - maxY;
+        int floor = model.cfg().minY + 6;
+        if (minY + dy < floor) dy = floor - minY;
+        if (dy == 0) return;
+        for (StructurePiece piece : start.getPieces()) piece.move(0, dy, 0);
+        ((com.berg.orbis.mixin.StructureStartAccessor) (Object) start).orbis$setCachedBoundingBox(null);
     }
 
     private static boolean isUnderground(Structure structure) {
@@ -263,11 +298,47 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
 
     /** Shipwrecks, ocean ruins and monuments belong in the sea: they need open water instead of empty land. */
     private static boolean isWaterStructure(String path) {
-        return path.startsWith("shipwreck") || path.startsWith("ocean_ruin") || path.equals("monument");
+        return (path.startsWith("shipwreck") && !path.equals("shipwreck_beached")) || path.startsWith("ocean_ruin") || path.equals("monument");
     }
 
-    /** True when the footprint is real sea or lake water with no building, road or bridge in it. */
-    private static boolean footprintIsOpenWater(WorldModel model, BoundingBox box) {
+    /**
+     * Blocks of water a sea structure needs over the bed so it is not left sticking out: a monument its vanilla
+     * 24 (sea level 63, building 39..61), a wreck its 8 or so, a ruin its height up to 12 (big ruins sink into the
+     * bed a little).
+     */
+    private static int depthNeeded(String path, BoundingBox box) {
+        if (path.equals("monument")) return 24;
+        if (path.startsWith("shipwreck")) return 8;
+        return Math.max(5, Math.min(12, box.getYSpan()));
+    }
+
+    /** Vanilla's monument frame (fixed Y 39..61 under sea level 63) moved to this world's sea level. */
+    private static void moveMonumentToSeaLevel(StructureStart start, int seaLevel) {
+        int dy = seaLevel - 63;
+        if (dy == 0 || start.getBoundingBox().maxY() < seaLevel) return;
+        for (StructurePiece piece : start.getPieces()) piece.move(0, dy, 0);
+        ((com.berg.orbis.mixin.StructureStartAccessor) (Object) start).orbis$setCachedBoundingBox(null);
+    }
+
+    /**
+     * Water depth over the bed at a column, in blocks, as the painter will make it: the sea's from the elevation
+     * (0 where the elevation has no depth near the shore, which is too shallow for any of these anyway), a lake's
+     * or river's from its shaped bed or its own depth. 0 on land.
+     */
+    private static int waterDepth(WorldModel model, RegionRaster r, int idx, int x, int z) {
+        com.berg.orbis.feature.WaterFeature wf = r.waterAt(idx);
+        int sea = model.cfg().seaLevelY;
+        if ((r.hasCoastline && r.isSea(idx)) || (wf != null && wf.atSeaLevel)
+                || (wf == null && !r.hasCoastline && model.cfg().seaFromElevation && model.terrainHeight(x, z) < sea)) {
+            return Math.max(0, sea - model.terrainHeight(x, z));
+        }
+        if (wf == null) return 0;
+        int bed = r.bedDepthAt(idx);
+        return bed > 0 ? bed : wf.depth;
+    }
+
+    /** True when the footprint is real sea or lake water, at least {@code minDepth} blocks deep, with no building, road or bridge in it. */
+    private static boolean footprintIsOpenWater(WorldModel model, BoundingBox box, int minDepth) {
         if (model.regions() == null) return false;
         int water = 0, cells = 0;
         for (int x = box.minX(); x <= box.maxX(); x += 2) {
@@ -280,8 +351,7 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
                 if (idx < 0) continue;
                 cells++;
                 if (r.buildingAt(idx) != null || r.roadAt(idx) != null) return false;
-                if (r.waterAt(idx) != null || (r.hasCoastline && r.isSea(idx))
-                        || (model.cfg().seaFromElevation && model.terrainHeight(x, z) < model.cfg().seaLevelY - 1)) water++;
+                if (waterDepth(model, r, idx, x, z) >= minDepth) water++;
             }
         }
         return cells > 0 && water >= cells * 0.9;
@@ -334,7 +404,7 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
             for (Structure structure : byStep.getOrDefault(step, List.of())) {
                 random.setFeatureSeed(seed, index++, step);
                 try {
-                    for (StructureStart start : structureManager.startsForStructure(sectionPos, structure)) {
+                    for (StructureStart start : Mc.startsForStructure(structureManager, sectionPos.x(), sectionPos.z(), structure)) {
                         start.placeInChunk(level, structureManager, this, random, writable, chunkPos);
                     }
                 } catch (RuntimeException e) {
@@ -365,15 +435,22 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
     public CompletableFuture<ChunkAccess> createBiomes(RandomState randomState, Blender blender,
                                                        StructureManager structureManager, ChunkAccess chunk) {
         WorldModel model = model();
+        // Outside the hard limit: nothing to wait for (the biome source answers without the map there).
+        if (HardLimit.blocks(chunk.getPos().x(), chunk.getPos().z())) return super.createBiomes(randomState, blender, structureManager, chunk);
         // Biomes depend on water / land cover, so wait (asynchronously) for the region first.
         return regionFuture(model, chunk).thenComposeAsync(
                 raster -> super.createBiomes(randomState, blender, structureManager, chunk), Util.backgroundExecutor());
     }
 
     @Override
-    public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState randomState,
-                                                        StructureManager structureManager, ChunkAccess chunk) {
+    protected CompletableFuture<ChunkAccess> fillTerrain(Blender blender, RandomState randomState,
+                                                         StructureManager structureManager, ChunkAccess chunk) {
         WorldModel model = model();
+        if (HardLimit.blocks(chunk.getPos().x(), chunk.getPos().z())) {
+            // Outside the hard limit: an empty chunk (a barrier wall where it meets the allowed area), no downloads.
+            HardLimit.fillBlocked(chunk);
+            return CompletableFuture.completedFuture(chunk);
+        }
         return regionFuture(model, chunk)
                 .thenCompose(raster -> terrainReady(model, chunk, System.currentTimeMillis()).thenApply(v -> raster))
                 .thenApplyAsync(raster -> {
@@ -419,6 +496,15 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
                     TERRAIN_WAITING.decrementAndGet();
                     return terrainReady(model, chunk, since);
                 });
+    }
+
+    /**
+     * The whole terrain step for a chunk outside Minecraft's chunk system (fast pre-generation, see FastPregen): what
+     * {@link #fillTerrain} and the cave step do, with the map region already at hand.
+     */
+    public void buildDirect(ChunkAccess chunk, RegionRaster raster, long seed) {
+        fillChunk(model(), chunk, raster);
+        carve(seed, chunk);
     }
 
     private static void fillChunk(WorldModel model, ChunkAccess chunk, RegionRaster raster) {
@@ -511,7 +597,7 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
             for (int lz = 0; lz < 16; lz++) {
                 int x = minX + lx, z = minZ + lz;
                 int idx = raster == null ? -1 : raster.index(x, z);
-                BiomeClassifier.Climate climate = model.climate(x, z, ok[lx][lz] ? raw[lx][lz] : Double.NaN);
+                BiomeClassifier.Climate climate = model.climateWithSnow(x, z, ok[lx][lz] ? raw[lx][lz] : Double.NaN);
                 try {
                     painter.paint(sink, x, z, terrain[lx][lz], climate, raster, idx);
                 } catch (RuntimeException e) {
@@ -627,6 +713,7 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
     @Override
     public void applyBiomeDecoration(WorldGenLevel level, ChunkAccess chunk, StructureManager structureManager) {
         WorldModel model = model();
+        if (HardLimit.blocks(chunk.getPos().x(), chunk.getPos().z())) return;
         if (model.cfg().vanillaStructures) {
             try {
                 placeStructures(level, chunk, structureManager);
@@ -648,6 +735,12 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
         } catch (RuntimeException e) {
             System.err.println("[orbis] Decoration failed for chunk " + chunk.getPos() + ": " + e);
             e.printStackTrace();
+        }
+        try {
+            // Kelp, seagrass, sea pickles and coral by water biome, after the decoration so piers and buoys come first.
+            SeaVegetation.place(level, this, chunk.getPos());
+        } catch (RuntimeException e) {
+            System.err.println("[orbis] Sea vegetation failed for chunk " + chunk.getPos() + ": " + e);
         }
     }
 
@@ -678,7 +771,7 @@ public class RealWorldChunkGenerator extends ChunkGenerator {
     }
 
     @Override
-    public void addDebugScreenInfo(List<String> info, RandomState randomState, BlockPos pos) {
+    protected void debugInfo(List<String> info, BlockPos pos) {
         WorldModel model = model();
         double[] ll = model.mapper().toLatLon(pos.getX(), pos.getZ());
         double elev = model.elevation(pos.getX(), pos.getZ());

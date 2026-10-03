@@ -7,6 +7,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.minecraft.SharedConstants;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -40,6 +41,14 @@ public final class WorldHeight {
     public static final int MIN_HEIGHT = 1024;
     /** Blocks kept free above the highest terrain: flight, the cloud layer, tall buildings, radio masts. */
     public static final int MARGIN_ABOVE = 512;
+    /**
+     * The squeeze range of a fitted world (the installation's 900 is for the full height): the room above the
+     * highest terrain less the top section, so the squeeze starts above every mountain the fit measured and only
+     * terrain higher than that (an area added later) is squeezed. With 900 in a fitted world it started some 400
+     * blocks below the highest terrain, and every hill above that came out lower than real (Gullfjellet by about
+     * 50 blocks in a 1:2 Bergen world).
+     */
+    public static final int FITTED_SOFT_CEILING = MARGIN_ABOVE - 32;
     /** Radius (metres) around the origin whose terrain the ceiling must clear. */
     public static final double FIT_RADIUS_M = 30_000;
 
@@ -55,6 +64,55 @@ public final class WorldHeight {
      * The height the world for these settings needs: the explicit value when set, otherwise a fit to the
      * terrain around the origin (full height when the terrain cannot be sampled).
      */
+    /**
+     * The highest point found in a selection: its Y before and after the squeeze near the ceiling, and where.
+     * {@code squeezedBy} is how many blocks this world lowers it for lack of room (0 when it fits).
+     */
+    public record Peak(double unsqueezedY, int y, int x, int z, int samples) {
+        public int squeezedBy() {
+            return (int) Math.max(0, Math.round(unsqueezedY - y));
+        }
+    }
+
+    /** Samples a selection gets at most: the grid coarsens with its size (a country stays a second's work). */
+    private static final int PEAK_SAMPLES = 6000;
+
+    /**
+     * The highest point of a selection, from the coarse terrain at the middle of its chunks on a grid of at most
+     * {@link #PEAK_SAMPLES} (every chunk of a small selection), or null when it is empty or no terrain answers.
+     */
+    public static Peak peak(WorldModel model, ChunkSelection selection) {
+        if (model == null || selection == null || selection.isEmpty()) return null;
+        int step = (int) Math.max(1, Math.ceil(Math.sqrt(selection.count() / (double) PEAK_SAMPLES)));
+        double best = Double.NEGATIVE_INFINITY;
+        int bestY = 0, bestX = 0, bestZ = 0, samples = 0;
+        for (int cz = selection.firstRow(); cz <= selection.lastRow(); cz += step) {
+            int[] runs = selection.rawRuns(cz);
+            if (runs == null) continue;
+            for (int i = 0; i < runs.length; i += 2) {
+                for (int cx = runs[i]; cx <= runs[i + 1]; cx += step) {
+                    int x = (cx << 4) + 8, z = (cz << 4) + 8;
+                    double e;
+                    try {
+                        e = model.coarseElevation(x, z);
+                    } catch (RuntimeException ex) {
+                        continue;
+                    }
+                    if (Double.isNaN(e)) continue;
+                    samples++;
+                    double raw = model.vertical().unsqueezedY(e, x, z);
+                    if (raw > best) {
+                        best = raw;
+                        bestY = model.blockY(e, x, z);
+                        bestX = x;
+                        bestZ = z;
+                    }
+                }
+            }
+        }
+        return samples == 0 ? null : new Peak(best, bestY, bestX, bestZ, samples);
+    }
+
     public static int resolve(int requested, WorldModel model) {
         if (requested > 0) return snap(requested);
         return fit(model);
@@ -96,13 +154,22 @@ public final class WorldHeight {
                 }
             }
         }
+        if (cfg.pregenShapes != null && !cfg.pregenShapes.isEmpty()) {
+            // The area chosen on the world generator map: its mountains must fit too, wherever it lies.
+            Peak p = peak(model, ChunkSelection.ofSettings(cfg.pregenShapes, model.mapper()));
+            if (p != null) {
+                maxY = Math.max(maxY, p.y());
+                samples += p.samples();
+                System.out.println(String.format(Locale.ROOT, "[orbis] World height: the selected area's highest terrain is Y %d (%d samples)", p.y(), p.samples()));
+            }
+        }
         if (samples < 16) {
             System.out.println("[orbis] World height: terrain around the origin not available (" + samples + " samples); keeping the full height");
             return OrbisConfig.DIMENSION_HEIGHT;
         }
         int height = snap(maxY + MARGIN_ABOVE - cfg.minY + 1);
-        System.out.printf(Locale.ROOT, "[orbis] World height fitted: highest terrain within %.0f km is Y %d (%d samples) -> world Y %d..%d (%d sections instead of %d)%n",
-                FIT_RADIUS_M / 1000, maxY, samples, cfg.minY, cfg.minY + height - 1, height / 16, OrbisConfig.DIMENSION_HEIGHT / 16);
+        System.out.println(String.format(Locale.ROOT, "[orbis] World height fitted: highest terrain within %.0f km is Y %d (%d samples) -> world Y %d..%d (%d sections instead of %d)",
+                FIT_RADIUS_M / 1000, maxY, samples, cfg.minY, cfg.minY + height - 1, height / 16, OrbisConfig.DIMENSION_HEIGHT / 16));
         return height;
     }
 
@@ -115,22 +182,80 @@ public final class WorldHeight {
         JsonObject meta = new JsonObject();
         JsonObject pack = new JsonObject();
         pack.addProperty("description", "Orbis Terrarum: world height " + height + " (Y " + OrbisConfig.DIMENSION_MIN_Y + ".." + (OrbisConfig.DIMENSION_MIN_Y + height - 1) + ")");
-        JsonArray min = new JsonArray();
-        min.add(107);
-        min.add(0);
-        pack.add("min_format", min);
-        pack.addProperty("max_format", 107);
+        putPackFormat(pack);
         meta.add("pack", pack);
+        stamp(meta);
         Files.writeString(dir.resolve("pack.mcmeta"), gson.toJson(meta), StandardCharsets.UTF_8);
-        JsonObject type;
-        try (InputStream in = OrbisMod.class.getResourceAsStream("/assets/orbisterrarum/dimension_type_template.json")) {
-            if (in == null) throw new IOException("dimension type template missing from the mod jar");
-            type = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
-        }
+        JsonObject type = overworldType();
         type.addProperty("min_y", OrbisConfig.DIMENSION_MIN_Y);
         type.addProperty("height", height);
         type.addProperty("logical_height", height);
         Files.writeString(typeDir.resolve("overworld.json"), gson.toJson(type), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The data pack format range for the packs the mod writes: from 26.2's format (the oldest Minecraft these files are
+     * valid for) up to the running version's, a compile-time constant, so each version's jar declares its own.
+     */
+    public static void putPackFormat(JsonObject pack) {
+        JsonArray min = new JsonArray();
+        min.add(107);
+        min.add(0);
+        pack.add("min_format", min);
+        pack.addProperty("max_format", Math.max(107, SharedConstants.DATA_PACK_FORMAT_MAJOR));
+    }
+
+    /**
+     * Bump when the files the mod writes into its packs change shape, so worlds rewrite them. Together with the data
+     * pack format (which changes with every Minecraft version) it tells whether a world's pack was written by this jar.
+     */
+    private static final int PACK_REVISION = 1;
+
+    /** Marks a pack.mcmeta as written by this build of the mod for this Minecraft version (Minecraft ignores the key). */
+    public static void stamp(JsonObject meta) {
+        JsonObject orbis = new JsonObject();
+        orbis.addProperty("data_format", SharedConstants.DATA_PACK_FORMAT_MAJOR);
+        orbis.addProperty("revision", PACK_REVISION);
+        meta.add("orbisterrarum", orbis);
+    }
+
+    /**
+     * Whether a pack the mod wrote earlier matches this Minecraft version and mod build. False for packs written by
+     * another Minecraft version (for example a world upgraded from 26.2 to 26.3, whose data formats changed).
+     */
+    public static boolean isCurrent(Path packDir) {
+        try {
+            JsonObject meta = JsonParser.parseString(Files.readString(packDir.resolve("pack.mcmeta"), StandardCharsets.UTF_8)).getAsJsonObject();
+            JsonObject orbis = meta.getAsJsonObject("orbisterrarum");
+            return orbis != null && orbis.get("data_format").getAsInt() == SharedConstants.DATA_PACK_FORMAT_MAJOR
+                    && orbis.get("revision").getAsInt() == PACK_REVISION;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * The overworld's dimension type: vanilla's own (read from the game jar, so settings a new Minecraft version adds
+     * come along), with the Orbis cloud height from the template; the template alone when vanilla's cannot be read.
+     */
+    private static JsonObject overworldType() throws IOException {
+        JsonObject template;
+        try (InputStream in = OrbisMod.class.getResourceAsStream("/assets/orbisterrarum/dimension_type_template.json")) {
+            if (in == null) throw new IOException("dimension type template missing from the mod jar");
+            template = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
+        }
+        try (InputStream in = SharedConstants.class.getResourceAsStream("/data/minecraft/dimension_type/overworld.json")) {
+            if (in == null) return template;
+            JsonObject vanilla = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8)).getAsJsonObject();
+            String cloud = "minecraft:visual/cloud_height";
+            JsonObject attributes = vanilla.getAsJsonObject("attributes");
+            JsonObject ours = template.getAsJsonObject("attributes");
+            if (attributes != null && ours != null && ours.has(cloud)) attributes.add(cloud, ours.get(cloud));
+            return vanilla;
+        } catch (RuntimeException e) {
+            System.err.println("[orbis] Vanilla overworld dimension type unreadable (" + e + "); using the mod's template");
+            return template;
+        }
     }
 
     /** The height a world's pack declares, or 0 when the world has none (full height). */
@@ -177,7 +302,15 @@ public final class WorldHeight {
                 if (levelName.isEmpty()) levelName = "world";
             }
             Path level = gameDir.resolve(levelName);
-            if (Files.exists(level.resolve("level.dat"))) return; // an existing world keeps its height
+            if (Files.exists(level.resolve("level.dat"))) {
+                // An existing world keeps its height; an Orbis one gets this month's season before it loads.
+                if (Files.isDirectory(level.resolve("datapacks").resolve(PACK_NAME))) {
+                    double lat = com.berg.orbis.sky.Seasons.worldLatitude(level);
+                    com.berg.orbis.sky.Seasons.update(level.resolve("datapacks"), Double.isNaN(lat) ? cfg.originLat : lat,
+                            cfg.realSeasons && com.berg.orbis.sky.Seasons.worldWantsSeasons(level));
+                }
+                return;
+            }
             // Only a new Orbis world (level-type=orbisterrarum:earth) gets the pack; any other stays vanilla.
             if (!isOrbisLevelType(props)) return;
             int height = resolve(cfg.worldHeight, model);

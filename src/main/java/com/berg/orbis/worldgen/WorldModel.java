@@ -10,6 +10,11 @@ import com.berg.orbis.osm.CoordinateMapper;
 import com.berg.orbis.osm.OsmRegionManager;
 import com.berg.orbis.render.ColumnPainter;
 import com.berg.orbis.render.Decorator;
+import com.berg.orbis.sky.SnowCover;
+
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Everything the generator needs about the real world, in one place:
@@ -169,6 +174,43 @@ public final class WorldModel {
     public BiomeClassifier.Climate climate(int x, int z, double elevationMeters) {
         double[] ll = mapper.toLatLon(x, z);
         return classifier.classify(ll[0], Double.isNaN(elevationMeters) ? 0.0 : elevationMeters);
+    }
+
+    private volatile SnowCover snow;
+    /** Relief shift (blocks) per 256-block cell, for turning a Y back into metres on the server thread. */
+    private final Map<Long, CompletableFuture<Double>> shifts = new ConcurrentHashMap<>();
+
+    /** Today's snow cover (real snow on); null leaves the year-round climate guess in charge. */
+    public void setSnowCover(SnowCover snow) {
+        this.snow = snow;
+    }
+
+    /** The climate with today's snow depth, for painting a column (waits a few seconds for the snow cells). */
+    public BiomeClassifier.Climate climateWithSnow(int x, int z, double elevationMeters) {
+        BiomeClassifier.Climate c = climate(x, z, elevationMeters);
+        SnowCover s = snow;
+        if (s == null || !cfg.realSnow) return c;
+        double[] ll = mapper.toLatLon(x, z);
+        return c.withSnowDepth(s.depthM(ll[0], ll[1], Double.isNaN(elevationMeters) ? 0.0 : elevationMeters));
+    }
+
+    /**
+     * Today's snow depth in snow layers (eight to a block) for a column whose ground is at block Y {@code y}, or -1
+     * when not known yet. Never blocks: the server thread asks this, and the first ask starts the lookups. The
+     * height comes from the Y back through the vertical mapping (the squeeze near the ceiling aside).
+     */
+    public int snowLayersIfKnown(int x, int y, int z) {
+        SnowCover s = snow;
+        if (s == null || !cfg.realSnow) return -1;
+        long key = ((long) (x >> 8) << 32) ^ ((z >> 8) & 0xffffffffL);
+        CompletableFuture<Double> f = shifts.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> vertical.shiftBlocks(x, z)));
+        Double shift = f.getNow(null);
+        if (shift == null) return -1;
+        double e = y - cfg.seaLevelY;
+        if (e + shift > cfg.reliefKneeMeters / cfg.metersPerBlock) e += shift;
+        double[] ll = mapper.toLatLon(x, z);
+        double d = s.depthIfKnownM(ll[0], ll[1], e * cfg.metersPerBlock);
+        return Double.isNaN(d) ? -1 : ColumnPainter.snowLayers(d, cfg.metersPerBlock);
     }
 
     /**

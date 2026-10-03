@@ -1,6 +1,7 @@
 package com.berg.orbis.client;
 
 import com.berg.orbis.OrbisMod;
+import com.berg.orbis.config.DataSources;
 import com.berg.orbis.config.OrbisConfig;
 import com.berg.orbis.config.WorldSettings;
 import com.berg.orbis.mixin.client.CreateWorldScreenInvoker;
@@ -84,6 +85,95 @@ public final class SpawnGate {
         return WorldHeight.snap(s.worldHeight) != contextHeight(screen);
     }
 
+    /** The create screen whose notice was read (Continue): creating it again does not show the notice again. */
+    private static CreateWorldScreen noticeRead;
+    private static Screen noticeShown;
+
+    /**
+     * Before anything is generated: if the world will use a service that needs something of the player (a VPN to
+     * Norway for Kartverket's lidar, patience for slow services), says so, with whether each one answers from this
+     * network (checked while the notice is up). Continue creates the world. True when the notice is shown.
+     */
+    /**
+     * Puts what was chosen on the world generator map into the new world's settings: the area (its pre-generation and
+     * hard limit, and the area the world height is fitted to), the spawn (the world's centre) and the two
+     * pre-generation switches. Customize hands them over when saved, but leaving Customize with Done saves nothing
+     * when only the map changed, and the world then fell back to the defaults'.
+     */
+    public static void takeSelection(CreateWorldScreen screen) {
+        RealWorldChunkGenerator rw = generatorForScreen(screen);
+        if (rw == null) return;
+        List<OrbisConfig.PregenShape> shapes = com.berg.orbis.client.map.MapSelectTool.previewShapes();
+        WorldSettings s = rw.settings().isPresent() ? rw.settings().get().copy() : OrbisMod.defaultWorldSettings();
+        boolean skipSea = com.berg.orbis.client.map.MapSelectTool.previewSkipsSea();
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        boolean choices = com.berg.orbis.client.map.PreviewChoices.applyTo(s);
+        // Nothing selected: nothing to pre-generate, and no hard limit. Left on (they carry over from the last world),
+        // the first area pre-generated later would quietly become the only part of the world that ever generates.
+        if (shapes.isEmpty() && (s.pregenArea == null || s.pregenArea.isBlank()) && (s.pregenOnCreate || s.pregenHardLimit)) {
+            s.pregenOnCreate = false;
+            s.pregenHardLimit = false;
+            choices = true;
+        }
+        if (rw.settings().isPresent() && !choices && gson.toJson(shapes).equals(gson.toJson(s.pregenShapes)) && s.pregenSelectionSkipsSea == skipSea) return;
+        s.pregenShapes = new ArrayList<>(shapes);
+        s.pregenSelectionSkipsSea = skipSea;
+        screen.getUiState().updateDimensions((registries, dimensions) -> dimensions.replaceOverworldGenerator(registries,
+                new RealWorldChunkGenerator(dimensions.overworld().getBiomeSource(), Optional.of(s))));
+    }
+
+    /** The world is being created with the selection: clear the generator map for the next world. */
+    public static void selectionTaken(CreateWorldScreen screen) {
+        if (generatorForScreen(screen) != null) {
+            com.berg.orbis.client.map.MapSelectTool.clearPreview();
+            com.berg.orbis.client.map.PreviewChoices.clear();
+        }
+    }
+
+    public static boolean showNeeds(CreateWorldScreen screen) {
+        if (noticeRead == screen) return false; // read and accepted for this world: creation resuming
+        if (generatorForScreen(screen) == null) return false;
+        WorldModel m = modelForScreen(screen);
+        if (m == null) return false;
+        List<DataSources.Requirement> needs = DataSources.requirements(m.cfg());
+        if (needs.isEmpty()) return false;
+        Minecraft mc = Minecraft.getInstance();
+        java.util.Map<DataSources.Requirement, Boolean> answers = new java.util.concurrent.ConcurrentHashMap<>();
+        Runnable show = () -> {
+            noticeShown = new net.minecraft.client.gui.screens.ConfirmScreen(go -> {
+                noticeShown = null;
+                mc.setScreenAndShow(screen);
+                if (go) {
+                    noticeRead = screen;
+                    ((CreateWorldScreenInvoker) screen).orbis$invokeOnCreate();
+                }
+            }, Component.translatable("orbisterrarum.needs.title"), needsText(needs, answers),
+                    Component.translatable("orbisterrarum.needs.continue"), net.minecraft.network.chat.CommonComponents.GUI_BACK);
+            mc.setScreenAndShow(noticeShown);
+        };
+        show.run();
+        CompletableFuture.runAsync(() -> {
+            for (DataSources.Requirement r : needs) answers.put(r, DataSources.reachable(r));
+        }).thenRun(() -> mc.execute(() -> {
+            if (noticeShown != null && mc.gui.screen() == noticeShown) show.run();
+        }));
+        return true;
+    }
+
+    private static Component needsText(List<DataSources.Requirement> needs, java.util.Map<DataSources.Requirement, Boolean> answers) {
+        net.minecraft.network.chat.MutableComponent text = Component.empty();
+        for (DataSources.Requirement r : needs) {
+            Boolean ok = answers.get(r);
+            text.append(Component.literal(r.name()).withStyle(net.minecraft.ChatFormatting.GOLD)).append("\n")
+                    .append(r.text()).append("\n")
+                    .append(ok == null ? Component.translatable("orbisterrarum.needs.checking").withStyle(net.minecraft.ChatFormatting.GRAY)
+                            : ok ? Component.translatable("orbisterrarum.needs.ok").withStyle(net.minecraft.ChatFormatting.GREEN)
+                            : Component.translatable("orbisterrarum.needs.down").withStyle(net.minecraft.ChatFormatting.RED))
+                    .append("\n\n");
+        }
+        return text;
+    }
+
     public static boolean shouldWait() {
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.gui.screen() instanceof CreateWorldScreen screen)) return false;
@@ -117,7 +207,9 @@ public final class SpawnGate {
         int ready = regions == null ? 0 : regions.spawnRegionsReady();
         int total = regions == null ? 0 : regions.spawnRegionsTotal();
         long seconds = (System.currentTimeMillis() - startedAt) / 1000;
-        String place = m == null ? "" : String.format(java.util.Locale.ROOT, "%.4f, %.4f", m.cfg().originLat, m.cfg().originLon);
+        String place = m == null ? "" : m.cfg().customSpawn
+                ? String.format(java.util.Locale.ROOT, "%.4f, %.4f", m.cfg().spawnLat, m.cfg().spawnLon)
+                : String.format(java.util.Locale.ROOT, "%.4f, %.4f", m.cfg().originLat, m.cfg().originLon);
         Component text = Component.translatable("orbisterrarum.spawnwait.text", place, ready, total, seconds)
                 .append("\n\n")
                 .append(Component.translatable(seconds > 90 ? "orbisterrarum.spawnwait.slow" : "orbisterrarum.spawnwait.hint"));
@@ -192,6 +284,8 @@ public final class SpawnGate {
     private static void applySettings(CreateWorldScreen screen, int height) {
         RealWorldChunkGenerator rw = generatorForScreen(screen);
         WorldSettings s = rw != null && rw.settings().isPresent() ? rw.settings().get().copy() : OrbisMod.defaultWorldSettings();
+        // A fitted world squeezes only above the mountains it was fitted to (see WorldHeight.FITTED_SOFT_CEILING).
+        if (s.worldHeight <= 0 && height < OrbisConfig.DIMENSION_HEIGHT) s.softCeilingBlocks = WorldHeight.FITTED_SOFT_CEILING;
         s.worldHeight = height;
         screen.getUiState().updateDimensions((registries, dimensions) -> dimensions.replaceOverworldGenerator(registries,
                 new RealWorldChunkGenerator(dimensions.overworld().getBiomeSource(), Optional.of(s))));

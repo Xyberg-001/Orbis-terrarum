@@ -88,14 +88,14 @@
 <div class="wrap">
   <header>
     <h1>Orbis Data Sources</h1>
-    <span class="stamp">Orbis Terrarum 0.3.0 · sources as of 24 Sep 2026 (rev 2: bathymetry)</span>
+    <span class="stamp">Orbis Terrarum 1.1.0 · sources as of 1 Oct 2026 (rev 20: snow depth by climate)</span>
   </header>
 
-  <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in.</p>
+  <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in. National services (a country's photos, NGU, NVE, NVDB) are used automatically inside their country's outline; the lidar services only when switched on, with a notice at world creation saying what they need (a VPN to Norway for Kartverket) and whether they answer. Data Sources → Downloads by country shows, re-imports and deletes each source's copies.</p>
 
   <figure>
     <div class="figure-scroll">
-      <svg viewBox="0 0 1220 790" role="img" aria-label="Data flow from twelve external sources through the five build stages (terrain, buildings, roads and rails, land cover and trees, street life) to what the player sees. Automatic sources are drawn with solid arrows, one-time tool imports dashed, the OSM import dotted; sources that are down are drawn in rust.">
+      <svg viewBox="0 0 1220 940" role="img" aria-label="Data flow from eighteen external sources through the five build stages (terrain, buildings, roads and rails, land cover and trees, street life) and the sky and seasons that run while the world is played, to what the player sees. Automatic sources are drawn with solid arrows, one-time tool imports dashed, the OSM import dotted; sources that are down are drawn in rust.">
         <defs>
           <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="currentColor" />
@@ -121,8 +121,8 @@
           <text x="36" y="136" font-size="11.5" opacity="0.75">GEBCO 2026 + regional surveys · sea floor depths</text>
 
           <rect x="24" y="152" width="270" height="40" rx="3" fill="none" stroke="#b4432f" stroke-width="1.4" stroke-dasharray="5 3" />
-          <text x="36" y="168" font-weight="600" fill="#b4432f">Kartverket WCS: DTM and DOM</text>
-          <text x="36" y="184" font-size="11.5" fill="#b4432f">lidar terrain and surface model · Geonorge down</text>
+          <text x="36" y="168" font-weight="600" fill="#b4432f">Kartverket WCS: surface model (DOM)</text>
+          <text x="36" y="184" font-size="11.5" fill="#b4432f">building heights and roofs · VPN outside Norway</text>
         </g>
 
         <!-- ===== sources: map data ===== -->
@@ -158,7 +158,31 @@
 
           <rect x="24" y="528" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
           <text x="36" y="544" font-weight="600">Aerial imagery</text>
-          <text x="36" y="560" font-size="11.5" opacity="0.75">Esri World Imagery global · Norge i bilder down · NAIP USA</text>
+          <text x="36" y="560" font-size="11.5" opacity="0.75">21 national services · NAIP USA · Esri global</text>
+        </g>
+
+        <!-- ===== sources: rock and weather ===== -->
+        <g font-size="13" fill="currentColor">
+          <text x="24" y="588" font-size="11" font-family="Bricolage Grotesque, Arial, sans-serif" letter-spacing="0.08em" opacity="0.7">ROCK, WEATHER AND WATER</text>
+          <rect x="24" y="596" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="612" font-weight="600">NGU bedrock map · Macrostrat</text>
+          <text x="36" y="628" font-size="11.5" opacity="0.75">Norway to 1:50 000 · world geological map</text>
+
+          <rect x="24" y="644" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="660" font-weight="600">MET Norway weather forecast</text>
+          <text x="36" y="676" font-size="11.5" opacity="0.75">worldwide · the coming hour · api.met.no</text>
+
+          <rect x="24" y="692" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="708" font-weight="600">NVE lake database</text>
+          <text x="36" y="724" font-size="11.5" opacity="0.75">Norway · ~600 surveyed lakes, depth contours</text>
+
+          <rect x="24" y="740" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="756" font-weight="600">GLOBathy + HydroLAKES</text>
+          <text x="36" y="772" font-size="11.5" opacity="0.75">1.4 M lakes · estimated greatest depth</text>
+
+          <rect x="24" y="788" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="804" font-weight="600">Open-Meteo snow depth · time zone</text>
+          <text x="36" y="820" font-size="11.5" opacity="0.75">today 25 km · climate 50 km · local time</text>
         </g>
 
         <!-- ===== stages ===== -->
@@ -167,7 +191,7 @@
           <text x="482" y="76" font-weight="600" font-size="14">1 · Terrain</text>
           <text x="482" y="96">Height per column: Mapterhorn at zoom 15,</text>
           <text x="482" y="112">1.2 m per pixel at 60° N; zoom 12 where only 30 m data exists</text>
-          <text x="482" y="130">Kartverket WCS only when switched on</text>
+          <text x="482" y="130">Lidar terrain services dropped: Mapterhorn has them</text>
           <text x="482" y="150">Sea floor: Seascape depth wherever the land data is at 0, down to 300 m</text>
 
           <rect x="470" y="180" width="310" height="124" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
@@ -175,7 +199,7 @@
           <text x="482" y="220">Footprint, use and name: OSM</text>
           <text x="482" y="238">Height: OSM tags → lidar DOM → atlas → storey guess</text>
           <text x="482" y="256">Roof shape: OSM tag → lidar DOM profile → default by type</text>
-          <text x="482" y="274">Roof and wall colour: OSM tag → imagery median over the footprint</text>
+          <text x="482" y="274">Roof and wall colour: OSM tag → imagery, balanced by the streets</text>
           <text x="482" y="292" opacity="0.75">Interiors and door signs from use and places</text>
 
           <rect x="470" y="320" width="310" height="92" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
@@ -184,19 +208,28 @@
           <text x="482" y="378">Width and lanes: OSM tags → NVDB → default by class</text>
           <text x="482" y="396">Deck and tunnel profiles from the terrain heights</text>
 
-          <rect x="470" y="428" width="310" height="124" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
-          <text x="482" y="448" font-weight="600" font-size="14">4 · Land cover and trees</text>
+          <rect x="470" y="428" width="310" height="160" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="448" font-weight="600" font-size="14">4 · Land cover, trees and rock</text>
           <text x="482" y="468">Cover: OSM polygon → WorldCover class → imagery colour</text>
           <text x="482" y="486">Trees: canopy map (every crown) → lidar DOM−DTM →</text>
           <text x="482" y="502">random scatter by cover type</text>
           <text x="482" y="522">Climate and biome from latitude and height</text>
           <text x="482" y="540" opacity="0.75">Ground blocks by cover, ground class and climate</text>
+          <text x="482" y="558">Rock: NGU (Norway) → Macrostrat → plain stone</text>
+          <text x="482" y="576">Lake beds: NVE survey → GLOBathy → size; rivers by width</text>
 
-          <rect x="470" y="568" width="310" height="92" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
-          <text x="482" y="588" font-weight="600" font-size="14">5 · Street life</text>
-          <text x="482" y="608">Shops, bars, museums: OSM points → Overture Places</text>
-          <text x="482" y="626">Stations, stops, landmarks: OSM → minecarts, signs, advancements</text>
-          <text x="482" y="644" opacity="0.75">Villagers, tunnel loot, vanilla caves and ores: generated, no source</text>
+          <rect x="470" y="604" width="310" height="92" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="624" font-weight="600" font-size="14">5 · Street life</text>
+          <text x="482" y="644">Shops, bars, museums: OSM points → Overture Places</text>
+          <text x="482" y="662">Stations, stops, landmarks: OSM → minecarts, signs, advancements</text>
+          <text x="482" y="680" opacity="0.75">Villagers, tunnel loot, vanilla caves and ores: generated, no source</text>
+
+          <rect x="470" y="712" width="310" height="110" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <text x="482" y="732" font-weight="600" font-size="14">6 · Sky and seasons (while it runs)</text>
+          <text x="482" y="752">Sun and moon: computed for the place, no source</text>
+          <text x="482" y="770">Weather: MET Norway forecast where the players are</text>
+          <text x="482" y="788" opacity="0.75">Seasons: biome colours · snow: today's depth</text>
+          <text x="482" y="808">Villager hours: the town's clock (Open-Meteo zone)</text>
         </g>
 
         <!-- ===== world ===== -->
@@ -208,9 +241,11 @@
           <rect x="940" y="346" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
           <text x="1068" y="371" text-anchor="middle" font-weight="600">Streets, rideable rails, tunnels</text>
           <rect x="940" y="470" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
-          <text x="1068" y="495" text-anchor="middle" font-weight="600">Forests, fields, rock, snow</text>
-          <rect x="940" y="594" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
-          <text x="1068" y="619" text-anchor="middle" font-weight="600">Shops, signs, stations, loot</text>
+          <text x="1068" y="495" text-anchor="middle" font-weight="600">Forests, fields, rock, lake beds</text>
+          <rect x="940" y="630" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="1068" y="655" text-anchor="middle" font-weight="600">Shops, signs, stations, loot</text>
+          <rect x="940" y="738" width="256" height="40" rx="20" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="1068" y="763" text-anchor="middle" font-weight="600">Real sun, rain and seasons</text>
         </g>
 
         <!-- ===== arrows: sources to stages ===== -->
@@ -220,14 +255,24 @@
           <!-- Seascape -> terrain (automatic) -->
           <path d="M294,124 L440,124 L440,100 L470,100" />
           <!-- OSM bus: import once (dotted) -->
-          <path d="M294,240 L400,240 L400,640 L470,640" stroke-dasharray="2 4" stroke-width="2" />
+          <path d="M294,240 L400,240 L400,658 L470,658" stroke-dasharray="2 4" stroke-width="2" />
+          <!-- NGU and Macrostrat -> rock (automatic) -->
+          <path d="M294,616 L430,616 L430,558 L470,558" />
+          <!-- MET -> sky (automatic, while the world runs) -->
+          <path d="M294,664 L420,664 L420,770 L470,770" />
+          <!-- Open-Meteo -> snow depth and villager hours -->
+          <path d="M294,808 L470,808" />
+          <!-- NVE -> lake beds (automatic) -->
+          <path d="M294,712 L445,712 L445,576 L470,576" />
+          <!-- GLOBathy -> lake beds (one-time tool, dashed) -->
+          <path d="M294,760 L445,760 L445,716" stroke-dasharray="7 4" />
           <path d="M400,240 L470,240" stroke-dasharray="2 4" stroke-width="2" />
           <path d="M400,360 L470,360" stroke-dasharray="2 4" stroke-width="2" />
           <path d="M400,468 L470,468" stroke-dasharray="2 4" stroke-width="2" />
           <!-- NVDB -> roads (automatic) -->
           <path d="M294,288 L360,288 L360,378 L470,378" />
           <!-- Places -> life (one-time tool, dashed) -->
-          <path d="M294,336 L340,336 L340,608 L470,608" stroke-dasharray="7 4" />
+          <path d="M294,336 L340,336 L340,644 L470,644" stroke-dasharray="7 4" />
           <!-- Atlas -> buildings (one-time tool, dashed) -->
           <path d="M294,384 L380,384 L380,238 L470,238" stroke-dasharray="7 4" />
           <!-- WorldCover -> cover (automatic) -->
@@ -240,14 +285,13 @@
         </g>
         <!-- Kartverket (down) -> terrain and buildings, rust -->
         <g fill="none" stroke="#b4432f" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arr-rust)">
-          <path d="M294,172 L420,172 L420,140 L470,140" />
-          <path d="M360,172 L360,256 L470,256" />
+          <path d="M294,172 L360,172 L360,256 L470,256" />
         </g>
         <!-- arrow labels -->
         <g font-size="11" fill="currentColor" opacity="0.85">
           <text x="382" y="70" text-anchor="middle">height tiles · on demand</text>
           <text x="367" y="118" text-anchor="middle">depth tiles · on demand</text>
-          <text x="357" y="166" text-anchor="middle" fill="#b4432f">when the flag is on</text>
+          <text x="357" y="166" text-anchor="middle" fill="#b4432f">when switched on</text>
           <text x="347" y="234" text-anchor="middle">all features</text>
           <text x="404" y="316" font-size="10.5" transform="rotate(90 404 316)" opacity="0.7">OSM feeds every stage</text>
           <text x="327" y="283" text-anchor="middle" font-size="10.5">width · lanes</text>
@@ -256,6 +300,10 @@
           <text x="357" y="447" text-anchor="middle" font-size="10.5">class per 10 m cell</text>
           <text x="367" y="495" text-anchor="middle" font-size="10.5">crown position and height</text>
           <text x="367" y="543" text-anchor="middle" font-size="10.5">colour per tile pixel</text>
+          <text x="357" y="610" text-anchor="middle" font-size="10.5">rock per map pixel</text>
+          <text x="352" y="658" text-anchor="middle" font-size="10.5">coming hour · while running</text>
+          <text x="368" y="706" text-anchor="middle" font-size="10.5">contours per lake</text>
+          <text x="368" y="754" text-anchor="middle" font-size="10.5">greatest depth per lake</text>
         </g>
 
         <!-- ===== arrows: stages to world ===== -->
@@ -264,31 +312,33 @@
           <path d="M780,242 L940,242" />
           <path d="M780,366 L940,366" />
           <path d="M780,490 L940,490" />
-          <path d="M780,614 L940,614" />
+          <path d="M780,650 L940,650" />
+          <path d="M780,758 L940,758" />
         </g>
         <g font-size="11" fill="currentColor" opacity="0.85">
           <text x="860" y="104" text-anchor="middle">Y per column</text>
           <text x="860" y="236" text-anchor="middle">walls, roofs, rooms</text>
           <text x="860" y="360" text-anchor="middle">surfaces, decks, rails</text>
           <text x="860" y="484" text-anchor="middle">ground blocks, trees</text>
-          <text x="860" y="608" text-anchor="middle">furniture, carts, signs</text>
+          <text x="860" y="644" text-anchor="middle">furniture, carts, signs</text>
+          <text x="860" y="752" text-anchor="middle">clock, weather, pack</text>
         </g>
 
         <!-- ===== legend ===== -->
         <g font-size="12" fill="currentColor">
-          <line x1="24" y1="712" x2="70" y2="712" stroke="currentColor" stroke-width="1.6" />
-          <text x="80" y="716">automatic: fetched on demand as you explore, cached on disk</text>
-          <line x1="24" y1="740" x2="70" y2="740" stroke="currentColor" stroke-width="1.6" stroke-dasharray="7 4" />
-          <text x="80" y="744">one-time tool run per area (tools/…), then read from the config folder</text>
-          <line x1="24" y1="768" x2="70" y2="768" stroke="currentColor" stroke-width="2" stroke-dasharray="2 4" />
-          <text x="80" y="772">imported once with /orbis import (extracts); Overpass streams on demand where there is no extract</text>
-          <line x1="620" y1="712" x2="666" y2="712" stroke="#b4432f" stroke-width="1.6" stroke-dasharray="5 3" />
-          <text x="676" y="716" fill="#b4432f">source down (Geonorge, two weeks and counting); path exists, carries nothing</text>
-          <text x="620" y="744" opacity="0.75">Arrows into a stage are tried in the order written inside the stage.</text>
+          <line x1="24" y1="852" x2="70" y2="852" stroke="currentColor" stroke-width="1.6" />
+          <text x="80" y="856">automatic: fetched on demand as you explore, cached on disk</text>
+          <line x1="24" y1="880" x2="70" y2="880" stroke="currentColor" stroke-width="1.6" stroke-dasharray="7 4" />
+          <text x="80" y="884">one-time tool run per area (tools/…), then read from the config folder</text>
+          <line x1="24" y1="908" x2="70" y2="908" stroke="currentColor" stroke-width="2" stroke-dasharray="2 4" />
+          <text x="80" y="912">imported once with /orbis import (extracts); Overpass streams on demand where there is no extract</text>
+          <line x1="620" y1="852" x2="666" y2="852" stroke="#b4432f" stroke-width="1.6" stroke-dasharray="5 3" />
+          <text x="676" y="856" fill="#b4432f">reachable only from some networks (a VPN to Norway), slow; off by default</text>
+          <text x="620" y="884" opacity="0.75">Arrows into a stage are tried in the order written inside the stage.</text>
         </g>
       </svg>
     </div>
-    <figcaption>Twelve sources feed five build stages. Terrain, sea floor, WorldCover, NVDB and imagery arrive by themselves; canopy trees, building heights and places need one tool run per area; the OSM extract is imported once. Everything under Kartverket is dark and the mod no longer depends on it for terrain.</figcaption>
+    <figcaption>Eighteen sources feed five build stages and the sky. Terrain, sea floor, WorldCover, NVDB, imagery, the geological maps and NVE's lake surveys arrive by themselves, and the weather and snow depth are fetched while the world runs; canopy trees, building heights and places need one tool run per area; the OSM extract is imported once. Kartverket's lidar services answer only from some networks (a VPN to Norway works) and half their requests time out, so they are off by default; the surface model has its own switch for measured building heights and roof shapes.</figcaption>
   </figure>
 
   <h2>Source register</h2>
@@ -298,14 +348,25 @@
     <tbody>
       <tr><td><strong>Mapterhorn</strong> terrain tiles</td><td>Ground height of every column; bridge and tunnel profiles; building bases</td><td><span class="pill auto">automatic</span> 512 px WebP tiles, zoom 15 (16 max), parent tile where a zoom is missing</td><td class="mono">dem-cache/tiles.mapterhorn.com/</td><td>open data, per-source attribution</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Open Waters Seascape</strong> bathymetry</td><td>Sea floor depth wherever the land data sits at sea level: fjords, harbours, open sea (capped at 300 m)</td><td><span class="pill auto">automatic</span> 512 px terrarium WebP, zoom 14 (regional detail) with global GEBCO below</td><td class="mono">dem-cache/tiles.openwaters.io/</td><td>CC BY 4.0, © Open Waters</td><td><span class="pill ok">working</span></td></tr>
-      <tr><td><strong>Kartverket WCS</strong> DTM and DOM</td><td>Finer terrain where on; roof shapes and heights from the surface model</td><td><span class="pill off">off by default</span> GeoTIFF web service, <code>useHighResElevation</code></td><td class="mono">dem-hires-cache/, dsm-cache/</td><td>CC BY 4.0</td><td><span class="pill down">Geonorge down</span></td></tr>
+      <tr><td><strong>National lidar surface models</strong>: swissSURFACE3D (CH), HRDEM (CA), AHN (NL), IGN MNS (FR), NRW nDOM, Estonia nDSM, ČÚZK DMP 1G (CZ), Oregon, Kentucky, Washington DC, New Brunswick</td><td>Measured building and tree heights and roof shapes, at 1:4 or finer</td><td><span class="pill auto">automatic</span> each inside its country's outline: WCS 2.0 / WMS / ArcGIS exportImage answering for a lat/lon box, 2–6 s a tile; heights above ground get the terrain added, feet become metres</td><td class="mono">dsm-cache/</td><td>CC0, Licence Ouverte, dl-de/zero, CC BY 4.0, state open data</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Lake depth surveys</strong>: Minnesota DNR, Ontario MNRF, Finland's SYKE</td><td>The real bed of surveyed lakes outside Norway, from their depth contours</td><td><span class="pill auto">automatic</span> WFS / ArcGIS per 0.05° tile; contours become soundings every 5 m and build the same smooth bed as NVE's</td><td class="mono">lake-depth-cache/</td><td>Minnesota DNR, OGL-Ontario</td><td><span class="pill ok">working</span> </td></tr>
+      <tr><td><strong>Road databases</strong>: BD TOPO (FR), Digiroad (FI), FHWA HPMS (US), BC Digital Road Atlas</td><td>Real road widths and lane counts where OSM has none, like NVDB in Norway (at 1:2 or finer)</td><td><span class="pill auto">automatic</span> WFS / OGC API / ArcGIS per 0.01° tile; the NVDB matcher pairs their lines with OSM roads; HPMS counts both directions, halved for one carriageway of a divided road</td><td class="mono">road-db-cache/</td><td>Licence Ouverte, CC BY 4.0, public domain, OGL-BC</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Building registers</strong>: BD TOPO (FR), 3DBAG (NL), GURS cadastre (SI), Vienna building model, NYC footprints</td><td>Each building's height or floors (and flat roofs in the Netherlands), at any scale, after tags and lidar, before the building atlas</td><td><span class="pill auto">automatic</span> WFS 2.0 / Socrata per 0.01° tile, only the fields needed; matched to OSM buildings by their centre</td><td class="mono">building-db-cache/</td><td>Licence Ouverte, CC BY 4.0, NYC Open Data</td><td><span class="pill ok">working</span> <span class="pill down">3DBAG down 1 Oct 2026</span></td></tr>
+      <tr><td><strong>Kartverket WCS</strong> surface model (DOM)</td><td>Measured building heights and roof shapes</td><td><span class="pill off">off by default</span> GeoTIFF web service: <code>lidarSurfaceModel</code> (Advanced tab; three tries a tile, tiles under buildings fetched six at a time; a "Before generating" notice says it needs a VPN outside Norway and whether it answers)</td><td class="mono">dsm-cache/</td><td>CC BY 4.0</td><td><span class="pill ok">works via a VPN to Norway</span> <span class="pill down">half the requests time out</span></td></tr>
       <tr><td><strong>OpenStreetMap</strong> extracts</td><td>Buildings, roads, rails, water, land use, trees, furniture, shops, stations, landmarks</td><td>imported once: <code>/orbis import &lt;pbf&gt;</code>; Overpass on demand elsewhere</td><td class="mono">extracts/bergen-full, extracts/norway, osm-cache/</td><td>ODbL</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>NVDB</strong> road database</td><td>Real road widths and lane counts (Norway)</td><td><span class="pill auto">automatic</span> API v4, fetched with each region</td><td class="mono">nvdb-cache/</td><td>NLOD</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Overture Places</strong></td><td>Shops, bars, museums, clinics OSM lacks: interiors and door signs</td><td>one-time: <code>overturemaps download --type=place</code> then <code>/orbis import-places</code></td><td class="mono">places/</td><td>CDLA-Permissive 2.0</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>German LoD2 3D buildings</strong> (NRW, Bavaria)</td><td>Measured heights and flat roofs of every building, before the atlas</td><td>one-time: <code>tools/lod2_heights.py --bbox …</code> (streams 50–160 MB tiles, keeps footprints and heights)</td><td class="mono">building-db-cache/de-lod2/</td><td>dl-de/zero-2.0, CC BY 4.0</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>GlobalBuildingAtlas</strong> (TUM)</td><td>Height for every building without a height tag</td><td>one-time: <code>tools/gba_heights.py --bbox …</code> (range reads, a few MB per city)</td><td class="mono">heights/</td><td>CC BY-NC 4.0 (not for sale)</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
       <tr><td><strong>ESA WorldCover</strong> 2021</td><td>Forest, meadow, farmland, rock, wetland, snow wherever OSM has no polygon</td><td><span class="pill auto">automatic</span> range reads of the 3° cloud GeoTIFFs</td><td class="mono">worldcover-cache/</td><td>CC BY 4.0</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Meta / WRI</strong> canopy height map</td><td>Every tree's position and height</td><td>one-time: <code>tools/canopy_tiles.py --bbox …</code> (one 434 MB source tile per 5° area)</td><td class="mono">canopy-cache/, canopy-src/</td><td>CC BY 4.0</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
-      <tr><td><strong>Aerial imagery</strong> Esri, Norge i bilder, NAIP</td><td>Roof and wall colours; ground colour classes for unmapped ground</td><td><span class="pill auto">automatic</span> zoom-18 tiles</td><td class="mono">imagery-cache/</td><td>Esri terms; NIB and NAIP open</td><td><span class="pill ok">Esri working</span> <span class="pill down">NIB down</span></td></tr>
+      <tr><td><strong>Aerial imagery</strong> 21 national and state services, NAIP, Esri</td><td>Roof and wall colours (balanced by the streets in the same photo); ground colour classes for unmapped ground</td><td><span class="pill auto">automatic</span> tiles at about two pixels a block; the smallest coverage box first, and pixels outside a country's border from the next service</td><td class="mono">imagery-cache/</td><td>open national licences (CC BY 4.0, Licence Ouverte, OGL, CC0…); Esri terms; NAIP open</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>NGU bedrock map</strong> (Nasjonal berggrunnsdatabase)</td><td>The rock under Norway: stone underground, in cliffs and on bare rock (granite, gabbro, schist, marble…)</td><td><span class="pill auto">automatic</span> WMS pictures per 1.1 km tile, each colour identified once with GetFeatureInfo</td><td class="mono">geology-cache/</td><td>NLOD / CC BY 4.0, © NGU</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Macrostrat geological map</strong> (macrostrat.org, ~300 source maps merged)</td><td>The rock everywhere outside Norway (and where NGU has nothing): granite, basalt, limestone, sandstone, schist…</td><td><span class="pill auto">automatic</span> vector tiles, the most detailed of zoom 10, 8, 6, 4 per place; lithology text read in six languages</td><td class="mono">geology-macrostrat-cache/</td><td>CC BY 4.0, Macrostrat and its source maps</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>NVE</strong> lake database (Innsjødatabase)</td><td>The real bed of Norway's surveyed lakes (depth contours, sounded points, greatest depth)</td><td><span class="pill auto">automatic</span> ArcGIS REST: lake outlines per 0.1° tile, then a lake's contours when a region needs it</td><td class="mono">lake-survey-cache/</td><td>NLOD, © NVE</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>GLOBathy</strong> with HydroLAKES outlets</td><td>Greatest depth of other lakes over 10 ha, for the bowl-shaped bed (an estimate; low for Norway's glacial lakes)</td><td>one-time: <code>tools/lake_depths.py --bbox …</code> (downloads 195 MB once)</td><td class="mono">lake-depths/, lake-depths-src/</td><td>CC0; HydroLAKES CC BY 4.0</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
+      <tr><td><strong>Open-Meteo</strong> time zone</td><td>The world's local time zone (daylight saving included), for villagers who keep clock hours</td><td><span class="pill auto">automatic</span> one question per world, kept in the world folder</td><td class="mono">&lt;world&gt;/orbis-timezone.txt</td><td>CC BY 4.0, © Open-Meteo</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>MET Norway</strong> locationforecast</td><td>Real weather while a world runs: clear, rain or thunder for the coming hour</td><td><span class="pill auto">automatic</span> one small request when the last answer expires (a few minutes at most), only with real weather on</td><td class="mono">(not cached on disk)</td><td>CC BY 4.0, © MET Norway</td><td><span class="pill ok">working</span></td></tr>
     </tbody>
   </table>
   </div>
@@ -315,6 +376,8 @@
   <table>
     <thead><tr><th>Source</th><th>Was for</th><th>Why it is out</th></tr></thead>
     <tbody>
+      <tr><td>Kartverket DTM and USGS 3DEP lidar terrain services</td><td>Finer terrain in Norway and the USA</td><td>Dropped 1 Oct 2026: Mapterhorn already carries the same lidar terrain, faster; the old tiles (dem-hires-cache) can be deleted under Storage → Downloads by country</td></tr>
+      <tr><td>Norge i bilder open tile cache (opencache.statkart.no)</td><td>Norway's orthophotos for roof and ground colours</td><td>Closed by Kartverket; the successor (tilecache.norgeibilder.no) needs a token given only to Norwegian public bodies. Norway uses Esri imagery</td></tr>
       <tr><td>AWS terrain tiles (Mapzen terrarium, 30 m)</td><td>Terrain until 23 Sep 2026</td><td>Replaced by Mapterhorn; old cache left in place for old worlds</td></tr>
       <tr><td>FLAIR segmentation model over the imagery</td><td>Ground classes</td><td>Predictions unusable on Esri imagery under every preprocessing tried; WorldCover does the job</td></tr>
       <tr><td>Overture land cover</td><td>Same gap filling</td><td>The CLI returned no data for the layer; ESA's own rasters are read directly instead</td></tr>
@@ -324,14 +387,16 @@
   </div>
 
   <h2>Setting up a new place anywhere on Earth</h2>
-  <p>Terrain, land cover, imagery and (in Norway) road widths arrive by themselves. Two optional runs make the place complete, and each takes one command with the place's box (south, west, north, east):</p>
+  <p>Terrain, land cover, imagery, weather, rock types and (in Norway) road widths arrive by themselves. Two optional runs make the place complete, and each takes one command with the place's box (south, west, north, east):</p>
   <ol>
     <li>Trees where they really stand:<pre>python tools/canopy_tiles.py --bbox S W N E --out &lt;instance&gt;/config/orbisterrarum/canopy-cache</pre></li>
     <li>Real building heights:<pre>python tools/gba_heights.py --bbox S W N E --out &lt;instance&gt;/config/orbisterrarum/heights</pre></li>
+    <li>In North Rhine-Westphalia and Bavaria, measured heights from the states' 3D buildings (streams the big files, keeps a few MB):<pre>python tools/lod2_heights.py --bbox S W N E --out &lt;instance&gt;/config/orbisterrarum/building-db-cache/de-lod2</pre></li>
+    <li>Lake depths (outside Norway's surveyed lakes):<pre>python tools/lake_depths.py --bbox S W N E --out &lt;instance&gt;/config/orbisterrarum/lake-depths</pre></li>
     <li>Optional, for shops and door signs: <code>python -m overturemaps download --bbox=W,S,E,N -f geojson --type=place -o places.geojson</code> then <code>/orbis import-places places.geojson</code> in game.</li>
     <li>Optional, for a whole country offline: import its OpenStreetMap extract with <code>/orbis import &lt;file.osm.pbf&gt;</code>; without one, regions stream from Overpass as you explore.</li>
   </ol>
 
   <h2>What still has no source</h2>
-  <p>Lakes and rivers still use a fixed depth per water body (Seascape covers the seas). Roof shapes measured from lidar wait for Geonorge to come back. The dimension holds 332 blocks under sea level, so the deepest fjords stop at 300 m. Everything else that is generated rather than downloaded, such as villagers, interiors, tunnel loot, caves, ores and structures, is by design.</p>
+  <p>River depths are estimated from their width: no dataset measures them at this detail. Measured roof shapes and building heights need Kartverket's surface model, which only answers from some networks (a VPN to Norway works); elsewhere heights come from tags and the building atlas. The dimension holds 332 blocks under sea level, so the deepest fjords stop at 300 m. Everything else that is generated rather than downloaded, such as villagers, interiors, tunnel loot, caves, ores and structures, is by design.</p>
 </div>

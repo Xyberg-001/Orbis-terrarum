@@ -106,10 +106,14 @@ public final class Materials {
 
         BlockState roof = null;
         String roofColourRaw = firstTag(tags, "roof:colour", "roof:color");
-        if (roofColourRaw != null) roof = roofForMaterial(lower(roofColourRaw), h);
+        String roofMaterial = lower(firstTag(tags, "roof:material"));
+        if (isFabric(roofMaterial) || "tent".equals(type) || "marquee".equals(type)) {
+            // Canvas, tents and membrane canopies: wool in the mapped colour (white when none is mapped).
+            roof = woolFor(BlockPalette.parseColour(roofColourRaw));
+        }
+        if (roof == null && roofColourRaw != null) roof = roofForMaterial(lower(roofColourRaw), h);
         Integer roofColour = roof == null ? BlockPalette.parseColour(roofColourRaw) : null;
         if (roofColour != null) roof = BlockPalette.nearestRoof(roofColour);
-        String roofMaterial = lower(firstTag(tags, "roof:material"));
         if (roof == null && roofMaterial != null) roof = roofForMaterial(roofMaterial, h);
         if (roof == null) roof = defaultRoof(type, shape, style, domed, h >>> 8);
 
@@ -142,7 +146,8 @@ public final class Materials {
             case "wood", "timber", "log", "logs", "timber_framing", "wood_siding", "siding" -> switch ((int) (h % 5)) {
                 case 0 -> Blocks.OAK_PLANKS.defaultBlockState();
                 case 1 -> Blocks.SPRUCE_PLANKS.defaultBlockState();
-                case 2 -> Blocks.BIRCH_PLANKS.defaultBlockState();
+                case 2 -> (h >>> 9 & 1) == 0 ? NewBlocks.or(NewBlocks.POPLAR_PLANKS, Blocks.BIRCH_PLANKS.defaultBlockState())   // weathered grey boards
+                        : Blocks.BIRCH_PLANKS.defaultBlockState();
                 case 3 -> Blocks.DYED_TERRACOTTA.red().defaultBlockState();   // falu-red painted wood
                 default -> Blocks.CONCRETE.white().defaultBlockState();       // white painted wood
             };
@@ -163,6 +168,36 @@ public final class Materials {
             case "terracotta" -> Blocks.TERRACOTTA.defaultBlockState();
             default -> null;
         };
+    }
+
+    private static boolean isFabric(String m) {
+        return m != null && switch (m) {
+            case "fabric", "canvas", "tent", "membrane", "textile", "tarpaulin", "tarp", "ptfe", "etfe", "pvc", "cloth" -> true;
+            default -> false;
+        };
+    }
+
+    /** The wool of the dye colour closest to a mapped colour (via the concrete of the same dye), white without one. */
+    static BlockState woolFor(Integer rgb) {
+        BlockState white = Blocks.WOOL.white().defaultBlockState();
+        if (rgb == null) return white;
+        double[] lab = BlockPalette.toLab(rgb);
+        String best = null;
+        double bestD = Double.MAX_VALUE;
+        for (BlockPalette.Entry e : BlockPalette.roofEntries()) {
+            if (!e.name().endsWith("_concrete")) continue;
+            double dl = lab[0] - e.lab()[0], da = lab[1] - e.lab()[1], db = lab[2] - e.lab()[2];
+            double d = dl * dl + da * da + db * db;
+            if (d < bestD) {
+                bestD = d;
+                best = e.name();
+            }
+        }
+        if (best == null) return white;
+        String wool = best.substring(0, best.length() - "_concrete".length()) + "_wool";
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                .getOptional(net.minecraft.resources.Identifier.withDefaultNamespace(wool))
+                .map(net.minecraft.world.level.block.Block::defaultBlockState).orElse(white);
     }
 
     private static BlockState roofForMaterial(String m, long h) {
@@ -199,7 +234,8 @@ public final class Materials {
                         : r < 62 ? Blocks.DYED_TERRACOTTA.yellow().defaultBlockState()
                         : r < 72 ? Blocks.CONCRETE.lightGray().defaultBlockState()
                         : r < 82 ? Blocks.BRICKS.defaultBlockState()
-                        : r < 90 ? Blocks.SPRUCE_PLANKS.defaultBlockState()
+                        : r < 86 ? Blocks.SPRUCE_PLANKS.defaultBlockState()
+                        : r < 90 ? NewBlocks.or(NewBlocks.POPLAR_PLANKS, Blocks.SPRUCE_PLANKS.defaultBlockState())
                         : r < 95 ? Blocks.DYED_TERRACOTTA.white().defaultBlockState()
                         : Blocks.BIRCH_PLANKS.defaultBlockState();
                 case TEMPERATE -> r < 30 ? Blocks.BRICKS.defaultBlockState()
@@ -256,7 +292,8 @@ public final class Materials {
                             : r < 85 ? Blocks.CONCRETE.white().defaultBlockState()
                             : Blocks.DYED_TERRACOTTA.yellow().defaultBlockState();
             case "barn", "farm_auxiliary", "stable", "cowshed", "sty", "greenhouse", "boathouse" ->
-                    style == Style.NORDIC ? (r < 65 ? Blocks.DYED_TERRACOTTA.red().defaultBlockState() : Blocks.SPRUCE_PLANKS.defaultBlockState())
+                    style == Style.NORDIC ? (r < 65 ? Blocks.DYED_TERRACOTTA.red().defaultBlockState()
+                            : r < 85 ? Blocks.SPRUCE_PLANKS.defaultBlockState() : NewBlocks.or(NewBlocks.POPLAR_PLANKS, Blocks.SPRUCE_PLANKS.defaultBlockState()))
                             : (r < 50 ? Blocks.SPRUCE_PLANKS.defaultBlockState() : r < 75 ? Blocks.OAK_PLANKS.defaultBlockState() : Blocks.CONCRETE.lightGray().defaultBlockState());
             case "castle", "fort", "fortress", "ruins", "tower", "city_gate", "bridge" ->
                     r < 60 ? Blocks.STONE_BRICKS.defaultBlockState() : Blocks.COBBLESTONE.defaultBlockState();

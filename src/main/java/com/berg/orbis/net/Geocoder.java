@@ -35,6 +35,14 @@ public final class Geocoder {
     public record Result(double lat, double lon, String name) {}
 
     private static final Pattern COORDS = Pattern.compile("^\\s*(-?\\d+(?:\\.\\d+)?)\\s*[,;\\s]\\s*(-?\\d+(?:\\.\\d+)?)\\s*$");
+
+    /** "lat, lon" typed as numbers ([lat, lon]), or null when the text is not coordinates. */
+    public static double[] parseCoordinates(String text) {
+        Matcher m = COORDS.matcher(text == null ? "" : text);
+        if (!m.matches()) return null;
+        double lat = Double.parseDouble(m.group(1)), lon = Double.parseDouble(m.group(2));
+        return Math.abs(lat) <= 85 && Math.abs(lon) <= 180 ? new double[]{lat, lon} : null;
+    }
     private static final String USER_AGENT = "OrbisTerrarum-Minecraft-Mod/1.0 (world location picker)";
 
     private Geocoder() {}

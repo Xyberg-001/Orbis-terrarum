@@ -16,6 +16,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.biome.Biome;
+import com.berg.orbis.mc.BiomeSourceBridge;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.biome.Climate;
@@ -35,7 +36,7 @@ import java.util.stream.Stream;
  *
  * Registered as orbisterrarum:real_world; referenced from the dimension json.
  */
-public class RealWorldBiomeSource extends BiomeSource {
+public class RealWorldBiomeSource extends BiomeSourceBridge {
 
     public static final MapCodec<RealWorldBiomeSource> CODEC = RecordCodecBuilder.mapCodec(instance ->
             instance.group(
@@ -46,7 +47,9 @@ public class RealWorldBiomeSource extends BiomeSource {
         PLAINS, SUNFLOWER_PLAINS, FOREST, BIRCH_FOREST, DARK_FOREST, TAIGA, SNOWY_TAIGA, OLD_GROWTH_PINE_TAIGA, SNOWY_PLAINS,
         DESERT, SAVANNA, JUNGLE, SPARSE_JUNGLE, SWAMP, MANGROVE_SWAMP, BEACH, SNOWY_BEACH, STONY_SHORE, MEADOW,
         STONY_PEAKS, JAGGED_PEAKS, FROZEN_PEAKS, SNOWY_SLOPES, GROVE, WINDSWEPT_HILLS, OCEAN, DEEP_OCEAN, COLD_OCEAN,
-        DEEP_COLD_OCEAN, FROZEN_OCEAN, LUKEWARM_OCEAN, WARM_OCEAN, RIVER, FROZEN_RIVER, CHERRY_GROVE, FLOWER_FOREST, BADLANDS
+        DEEP_COLD_OCEAN, FROZEN_OCEAN, LUKEWARM_OCEAN, WARM_OCEAN, RIVER, FROZEN_RIVER, CHERRY_GROVE, FLOWER_FOREST, BADLANDS,
+        /** The autumn forest of Minecraft 26.3 (orange grass and foliage); a plain forest on versions without it. */
+        DAPPLED_FOREST
     }
 
     private static final Map<Pick, ResourceKey<Biome>> KEYS = new EnumMap<>(Pick.class);
@@ -89,6 +92,8 @@ public class RealWorldBiomeSource extends BiomeSource {
         KEYS.put(Pick.CHERRY_GROVE, Biomes.CHERRY_GROVE);
         KEYS.put(Pick.FLOWER_FOREST, Biomes.FLOWER_FOREST);
         KEYS.put(Pick.BADLANDS, Biomes.BADLANDS);
+        KEYS.put(Pick.DAPPLED_FOREST, ResourceKey.create(net.minecraft.core.registries.Registries.BIOME,
+                Identifier.withDefaultNamespace("dappled_forest")));
     }
 
     private final HolderGetter<Biome> biomes;
@@ -137,12 +142,16 @@ public class RealWorldBiomeSource extends BiomeSource {
     }
 
     @Override
-    public Holder<Biome> getNoiseBiome(int qx, int qy, int qz, Climate.Sampler sampler) {
+    public Holder<Biome> biomeAt(int qx, int qy, int qz) {
         long key = (((long) qx) << 32) ^ (qz & 0xffffffffL);
         int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> (64 - CACHE_BITS));
         Column c = columnCache[slot];
         if (c != null && c.key == key) return c.biome;
-        Holder<Biome> h = holders.getOrDefault(pick((qx << 2) + 2, (qz << 2) + 2), fallback);
+        // Outside the hard limit the chunk stays empty: any biome will do, without asking the map.
+        if (com.berg.orbis.worldgen.HardLimit.blocks(qx >> 2, qz >> 2)) return fallback;
+        Pick p = pick((qx << 2) + 2, (qz << 2) + 2);
+        Holder<Biome> h = holders.get(p);
+        if (h == null) h = p == Pick.DAPPLED_FOREST ? holders.getOrDefault(Pick.FOREST, fallback) : fallback;
         columnCache[slot] = new Column(key, h);
         return h;
     }
@@ -205,7 +214,9 @@ public class RealWorldBiomeSource extends BiomeSource {
         switch (lc) {
             case BEACH, SAND -> {
                 if (zone == BiomeClassifier.Zone.ARID) return Pick.DESERT;
-                return snowy ? Pick.SNOWY_BEACH : Pick.BEACH;
+                // A beach is by the water: sand inland (dunes, sandpits, bare ground in warm lands) takes the land's
+                // biome below, so no beach biome, with its buried treasure, sits on a mountainside.
+                if (lc == LandCover.BEACH || elev < 15) return snowy ? Pick.SNOWY_BEACH : Pick.BEACH;
             }
             case WETLAND, SALT_MARSH, MUD -> {
                 if (snowy) return Pick.SNOWY_TAIGA;
@@ -222,6 +233,12 @@ public class RealWorldBiomeSource extends BiomeSource {
 
         if (lc.isForest()) {
             if (snowy) return Pick.SNOWY_TAIGA;
+            // Autumn: broadleaf woods of the temperate and boreal zones in their October colours.
+            if (model.cfg().autumnColours && lc != LandCover.FOREST_CONIFER
+                    && (zone == BiomeClassifier.Zone.TEMPERATE || zone == BiomeClassifier.Zone.SUBTROPICAL
+                    || lc == LandCover.FOREST_BROADLEAF && (zone == BiomeClassifier.Zone.TAIGA || zone == BiomeClassifier.Zone.TUNDRA))) {
+                return Pick.DAPPLED_FOREST;
+            }
             switch (zone) {
                 case TUNDRA, TAIGA, ALPINE -> {
                     return lc == LandCover.FOREST_BROADLEAF ? Pick.BIRCH_FOREST : Pick.TAIGA;

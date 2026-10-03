@@ -69,6 +69,63 @@ public final class TileImages {
      * loops; BufferedImage.getRGB pixel by pixel went through the colour model for every pixel and was 8% of all
      * pre-generation time for aerial photos alone.
      */
+    /**
+     * Every pixel as 0xAARRGGBB, row after row, read straight from the image's own buffer for the kinds of image the
+     * tiles come as: 8-bit RGB or RGBA with any byte order (PNG, lossless WebP, JPEG), grey, palette PNG, and packed
+     * int images. Anything else goes through {@link BufferedImage#getRGB(int, int, int, int, int[], int, int)}.
+     * Terrain tiles were read a pixel at a time with getRGB(x, y): a fifth of all the time spent building map
+     * regions went into that call's colour-model conversion.
+     */
+    public static int[] argbPixels(BufferedImage img) {
+        int w = img.getWidth(), h = img.getHeight();
+        java.awt.image.WritableRaster ras = img.getRaster();
+        java.awt.image.ColorModel cm = img.getColorModel();
+        java.awt.image.DataBuffer db = ras.getDataBuffer();
+        java.awt.image.SampleModel sm = ras.getSampleModel();
+        boolean origin = ras.getSampleModelTranslateX() == 0 && ras.getSampleModelTranslateY() == 0 && db.getNumBanks() == 1;
+        if (origin && db instanceof java.awt.image.DataBufferInt dbi && sm instanceof java.awt.image.SinglePixelPackedSampleModel spp
+                && (img.getType() == BufferedImage.TYPE_INT_ARGB || img.getType() == BufferedImage.TYPE_INT_RGB)) {
+            int[] d = dbi.getData();
+            int off = dbi.getOffset(), ss = spp.getScanlineStride();
+            int[] out = new int[w * h];
+            boolean opaque = img.getType() == BufferedImage.TYPE_INT_RGB;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) out[y * w + x] = opaque ? d[off + y * ss + x] | 0xFF000000 : d[off + y * ss + x];
+            }
+            return out;
+        }
+        if (origin && db instanceof java.awt.image.DataBufferByte dbb && sm instanceof java.awt.image.PixelInterleavedSampleModel pism) {
+            byte[] b = dbb.getData();
+            int off = dbb.getOffset(), ps = pism.getPixelStride(), ss = pism.getScanlineStride();
+            int[] bo = pism.getBandOffsets();
+            if (cm instanceof java.awt.image.ComponentColorModel ccm && ccm.getColorSpace().isCS_sRGB() && !ccm.isAlphaPremultiplied()
+                    && (bo.length == 3 || bo.length == 4) && ccm.getComponentSize(0) == 8) {
+                int[] out = new int[w * h];
+                boolean alpha = bo.length == 4;
+                for (int y = 0; y < h; y++) {
+                    int row = off + y * ss;
+                    for (int x = 0; x < w; x++) {
+                        int p = row + x * ps;
+                        int a = alpha ? b[p + bo[3]] & 0xFF : 0xFF;
+                        out[y * w + x] = a << 24 | (b[p + bo[0]] & 0xFF) << 16 | (b[p + bo[1]] & 0xFF) << 8 | (b[p + bo[2]] & 0xFF);
+                    }
+                }
+                return out;
+            }
+            if (cm instanceof java.awt.image.IndexColorModel icm && bo.length == 1 && ps == 1 && icm.getPixelSize() == 8) {
+                int[] lut = new int[256];
+                icm.getRGBs(lut);
+                int[] out = new int[w * h];
+                for (int y = 0; y < h; y++) {
+                    int row = off + y * ss;
+                    for (int x = 0; x < w; x++) out[y * w + x] = lut[b[row + x] & 0xFF];
+                }
+                return out;
+            }
+        }
+        return img.getRGB(0, 0, w, h, null, 0, w);
+    }
+
     public static int[] rgbPixels(BufferedImage img) {
         int w = img.getWidth(), h = img.getHeight();
         java.awt.image.WritableRaster ras = img.getRaster();

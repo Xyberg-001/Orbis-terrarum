@@ -12,7 +12,7 @@ import net.minecraft.resources.Identifier;
  * The view is a centre in Mercator units (0..1) and a scale in physical pixels per Mercator unit. Positions are
  * converted with {@link #gui} and {@link #latLonAt} (GUI coordinates) for markers and clicks.
  */
-public final class MapCanvas {
+public final class MapCanvas implements MapView {
     public final MapTiles tiles = new MapTiles();
     public MapTiles.Layer layer;
     public double cx = 0.5, cy = 0.5, scale = 1024;
@@ -130,6 +130,12 @@ public final class MapCanvas {
     public double metresPerGuiPixel() {
         double lat = PreviewPlan.latOf(cy);
         return gs / (scale * PreviewPlan.mercPerMeter(lat));
+    }
+
+    /** The zoom of the tiles being drawn. */
+    public int zoom() {
+        int z = (int) Math.round(Math.log(scale / 256) / Math.log(2));
+        return Math.max(1, Math.min(MapTiles.MAX_ZOOM, z));
     }
 
     /** Draws the tiles (and the layer's place names on top), clipped to the map rectangle. */

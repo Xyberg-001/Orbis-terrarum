@@ -3,6 +3,7 @@ package com.berg.orbis.render;
 import com.berg.orbis.config.OrbisConfig;
 import com.berg.orbis.feature.BuildingFeature;
 import com.berg.orbis.feature.RegionRaster;
+import com.berg.orbis.mc.Mc;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
@@ -11,7 +12,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.WallSignBlock;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
-import net.minecraft.world.level.block.entity.SignText;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -68,11 +68,29 @@ public final class Signage {
      * text and the wax are already in place when it fails.
      */
     public static void writeSign(SignBlockEntity be, String label) {
-        SignText text = new SignText();
-        List<String> lines = wrap(label);
-        for (int i = 0; i < lines.size() && i < 4; i++) text = text.setMessage(i, Component.literal(lines.get(i)));
         try {
-            be.setText(text, true);
+            Mc.setSignFront(be, wrap(label));
+        } catch (NullPointerException noLevelYet) {
+            // stored before the update
+        }
+        try {
+            be.setWaxed(true);
+        } catch (NullPointerException noLevelYet) {
+            // stored before the update
+        }
+        be.setChanged();
+    }
+
+    /** The same text on both sides of a free-standing sign (a street name, read from either direction). */
+    public static void writeBothSides(SignBlockEntity be, String label) {
+        List<String> lines = wrap(label);
+        try {
+            Mc.setSignFront(be, lines);
+        } catch (NullPointerException noLevelYet) {
+            // stored before the update
+        }
+        try {
+            Mc.setSignBack(be, lines);
         } catch (NullPointerException noLevelYet) {
             // stored before the update
         }

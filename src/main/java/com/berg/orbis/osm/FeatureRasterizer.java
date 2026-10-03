@@ -43,6 +43,8 @@ public final class FeatureRasterizer {
     private final CoordinateMapper mapper;
     private final OrbisConfig cfg;
     private final Elevation elevation;
+    /** The same in metres above sea level (null: worked out from the block heights). */
+    private volatile Elevation elevationMeters;
     /** Surface model (tree/building tops) in block units, or null when no source is configured. */
     private final Elevation surfaceModel;
     private final ImageryProvider imagery;
@@ -60,6 +62,18 @@ public final class FeatureRasterizer {
         this.surfaceModel = surfaceModel;
         this.imagery = imagery != null && imagery.isEnabled() ? imagery : null;
         this.landmarks = landmarks;
+        this.tunnelCover = heightBlocks(6.5, 3.5);
+        this.portalMargin = (int) Math.max(4, Math.round(mapper.blocks(16.0)));
+    }
+
+    /**
+     * A real height (tunnel cover, a bridge's clearance) in blocks at this world's scale, never less than what a
+     * player needs to pass. These were fixed block counts, right at 1:1 only: at 1:2 a tunnel needed 13 m of rock
+     * over it and a bridge 11 m over a road, so on flat ground (Nygardstangen) the portals sank 4 blocks and the
+     * decks rose, and their cuttings and ramps spread over the whole interchange.
+     */
+    private double heightBlocks(double metres, double minBlocks) {
+        return Math.max(minBlocks, metres / cfg.metersPerBlock);
     }
 
     /** Ways around a point, from the same map source the region data came from (extract or Overpass, cached). */
@@ -80,7 +94,13 @@ public final class FeatureRasterizer {
     }
 
     private volatile NvdbRoads.Store nvdb;
+    /** Road databases outside Norway (widths, lanes); null without any. */
+    private volatile RoadDatabases roadDbs;
     private volatile Elevation canopy;
+    /** National and city building databases (heights, floors); null without any. */
+    private volatile BuildingDatabases buildingDbs;
+    /** Loads the surface model under a whole region (lat/lon south, west, north, east) before its trees are read. */
+    private volatile java.util.function.Consumer<double[]> canopyPrefetch;
 
     /** Surveyed road widths and lanes from the Norwegian road database, used where OSM has no width. */
     public void setNvdb(NvdbRoads.Store store) {
@@ -97,8 +117,52 @@ public final class FeatureRasterizer {
     }
 
     /** Global 10 m land cover used wherever OSM has no landuse / natural polygon. */
+    private com.berg.orbis.geology.Rocks bedrock;
+    private com.berg.orbis.water.WaterBeds waterBeds;
+
+    /** Lake and river beds shaped from surveys, lake depths and the shoreline, instead of one depth per water body. */
+    public void setWaterBeds(com.berg.orbis.water.WaterBeds beds) {
+        this.waterBeds = beds;
+    }
+
+    /** Loads the surface model under a list of lat/lon boxes (south, west, north, east) in parallel. */
+    public interface SurfacePrefetch {
+        void prefetch(List<double[]> boxes);
+    }
+
+    private SurfacePrefetch surfacePrefetch;
+
+    public void setSurfacePrefetch(SurfacePrefetch prefetch) {
+        this.surfacePrefetch = prefetch;
+    }
+
+    /** The geological maps: each column's rock for the stone under it and for bare rock. */
+    public void setBedrock(com.berg.orbis.geology.Rocks map) {
+        this.bedrock = map;
+    }
+
+    public void setElevationMeters(Elevation metres) {
+        this.elevationMeters = metres;
+    }
+
+    /** Real elevation in metres at a block column (NaN when unknown). */
+    private double metresAt(int x, int z) {
+        Elevation m = elevationMeters;
+        if (m != null) return m.sample(x, z);
+        double y = elevationAt(x, z);
+        return Double.isNaN(y) ? Double.NaN : (y - cfg.seaLevelY) * cfg.metersPerBlock;
+    }
+
     public void setWorldCover(com.berg.orbis.landcover.WorldCoverProvider provider) {
         this.worldCover = provider;
+    }
+
+    public void setBuildingDatabases(BuildingDatabases dbs) {
+        this.buildingDbs = dbs;
+    }
+
+    public void setCanopyPrefetch(java.util.function.Consumer<double[]> prefetch) {
+        this.canopyPrefetch = prefetch;
     }
 
     public void setCanopy(Elevation canopyBlocks) {
@@ -107,11 +171,39 @@ public final class FeatureRasterizer {
 
     /** True when this region would ask NVDB for road widths (so the caller can fetch them alongside the map data). */
     public boolean wantsNvdb(double south, double west, double north, double east) {
-        return nvdb != null && cfg.nvdbRoadWidths && cfg.metersPerBlock <= 2.0 && NvdbRoads.inNorway(south, west, north, east);
+        RoadDatabases dbs = roadDbs;
+        return nvdbCovers(south, west, north, east)
+                || (dbs != null && cfg.nvdbRoadWidths && cfg.metersPerBlock <= 2.0 && dbs.covers(south, west, north, east));
+    }
+
+    public void setRoadDatabases(RoadDatabases dbs) {
+        this.roadDbs = dbs;
+    }
+
+    /** The surveyed road lines of a box: NVDB's in Norway, the road databases' where they cover. */
+    public List<NvdbRoads.Segment> roadSegments(double south, double west, double north, double east) {
+        List<NvdbRoads.Segment> out = new ArrayList<>();
+        NvdbRoads.Store store = nvdb;
+        if (store != null && nvdbCovers(south, west, north, east)) out.addAll(store.get(south, west, north, east));
+        RoadDatabases dbs = roadDbs;
+        if (dbs != null && cfg.nvdbRoadWidths && cfg.metersPerBlock <= 2.0) out.addAll(dbs.get(south, west, north, east));
+        return out;
+    }
+
+    private boolean nvdbCovers(double south, double west, double north, double east) {
+        return nvdb != null && cfg.nvdbRoadWidths && cfg.metersPerBlock <= 2.0 && NvdbRoads.inNorway(south, west, north, east)
+                && com.berg.orbis.config.DataSources.covers("nvdb-roads", south, west, north, east);
     }
 
     public NvdbRoads.Store nvdbStore() {
         return nvdb;
+    }
+
+    /** Fetches the terrain tiles under a region (south, west, north, east) in parallel before it is drawn. */
+    private java.util.function.Consumer<double[]> terrainPrefetch;
+
+    public void setTerrainPrefetch(java.util.function.Consumer<double[]> prefetch) {
+        this.terrainPrefetch = prefetch;
     }
 
     public RegionRaster rasterize(int regionX, int regionZ, OsmData data) {
@@ -121,12 +213,20 @@ public final class FeatureRasterizer {
     /** As above, with NVDB segments already fetched for the region (null = fetch here if wanted). */
     public RegionRaster rasterize(int regionX, int regionZ, OsmData data, List<NvdbRoads.Segment> nvdbSegments) {
         RegionRaster r = new RegionRaster(regionX, regionZ, cfg.regionSizeBlocks, cfg.regionMarginBlocks);
+        StepTimer st = new StepTimer();
         if (imagery != null) {
             // Pull every imagery tile for the region in parallel before the
             // per-cell sampling below asks for them one by one.
             double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
             double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
             imagery.prefetch(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]));
+            stepDone(st, "imagery");
+        }
+        if (terrainPrefetch != null) {
+            double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
+            double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
+            terrainPrefetch.accept(new double[]{Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])});
+            stepDone(st, "terrain");
         }
         if (data != null) {
             r.hasOsmData = !data.areas().isEmpty() || !data.ways().isEmpty() || !data.nodes().isEmpty();
@@ -135,16 +235,22 @@ public final class FeatureRasterizer {
             areasBigFirst.sort(Comparator.comparingDouble(OsmArea::approxAreaM2).reversed());
 
             if (cfg.generateLandCover) rasterizeLandCover(r, areasBigFirst);
+            stepDone(st, "landcover");
             if (cfg.generateWater) {
-                rasterizeWaterAreas(r, areasBigFirst);
+                List<com.berg.orbis.water.WaterBeds.Body> bodies = rasterizeWaterAreas(r, areasBigFirst);
                 rasterizeWaterways(r, data.ways());
                 rasterizeCoastline(r, data.ways());
+                measureSeaShore(r);
+                if (waterBeds != null && cfg.realWaterDepths) waterBeds.shape(r, bodies);
             }
+            stepDone(st, "water");
             if (cfg.generateLandCover && cfg.worldCoverLandCover && worldCover != null) fillLandCoverGaps(r);
+            stepDone(st, "worldcover");
             if (cfg.generateRoads) {
                 List<Cover> covers = cfg.generateBuildings ? buildingCovers(areasBigFirst) : List.of();
                 rasterizeTransport(r, data.ways(), nvdbIndex(r, nvdbSegments), covers);
             }
+            stepDone(st, "roads");
             if (cfg.generateBuildings) {
                 HeightStore.Loaded atlas = null;
                 if (heights != null && cfg.atlasBuildingHeights && !heights.isEmpty()) {
@@ -154,11 +260,106 @@ public final class FeatureRasterizer {
                 }
                 rasterizeBuildings(r, areasBigFirst, atlas);
             }
+            stepDone(st, "buildings");
             if (cfg.generateStreetFurniture || cfg.generateTrees) rasterizeDecor(r, data);
+            if (cfg.generateRoads && cfg.generateStreetFurniture && cfg.streetSigns && cfg.metersPerBlock <= 2.0) rasterizeStreetSigns(r, data.ways());
+            stepDone(st, "decor");
         }
         if (imagery != null && cfg.imageryGroundClassification) classifyGroundFromImagery(r);
-        if (cfg.generateTrees && cfg.treesFromCanopy && canopy != null) rasterizeCanopyTrees(r);
+        stepDone(st, "ground");
+        if (cfg.generateTrees && cfg.treesFromCanopy && canopy != null) {
+            java.util.function.Consumer<double[]> pre = canopyPrefetch;
+            if (pre != null) {
+                double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride), b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
+                pre.accept(new double[]{Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])});
+            }
+            rasterizeCanopyTrees(r);
+        }
+        stepDone(st, "canopy");
+        if (bedrock != null && cfg.bedrockTypes) rasterizeBedrock(r);
+        stepDone(st, "rock");
+        st.report(regionX, regionZ);
         return r;
+    }
+
+    private volatile boolean cancelled;
+
+    /**
+     * The world model this rasterizer belongs to was replaced (another world, other settings): a region being built
+     * stops at its next step instead of running on for minutes with the old world's downloads (abandoned Paris
+     * attempts kept French lidar and photo services busy beside a new Stavanger world, 2 Oct 2026).
+     */
+    public void cancel() {
+        cancelled = true;
+    }
+
+    /**
+     * A region without coastline of its own (open water, or inland): sea wherever the ground lies below sea level,
+     * written into the raster so that everything asking it agrees. The painter always decided so for such regions,
+     * but the rest (vanilla villages and other surface structures, trees, settlements, street life) asked only the
+     * coastline's sea and took open water for empty land: villages stood on the sea (Stavanger 1:2, 2 Oct 2026).
+     * A coarse look first, so a region with no ground below sea level costs a few hundred samples.
+     */
+    private void seaFromHeights(RegionRaster r) {
+        if (!cfg.seaFromElevation) return;
+        int stride = r.stride;
+        boolean any = false;
+        for (int lz = 0; lz < stride && !any; lz += 16) {
+            for (int lx = 0; lx < stride && !any; lx += 16) {
+                double y = elevation.sample(r.originX + lx, r.originZ + lz);
+                any = !Double.isNaN(y) && y < cfg.seaLevelY;
+            }
+        }
+        if (!any) return;
+        for (int i = 0, n = stride * stride; i < n; i++) {
+            double y = elevation.sample(r.originX + i % stride, r.originZ + i / stride);
+            if (!Double.isNaN(y) && y < cfg.seaLevelY) r.sea[i] = 1;
+        }
+        r.hasCoastline = true; // the sea array is now the answer, as with coastline
+    }
+
+    private void stepDone(StepTimer st, String name) {
+        st.step(name);
+        if (cancelled) throw new java.util.concurrent.CancellationException("world model replaced");
+    }
+
+    /** -Dorbis.profileRegions=true: how long each step of a region took (to find what makes a fresh region slow). */
+    private static final class StepTimer {
+        private static final boolean ON = Boolean.getBoolean("orbis.profileRegions");
+        private final StringBuilder sb = ON ? new StringBuilder() : null;
+        private long t = System.nanoTime();
+
+        void step(String name) {
+            if (!ON) return;
+            long now = System.nanoTime();
+            long ms = (now - t) / 1_000_000;
+            if (ms >= 50) sb.append(' ').append(name).append(' ').append(ms).append(" ms,");
+            t = now;
+        }
+
+        void report(int rx, int rz) {
+            if (ON) System.out.println("[orbis] Region " + rx + "," + rz + " steps:" + sb);
+        }
+    }
+
+    /** Each column's rock from the bedrock map, where it covers the region. */
+    private void rasterizeBedrock(RegionRaster r) {
+        double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
+        double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
+        double south = Math.min(a[0], b[0]), west = Math.min(a[1], b[1]), north = Math.max(a[0], b[0]), east = Math.max(a[1], b[1]);
+        if (!bedrock.overlaps(south, west, north, east)) return;
+        bedrock.prefetch(south, west, north, east);
+        byte[] rock = new byte[r.stride * r.stride];
+        boolean any = false;
+        for (int dz = 0; dz < r.stride; dz++) {
+            for (int dx = 0; dx < r.stride; dx++) {
+                double[] ll = mapper.toLatLonExact(r.originX + dx + 0.5, r.originZ + dz + 0.5);
+                int code = bedrock.rockAt(ll[0], ll[1]).ordinal();
+                rock[dz * r.stride + dx] = (byte) code;
+                any |= code != 0;
+            }
+        }
+        if (any) r.rock = rock;
     }
 
     // =====================================================================
@@ -253,17 +454,10 @@ public final class FeatureRasterizer {
                 if (r.building[idx] != 0 || r.road[idx] != 0 || r.water[idx] != 0 || r.sea[idx] != 0) continue;
                 if (!imageryMayOverride(r.landCoverAt(idx))) continue;
                 double[] ll = mapper.toLatLon(r.originX + lx, r.originZ + lz);
-                GroundClass gc;
-                int modelClass = cfg.groundClassesFromModel ? imagery.classAt(ll[0], ll[1]) : -1;
-                if (modelClass >= 0) {
-                    // A segmentation model's verdict (tools/classify_ground.py) beats the colour heuristic.
-                    gc = GroundClass.byCode(modelClass);
-                } else {
-                    int rgb = imagery.colourAt(ll[0], ll[1]);
-                    if (rgb < 0) continue;
-                    gc = GroundClass.classify(rgb);
-                    if (gc == GroundClass.WATER) gc = GroundClass.UNKNOWN; // never trust "blue" (roofs, shadows)
-                }
+                int rgb = imagery.colourAt(ll[0], ll[1]);
+                if (rgb < 0) continue;
+                GroundClass gc = GroundClass.classify(rgb);
+                if (gc == GroundClass.WATER) gc = GroundClass.UNKNOWN; // never trust "blue" (roofs, shadows)
                 sampled++;
                 raw[idx] = gc.code();
                 if (gc != GroundClass.UNKNOWN) classified++;
@@ -307,6 +501,66 @@ public final class FeatureRasterizer {
         }
         return false;
     }
+
+    /**
+     * The colour the streets have in this region's photo (0xRRGGBB), or -1 when too few street cells are photographed.
+     * Asphalt is a dark neutral grey, so whatever cast and brightness the photo gives it, it gives the roofs too.
+     */
+    private int streetColour(RegionRaster r) {
+        if (r.imageryStreetColour != -2) return r.imageryStreetColour;
+        List<int[]> samples = new ArrayList<>();
+        int step = 7;
+        for (int dz = 0; dz < r.stride; dz += step) {
+            for (int dx = (dz / step) % step; dx < r.stride; dx += step) {
+                int idx = dz * r.stride + dx;
+                RoadFeature rf = r.roadAt(idx);
+                if (rf == null || rf.kind != RoadFeature.Kind.ROAD || rf.bridge || rf.tunnel || r.building[idx] != 0) continue;
+                double[] ll = mapper.toLatLon(r.originX + dx, r.originZ + dz);
+                int rgb = imagery.colourAt(ll[0], ll[1]);
+                if (rgb >= 0) samples.add(new int[]{(rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF});
+            }
+        }
+        int result = -1;
+        if (samples.size() >= 60) {
+            // Without the brightest fifth (markings, cars, sunlit concrete) and the darkest (shadows, wet patches).
+            samples.sort(java.util.Comparator.comparingInt(c -> c[0] + c[1] + c[2]));
+            List<int[]> core = samples.subList(samples.size() / 5, samples.size() * 4 / 5);
+            long sr = 0, sg = 0, sb = 0;
+            for (int[] c : core) {
+                sr += c[0];
+                sg += c[1];
+                sb += c[2];
+            }
+            result = (int) (sr / core.size()) << 16 | (int) (sg / core.size()) << 8 | (int) (sb / core.size());
+        }
+        r.imageryStreetColour = result;
+        return result;
+    }
+
+    /**
+     * A roof's photographed colour as the material's own: the photo's cast removed (the streets are neutral), and its
+     * brightness mapped so a roof as bright as the street is a dark grey, spread by a gentle curve. Measured on Bergen's
+     * roofs tagged with a colour in OpenStreetMap (Esri imagery, which shows black roofs mid-grey and everything with a
+     * pinkish haze): the nearest roof block matched the tag's kind for 46 of 80 roofs instead of 37, black roofs
+     * dark for 24 of 29 instead of 6.
+     */
+    private static int correctRoofColour(int rgb, int street) {
+        if (street < 0) return rgb;
+        int[] ref = {(street >> 16) & 0xFF, (street >> 8) & 0xFF, street & 0xFF};
+        double lum = (ref[0] + ref[1] + ref[2]) / 3.0;
+        if (lum < 8) return rgb;
+        int out = 0;
+        for (int ch = 0; ch < 3; ch++) {
+            int v = (rgb >> (16 - 8 * ch)) & 0xFF;
+            double balanced = v * lum / Math.max(1, ref[ch]);
+            int c = (int) Math.max(0, Math.min(255, Math.round(ROOF_STREET_GREY * Math.pow(balanced / lum, ROOF_CURVE))));
+            out |= c << (16 - 8 * ch);
+        }
+        return out;
+    }
+
+    /** The grey a roof as bright as the street becomes, and the curve that spreads darker and lighter roofs from it. */
+    private static final double ROOF_STREET_GREY = 0x58, ROOF_CURVE = 1.3;
 
     /** Median imagery colour over a building's footprint cells, or -1. */
     private int roofColourFromImagery(RegionRaster r, short code, int[] bbox) {
@@ -648,8 +902,10 @@ public final class FeatureRasterizer {
             case com.berg.orbis.landcover.WorldCoverProvider.CROPLAND -> LandCover.FARMLAND;
             case com.berg.orbis.landcover.WorldCoverProvider.BUILT_UP -> LandCover.RESIDENTIAL;
             case com.berg.orbis.landcover.WorldCoverProvider.BARE -> {
-                double e = elevationAt(x, z);
-                boolean warm = Math.abs(lat) < 35 && (Double.isNaN(e) || e - cfg.seaLevelY < 1500);
+                // Metres, not blocks above sea level: at 1:2 "1500" meant 3000 m, and Himalayan valleys became sand
+                // (beach biomes, buried treasure at 4000 m).
+                double e = metresAt(x, z);
+                boolean warm = Math.abs(lat) < 35 && (Double.isNaN(e) || e < 1500);
                 yield warm ? LandCover.SAND : LandCover.BARE_ROCK;
             }
             case com.berg.orbis.landcover.WorldCoverProvider.SNOW_ICE -> LandCover.GLACIER;
@@ -804,7 +1060,9 @@ public final class FeatureRasterizer {
     // Water
     // =====================================================================
 
-    private void rasterizeWaterAreas(RegionRaster r, List<OsmArea> areasBigFirst) {
+    /** Fills the water areas; returns the lakes, reservoirs, ponds and river areas whose beds can be shaped. */
+    private List<com.berg.orbis.water.WaterBeds.Body> rasterizeWaterAreas(RegionRaster r, List<OsmArea> areasBigFirst) {
+        List<com.berg.orbis.water.WaterBeds.Body> bodies = new ArrayList<>();
         for (OsmArea area : areasBigFirst) {
             WaterFeature.Kind kind = waterAreaKind(area.tags());
             if (kind == null) continue;
@@ -853,7 +1111,12 @@ public final class FeatureRasterizer {
             fillArea(r, area, (idx, x, z) -> {
                 if (idx >= 0) r.water[idx] = code;
             });
+            if (!atSea && (kind == WaterFeature.Kind.LAKE || kind == WaterFeature.Kind.RESERVOIR || kind == WaterFeature.Kind.POND
+                    || kind == WaterFeature.Kind.RIVER)) {
+                bodies.add(new com.berg.orbis.water.WaterBeds.Body(code, kind, area));
+            }
         }
+        return bodies;
     }
 
     private static boolean isTidal(Map<String, String> tags) {
@@ -926,35 +1189,95 @@ public final class FeatureRasterizer {
             r.waters.add(wf);
             short code = (short) r.waters.size();
             List<double[]> pts = toBlockRing(way.points());
+            // A river or canal line is a channel as deep as a river of its width, deepest along its middle.
+            boolean channel = waterBeds != null && cfg.realWaterDepths && !intermittent
+                    && (kind == WaterFeature.Kind.RIVER || kind == WaterFeature.Kind.CANAL);
+            double channelDepth = channel ? com.berg.orbis.water.WaterBeds.riverDepthM(OsmTags.parseLength(way.tags().get("width"), defaultWidth)) / cfg.metersPerBlock : 0;
+            if (channel && r.bedDepth == null) r.bedDepth = new short[r.stride * r.stride];
             walkThickLine(r, pts, half, (idx, x, z, dist, along, dir) -> {
-                if (idx >= 0 && r.water[idx] == 0) r.water[idx] = code;
+                if (idx >= 0 && r.water[idx] == 0) {
+                    r.water[idx] = code;
+                    if (channel) {
+                        double across = Math.min(1, dist / (half + 1.0));
+                        r.bedDepth[idx] = (short) Math.max(1, Math.round(channelDepth * (1 - across * across)));
+                    }
+                }
             });
         }
     }
 
     /**
-     * natural=coastline ways have land on the LEFT and water on the RIGHT
-     * (in walking direction). Rasterise them as a 4-connected barrier, seed
-     * both sides, and run a multi-source flood so every cell is labelled
-     * sea or land by which side reached it first.
+     * How far each sea column (the coastline's sea, or water mapped at sea level) lies from the shore, so the sea bed
+     * can shelve down from the shore where the elevation data has no depth (it records the sea surface as 0 m).
+     */
+    private static void measureSeaShore(RegionRaster r) {
+        int n = r.stride * r.stride;
+        boolean[] inside = new boolean[n];
+        boolean any = false;
+        for (int idx = 0; idx < n; idx++) {
+            boolean s = r.sea[idx] != 0;
+            if (!s) {
+                WaterFeature wf = r.waterAt(idx);
+                s = wf != null && wf.atSeaLevel;
+            }
+            inside[idx] = s;
+            any |= s;
+        }
+        if (!any) return;
+        float[] d = com.berg.orbis.water.WaterBeds.distanceInside(inside, r.stride, r.stride);
+        r.seaShore = new byte[n];
+        for (int idx = 0; idx < n; idx++) {
+            if (inside[idx]) r.seaShore[idx] = (byte) Math.max(1, Math.min(127, Math.round(d[idx])));
+        }
+    }
+
+    /**
+     * natural=coastline ways have land on the LEFT and water on the RIGHT (in walking direction). They are drawn as
+     * a 4-connected barrier, which splits the region into pieces; every piece then takes the side most of the
+     * samples along its coastline point to (a sample 1.6 blocks to the right votes sea, to the left land). A vote,
+     * not a race: a breakwater or pier a few blocks wide put "land" samples on its far side, in the sea, and the
+     * flood fill that used to label cells by whichever side reached them first ran from there across the sea,
+     * leaving dry sea floor (Bergen 1:2, 2 Oct 2026); the sea, bordered by coastline all round, outvotes them.
+     * A piece with no samples (cut off by the region's edge) is sea where it lies below sea level. Coastline that
+     * only passes near the region (ways from the map cells around it, no point inside) gives no samples at all:
+     * the region is then left to the heights, as one with no coastline.
      */
     private void rasterizeCoastline(RegionRaster r, List<OsmWay> ways) {
         List<OsmWay> coast = new ArrayList<>();
         for (OsmWay w : ways) {
             if ("coastline".equals(w.tags().get("natural"))) coast.add(w);
         }
-        if (coast.isEmpty()) return;
-        r.hasCoastline = true;
+        if (coast.isEmpty()) {
+            seaFromHeights(r);
+            return;
+        }
 
-        int n = r.stride * r.stride;
+        int stride = r.stride, n = stride * stride;
         byte[] barrier = new byte[n];
-        byte[] label = new byte[n]; // 0 unknown, 1 land, 2 sea
-        ArrayDeque<Integer> queue = new ArrayDeque<>();
-
         for (OsmWay w : coast) {
             List<double[]> pts = toBlockRing(w.points());
             walkThinLine4(r, pts, (idx, x, z) -> barrier[idx] = 1);
         }
+        // The pieces between the coastlines (4-connected, as the barrier is).
+        int[] piece = new int[n];
+        int pieces = 0;
+        int[] stack = new int[n];
+        for (int i = 0; i < n; i++) {
+            if (barrier[i] != 0 || piece[i] != 0) continue;
+            int id = ++pieces, top = 0;
+            piece[i] = id;
+            stack[top++] = i;
+            while (top > 0) {
+                int idx = stack[--top];
+                int x = idx % stride, z = idx / stride;
+                if (x > 0 && barrier[idx - 1] == 0 && piece[idx - 1] == 0) { piece[idx - 1] = id; stack[top++] = idx - 1; }
+                if (x < stride - 1 && barrier[idx + 1] == 0 && piece[idx + 1] == 0) { piece[idx + 1] = id; stack[top++] = idx + 1; }
+                if (z > 0 && barrier[idx - stride] == 0 && piece[idx - stride] == 0) { piece[idx - stride] = id; stack[top++] = idx - stride; }
+                if (z < stride - 1 && barrier[idx + stride] == 0 && piece[idx + stride] == 0) { piece[idx + stride] = id; stack[top++] = idx + stride; }
+            }
+        }
+        int[] seaVotes = new int[pieces + 1], landVotes = new int[pieces + 1];
+        long votes = 0;
         for (OsmWay w : coast) {
             List<double[]> pts = toBlockRing(w.points());
             for (int i = 0; i + 1 < pts.size(); i++) {
@@ -969,37 +1292,31 @@ public final class FeatureRasterizer {
                 for (int s = 0; s <= samples; s++) {
                     double t = (double) s / samples;
                     double px = a[0] + dx * t, pz = a[1] + dz * t;
-                    seed(r, barrier, label, queue, px + nx * 1.6, pz + nz * 1.6, (byte) 2);
-                    seed(r, barrier, label, queue, px - nx * 1.6, pz - nz * 1.6, (byte) 1);
+                    int sea = r.index((int) Math.floor(px + nx * 1.6), (int) Math.floor(pz + nz * 1.6));
+                    if (sea >= 0 && piece[sea] != 0) { seaVotes[piece[sea]]++; votes++; }
+                    int land = r.index((int) Math.floor(px - nx * 1.6), (int) Math.floor(pz - nz * 1.6));
+                    if (land >= 0 && piece[land] != 0) { landVotes[piece[land]]++; votes++; }
                 }
             }
         }
-        int stride = r.stride;
-        while (!queue.isEmpty()) {
-            int idx = queue.poll();
-            byte l = label[idx];
-            int x = idx % stride, z = idx / stride;
-            if (x > 0) tryLabel(barrier, label, queue, idx - 1, l);
-            if (x < stride - 1) tryLabel(barrier, label, queue, idx + 1, l);
-            if (z > 0) tryLabel(barrier, label, queue, idx - stride, l);
-            if (z < stride - 1) tryLabel(barrier, label, queue, idx + stride, l);
+        if (votes == 0) {
+            seaFromHeights(r); // no coastline in the region itself: the heights decide
+            return;
         }
+        r.hasCoastline = true;
         for (int i = 0; i < n; i++) {
-            if (label[i] == 2 || (barrier[i] == 1 && label[i] == 0)) r.sea[i] = 1;
+            if (barrier[i] != 0) {
+                r.sea[i] = 1; // the line itself is the water's edge
+                continue;
+            }
+            int p = piece[i];
+            if (seaVotes[p] > landVotes[p]) {
+                r.sea[i] = 1;
+            } else if (seaVotes[p] == landVotes[p] && cfg.seaFromElevation) {
+                double y = elevation.sample(r.originX + i % stride, r.originZ + i / stride);
+                if (!Double.isNaN(y) && y < cfg.seaLevelY) r.sea[i] = 1;
+            }
         }
-    }
-
-    private static void seed(RegionRaster r, byte[] barrier, byte[] label, ArrayDeque<Integer> queue, double px, double pz, byte value) {
-        int idx = r.index((int) Math.floor(px), (int) Math.floor(pz));
-        if (idx < 0 || barrier[idx] != 0 || label[idx] != 0) return;
-        label[idx] = value;
-        queue.add(idx);
-    }
-
-    private static void tryLabel(byte[] barrier, byte[] label, ArrayDeque<Integer> queue, int idx, byte value) {
-        if (barrier[idx] != 0 || label[idx] != 0) return;
-        label[idx] = value;
-        queue.add(idx);
     }
 
     // =====================================================================
@@ -1012,6 +1329,160 @@ public final class FeatureRasterizer {
     private static final int RAMP_REACH = 96;
 
     private record Drawn(RoadFeature rf, short code, List<double[]> pts, double length) {}
+
+
+    /**
+     * Road grading: half-window of the smoothing along a road, and how far the road may stand off the ground at its
+     * centreline. Both are small on purpose: grading is there to keep a road level across its width (no sideways
+     * tilt, no terraces within the carriageway); a long smoothing window lifted paths out of dips and sank them
+     * into crests, and one-block steps along a road are left to the ramps.
+     */
+    private static final double GRADE_WINDOW_M = 4.0;
+    private static final double GRADE_MAX_OFFSET = 1.0;
+    /** How far beyond a road's edges the road bed is looked for (a mapped line can be metres off the real street). */
+    private static final double GRADE_SEARCH_M = 6.0;
+
+    /**
+     * The graded height of a ground road along its length, one value per block: the ground under the centreline,
+     * smoothed over about 4 m either way, pinned to the ground at both end nodes (so every way meeting at a junction
+     * arrives at the same height) and never more than one block off the ground at the centreline.
+     */
+    private double[] gradeProfile(Drawn g, boolean freeStart, boolean freeEnd) {
+        List<double[]> pts = g.pts();
+        int n = (int) Math.ceil(g.length()) + 1;
+        double[] raw = new double[n];
+        int half = g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0);
+        int span = half + Math.max(2, (int) Math.round(mapper.blocks(GRADE_SEARCH_M)));
+        double[] cross = new double[2 * span + 1];
+        int seg = 0;
+        double segStart = 0;
+        double last = Double.NaN;
+        for (int a = 0; a < n; a++) {
+            double s = Math.min(a, g.length());
+            while (seg + 2 < pts.size()) {
+                double[] p0 = pts.get(seg), p1 = pts.get(seg + 1);
+                double len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+                if (segStart + len >= s) break;
+                segStart += len;
+                seg++;
+            }
+            double[] p0 = pts.get(seg), p1 = pts.get(Math.min(seg + 1, pts.size() - 1));
+            double len = Math.max(1e-9, Math.hypot(p1[0] - p0[0], p1[1] - p0[1]));
+            double t = Math.max(0, Math.min(1, (s - segStart) / len));
+            double ux = (p1[0] - p0[0]) / len, uz = (p1[1] - p0[1]) / len;
+            double e = roadBed(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, -uz, ux, half, span, cross);
+            if (Double.isNaN(e)) e = last;
+            raw[a] = e;
+            if (!Double.isNaN(e)) last = e;
+        }
+        double first = Double.NaN;
+        for (double v : raw) if (!Double.isNaN(v)) { first = v; break; }
+        if (Double.isNaN(first)) return null;
+        for (int a = 0; a < n && Double.isNaN(raw[a]); a++) raw[a] = first;
+        double node0 = elevationAt(pts.get(0)[0], pts.get(0)[1]);
+        double node1 = elevationAt(pts.get(pts.size() - 1)[0], pts.get(pts.size() - 1)[1]);
+        if (Double.isNaN(node0)) node0 = raw[0];
+        if (Double.isNaN(node1)) node1 = raw[n - 1];
+        // An end at a bridge or tunnel is left to its ramp or cutting: pinned to the portal node's ground (up on the
+        // slope), the road's last cross-section stood as a ridge above the cutting.
+        boolean pin0 = !freeStart, pin1 = !freeEnd;
+        int w = Math.max(2, (int) Math.round(mapper.blocks(GRADE_WINDOW_M)));
+        // The ends meet the ground at their nodes (shared by every way there); the blend to them is kept gradual.
+        int pinReach = Math.max(4, w);
+        double[] profile = new double[n];
+        if (n - 1 < 2 * pinReach) {
+            // A short way (a link between two junctions): a straight line between its two node heights.
+            double e0 = pin0 ? node0 : raw[0], e1 = pin1 ? node1 : raw[n - 1];
+            for (int a = 0; a < n; a++) profile[a] = n == 1 ? e0 : e0 + (e1 - e0) * a / (double) (n - 1);
+            limitSlope(profile, maxRoadSlope(), pin0, pin1);
+            return profile;
+        }
+        double[] prefix = new double[n + 1];
+        for (int a = 0; a < n; a++) prefix[a + 1] = prefix[a] + raw[a];
+        for (int a = 0; a < n; a++) {
+            int lo = Math.max(0, a - w), hi = Math.min(n - 1, a + w);
+            double v = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
+            v = Math.max(raw[a] - GRADE_MAX_OFFSET, Math.min(raw[a] + GRADE_MAX_OFFSET, v));
+            double w0 = Math.max(0, 1 - a / (double) pinReach), w1 = Math.max(0, 1 - (n - 1 - a) / (double) pinReach);
+            if (pin0 && w0 > 0) v += w0 * (node0 - v);
+            if (pin1 && w1 > 0) v += w1 * (node1 - v);
+            profile[a] = v;
+        }
+        limitSlope(profile, maxRoadSlope(), pin0, pin1);
+        return profile;
+    }
+
+    /**
+     * The steepest a graded road may climb, in blocks per block along it: a block per block (45 degrees, far past
+     * any real street) up to 1:2, half the metres per block beyond (a 50% grade: at 1:12 a steep street really
+     * climbs several blocks per block). Steeper jumps came from the road-bed search switching strips between two
+     * samples; rounded, they showed as a sawtooth of two-block steps across diagonal streets.
+     */
+    private double maxRoadSlope() {
+        return Math.max(1.0, 0.5 * cfg.metersPerBlock);
+    }
+
+    /**
+     * Evens out any step between consecutive samples that is steeper than {@code s}, moving both sides towards each
+     * other (a pinned end stays at its junction height), then clamps forwards as the guarantee.
+     */
+    static void limitSlope(double[] p, double s, boolean fix0, boolean fix1) {
+        int last = p.length - 1;
+        for (int iter = 0; iter < 64; iter++) {
+            boolean changed = false;
+            for (int i = 0; i < last; i++) {
+                double d = p[i + 1] - p[i];
+                if (Math.abs(d) <= s + 1e-9) continue;
+                double excess = (Math.abs(d) - s) * Math.signum(d);
+                boolean lock0 = fix0 && i == 0, lock1 = fix1 && i + 1 == last;
+                if (lock0 && lock1) continue;
+                if (lock0) p[i + 1] -= excess;
+                else if (lock1) p[i] += excess;
+                else {
+                    p[i] += excess / 2;
+                    p[i + 1] -= excess / 2;
+                }
+                changed = true;
+            }
+            if (!changed) return;
+        }
+        for (int i = 0; i < last; i++) p[i + 1] = Math.max(p[i] - s, Math.min(p[i] + s, p[i + 1]));
+    }
+
+    /**
+     * The height of the road bed at a point of a road: the ground is sampled across the road and a little beyond it
+     * (perpendicular direction px, pz), and the flattest strip as wide as the road, preferring one near the mapped
+     * line, gives its middle height. A street is a flat strip cut into the slope, so a line drawn a few metres off
+     * the real street, on the bank beside it, still finds the street; on even ground the centre wins. NaN when the
+     * ground is unknown here.
+     */
+    private double roadBed(double cx, double cz, double px, double pz, int half, int span, double[] cross) {
+        double centre = elevationAt(cx, cz);
+        if (Double.isNaN(centre)) return centre;
+        if (half < 1) return centre; // a one-block path is its own bed
+        for (int i = -span; i <= span; i++) {
+            double v = elevationAt(cx + px * i, cz + pz * i);
+            cross[i + span] = Double.isNaN(v) ? centre : v;
+        }
+        int len = 2 * half + 1;
+        int bestStart = span - half;
+        double bestScore = Double.MAX_VALUE;
+        for (int start = 0; start + len <= cross.length; start++) {
+            double lo = Double.MAX_VALUE, hi = -Double.MAX_VALUE;
+            for (int i = start; i < start + len; i++) {
+                lo = Math.min(lo, cross[i]);
+                hi = Math.max(hi, cross[i]);
+            }
+            double score = (hi - lo) + 0.25 * Math.abs(start + half - span);
+            if (score < bestScore) {
+                bestScore = score;
+                bestStart = start;
+            }
+        }
+        double[] strip = java.util.Arrays.copyOfRange(cross, bestStart, bestStart + len);
+        java.util.Arrays.sort(strip);
+        return strip[len / 2];
+    }
 
     /** Identity of a way endpoint: connected ways share the OSM node, so they share exact coordinates. */
     private static long nodeKey(double[] p) {
@@ -1026,8 +1497,8 @@ public final class FeatureRasterizer {
             double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
             double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
             double south = Math.min(a[0], b[0]), north = Math.max(a[0], b[0]), west = Math.min(a[1], b[1]), east = Math.max(a[1], b[1]);
-            if (store == null || !wantsNvdb(south, west, north, east)) return null;
-            segs = store.get(south, west, north, east);
+            if (!wantsNvdb(south, west, north, east)) return null;
+            segs = roadSegments(south, west, north, east);
         }
         if (segs.isEmpty()) return null;
         NvdbRoads.Index index = new NvdbRoads.Index(segs, mapper);
@@ -1114,6 +1585,9 @@ public final class FeatureRasterizer {
         // road height at each sunken tunnel portal, so they get cuttings.
         Map<Long, Double> nodeDeck = new HashMap<>();
         Map<Long, Double> nodeCut = new HashMap<>();
+        // Ends of bridges and tunnels: a graded ground road is not pinned to the ground there (the approach ramp or
+        // the cutting sets its height), since the node of a portal lies on the slope above the road.
+        java.util.Set<Long> structureEnds = new java.util.HashSet<>();
         // Where one tunnel way hands over to the next (OSM splits long tunnels at junctions and attribute
         // changes), the shared node is inside the mountain, not a portal: every way through it must meet at one
         // floor height. A first pass computes what each way can reach there on its own; the lowest value wins
@@ -1245,14 +1719,14 @@ public final class FeatureRasterizer {
             // value this way brings to the node then depends on nothing this region knows differently from the
             // next one (whether a far end is a portal is only known near that end). A portal end is merely
             // assumed a little deeper than it will be.
-            double[] pre = tunnelProfile(r, null, p, preHalf, Math.max(1e-6, len), e0 - TUNNEL_COVER, e1 - TUNNEL_COVER,
+            double[] pre = tunnelProfile(r, null, p, preHalf, Math.max(1e-6, len), e0 - tunnelCover, e1 - tunnelCover,
                     other -> false, endCovers, 0, 0);
             if (inA) nodeTunnel.merge(a, pre[0], Math::min);
             if (inB) nodeTunnel.merge(b, pre[pre.length - 1], Math::min);
             if (DEBUG_TUNNELS) {
-                System.out.printf(Locale.ROOT, "[orbis] tunnel pre way %d region %d,%d len %.0f half %d covers %d (A %d, B %d): A %.0f,%.0f in=%b e=%.1f pre=%.1f | B %.0f,%.0f in=%b e=%.1f pre=%.1f%n",
+                System.out.println(String.format(Locale.ROOT, "[orbis] tunnel pre way %d region %d,%d len %.0f half %d covers %d (A %d, B %d): A %.0f,%.0f in=%b e=%.1f pre=%.1f | B %.0f,%.0f in=%b e=%.1f pre=%.1f",
                         w.id(), r.regionX, r.regionZ, len, preHalf, endCovers.size(), nodeCovers.getOrDefault(a, List.of()).size(), nodeCovers.getOrDefault(b, List.of()).size(),
-                        p.get(0)[0], p.get(0)[1], inA, e0, pre[0], p.get(p.size() - 1)[0], p.get(p.size() - 1)[1], inB, e1, pre[pre.length - 1]);
+                        p.get(0)[0], p.get(0)[1], inA, e0, pre[0], p.get(p.size() - 1)[0], p.get(p.size() - 1)[1], inB, e1, pre[pre.length - 1]));
             }
         }
         List<Drawn> groundWays = new ArrayList<>();
@@ -1280,7 +1754,7 @@ public final class FeatureRasterizer {
 
             int lanes = OsmTags.parseInt(tags.get("lanes"), -1);
             if (lanes < 0 && nvdbIndex != null && kind == RoadFeature.Kind.ROAD) {
-                double[] m = nvdbIndex.match(toBlockRing(way.points()));
+                double[] m = halfForOneWay(way, nvdbIndex.match(toBlockRing(way.points())));
                 if (m[1] > 0) lanes = (int) m[1];
             }
             int total = roadWidthBlocks(way, kind, highway, railway, nvdbIndex);
@@ -1326,6 +1800,10 @@ public final class FeatureRasterizer {
             final int fullHalf = half + (sidewalk ? 1 : 0);
             final long k0 = nodeKey(pts.get(0)), k1 = nodeKey(pts.get(pts.size() - 1));
             wayEnds.put(rf, new long[]{k0, k1});
+            if (bridge || tunnel) {
+                structureEnds.add(k0);
+                structureEnds.add(k1);
+            }
             final java.util.function.Predicate<RoadFeature> isApproach = other -> {
                 long[] ends = wayEnds.get(other);
                 return ends != null && (ends[0] == k0 || ends[0] == k1 || ends[1] == k0 || ends[1] == k1);
@@ -1361,9 +1839,9 @@ public final class FeatureRasterizer {
                     yEnd = e1;
                     if (!passage) {
                         boolean in0 = interiorTunnelNode(k0, tunnelEndCount, groundEnds), in1 = interiorTunnelNode(k1, tunnelEndCount, groundEnds);
-                        double s0 = in0 ? nodeTunnel.getOrDefault(k0, e0 - TUNNEL_COVER) : e0;
-                        double s1 = in1 ? nodeTunnel.getOrDefault(k1, e1 - TUNNEL_COVER) : e1;
-                        deckProfile = tunnelProfile(r, rf, pts, fullHalf, wayLen, s0, s1, isApproach, covers, in0 ? 0 : PORTAL_MARGIN, in1 ? 0 : PORTAL_MARGIN);
+                        double s0 = in0 ? nodeTunnel.getOrDefault(k0, e0 - tunnelCover) : e0;
+                        double s1 = in1 ? nodeTunnel.getOrDefault(k1, e1 - tunnelCover) : e1;
+                        deckProfile = tunnelProfile(r, rf, pts, fullHalf, wayLen, s0, s1, isApproach, covers, in0 ? 0 : portalMargin, in1 ? 0 : portalMargin);
                         // Every way through an interior node meets it at the agreed floor: whatever this way alone
                         // would dig deeper near the node (a street above it, a building the node pass did not see)
                         // is ramped back up to the node at the usual grade rather than left as a step.
@@ -1381,8 +1859,8 @@ public final class FeatureRasterizer {
                         yStart = deckProfile[0];
                         yEnd = deckProfile[deckProfile.length - 1];
                         if (DEBUG_TUNNELS) {
-                            System.out.printf(Locale.ROOT, "[orbis] tunnel way %d region %d,%d len %.0f: start in=%b e0=%.1f s0=%.1f y=%.1f | end in=%b e1=%.1f s1=%.1f y=%.1f%n",
-                                    way.id(), r.regionX, r.regionZ, wayLen, in0, e0, s0, yStart, in1, e1, s1, yEnd);
+                            System.out.println(String.format(Locale.ROOT, "[orbis] tunnel way %d region %d,%d len %.0f: start in=%b e0=%.1f s0=%.1f y=%.1f | end in=%b e1=%.1f s1=%.1f y=%.1f",
+                                    way.id(), r.regionX, r.regionZ, wayLen, in0, e0, s0, yStart, in1, e1, s1, yEnd));
                         }
                         // A portal below ground level: the approach road must dig down to it.
                         if (!in0 && yStart < e0 - 1) nodeCut.merge(k0, yStart, Math::min);
@@ -1476,6 +1954,35 @@ public final class FeatureRasterizer {
             if (isBridge) bridges.add(new Drawn(rf, code, pts, wayLen));
         }
 
+        // Road grading: a ground road is level across its width at the height of a smoothed profile along it,
+        // instead of following the ground column by column (which tilts it sideways and terraces it on hillsides).
+        // Bridge approach ramps and tunnel cuttings below still override it where they apply.
+        java.util.Map<Drawn, double[]> graded = new java.util.IdentityHashMap<>();
+        if (cfg.roadGrading) {
+            // Each cell takes the height of the nearest piece of its road (as it took its surface): on a bend the
+            // first piece to reach a cell is not always the nearest, and two pieces meet at different distances along
+            // the road, which left a step across Holbergsallmenningen and other bent streets.
+            float[] gradeDist = new float[r.stride * r.stride];
+            Arrays.fill(gradeDist, Float.MAX_VALUE);
+            for (Drawn g : groundWays) {
+                if (g.rf().isRail() || g.length() < 2) continue;
+                double[] profile = gradeProfile(g, structureEnds.contains(nodeKey(g.pts().get(0))),
+                        structureEnds.contains(nodeKey(g.pts().get(g.pts().size() - 1))));
+                if (profile == null) continue;
+                graded.put(g, profile);
+                int half = g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0);
+                walkThickLine(r, g.pts(), half, (idx, x, z, dist, along, dir) -> {
+                    if (idx < 0 || r.road[idx] != g.code()) return;
+                    // Already set by a bridge, tunnel or pier drawn over it, or by a nearer piece of this road.
+                    if (r.roadY[idx] != RegionRaster.NO_Y && gradeDist[idx] == Float.MAX_VALUE) return;
+                    if (dist >= gradeDist[idx]) return;
+                    gradeDist[idx] = (float) dist;
+                    int a = (int) Math.max(0, Math.min(profile.length - 1, Math.round(along)));
+                    r.roadY[idx] = (short) Math.round(profile[a]);
+                });
+            }
+        }
+
         // Parallel bridges share one deck. Each carriageway of a big bridge is its own OSM way, and a footbridge
         // often runs alongside; each got its deck from the terrain at its own two ends, which differ when one
         // starts on the ramp and another on the quay, so the decks came out stepped. Every bridge cell is lifted
@@ -1496,12 +2003,16 @@ public final class FeatureRasterizer {
                 if (dStart == null && dEnd == null) continue;
                 final double ds = dStart == null ? Double.NEGATIVE_INFINITY : dStart;
                 final double de = dEnd == null ? Double.NEGATIVE_INFINITY : dEnd;
+                final double[] gp = graded.get(g);
                 walkThickLine(r, g.pts(), g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0), (idx, x, z, dist, along, dir) -> {
                     if (idx < 0 || r.road[idx] != g.code()) return;
                     double fromStart = along, fromEnd = g.length() - along;
                     if (fromStart > RAMP_REACH && fromEnd > RAMP_REACH) return;
                     double ramp = Math.max(ds - RAMP_GRADE * fromStart, de - RAMP_GRADE * fromEnd);
-                    double terrain = elevationAt(x, z);
+                    // Against the graded road at this point along it (the same for the whole width), not the ground
+                    // under each cell: per cell, half a road took the ramp and half did not (a sawtooth, and an
+                    // eight-block drop in O.J. Brochs gate).
+                    double terrain = gp != null ? gp[(int) Math.max(0, Math.min(gp.length - 1, Math.round(along)))] : elevationAt(x, z);
                     if (Double.isNaN(terrain) || ramp < terrain + 1.0) return;
                     short y = (short) Math.round(ramp);
                     if (r.roadY[idx] == RegionRaster.NO_Y || y > r.roadY[idx]) r.roadY[idx] = y;
@@ -1533,22 +2044,56 @@ public final class FeatureRasterizer {
                 if (cStart == null && cEnd == null) continue;
                 final double cs = cStart == null ? Double.POSITIVE_INFINITY : cStart;
                 final double ce = cEnd == null ? Double.POSITIVE_INFINITY : cEnd;
+                final double[] gp = graded.get(g);
                 walkThickLine(r, g.pts(), g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0), (idx, x, z, dist, along, dir) -> {
                     if (idx < 0 || r.road[idx] != g.code()) return;
                     double fromStart = along, fromEnd = g.length() - along;
                     if (fromStart > RAMP_REACH && fromEnd > RAMP_REACH) return;
                     double cut = Math.min(cs + RAMP_GRADE * fromStart, ce + RAMP_GRADE * fromEnd);
-                    double terrain = elevationAt(x, z);
+                    // As for the ramps: decided per point along the road, so the cutting takes its whole width.
+                    double terrain = gp != null ? gp[(int) Math.max(0, Math.min(gp.length - 1, Math.round(along)))] : elevationAt(x, z);
                     if (Double.isNaN(terrain) || cut > terrain - 1.0) return;
                     short y = (short) Math.round(cut);
                     if (r.roadY[idx] == RegionRaster.NO_Y || y < r.roadY[idx]) r.roadY[idx] = y;
                 });
             }
         }
+
+        // Side slopes of the graded roads: the columns just outside a road blend from the road height back to the
+        // ground over SHOULDER blocks, so a road cut into a hillside or raised over a dip has earth banks, not
+        // vertical walls. Buildings, water and other roads keep their own heights.
+        if (!graded.isEmpty()) {
+            r.ensureShoulders();
+            for (java.util.Map.Entry<Drawn, double[]> e : graded.entrySet()) {
+                Drawn g = e.getKey();
+                double[] profile = e.getValue();
+                int half = g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0);
+                walkThickLine(r, g.pts(), half + RegionRaster.SHOULDER, (idx, x, z, dist, along, dir) -> {
+                    if (idx < 0 || r.road[idx] != 0 || r.building[idx] != 0 || r.water[idx] != 0) return;
+                    if (r.hasCoastline && r.isSea(idx)) return;
+                    int k = Math.max(1, (int) Math.ceil(dist - half - 0.5));
+                    if (k > RegionRaster.SHOULDER) return;
+                    if (r.shoulderDist[idx] != 0 && r.shoulderDist[idx] <= k) return;
+                    int a = (int) Math.max(0, Math.min(profile.length - 1, Math.round(along)));
+                    r.shoulderDist[idx] = (byte) k;
+                    r.shoulderY[idx] = (short) Math.round(profile[a]);
+                });
+            }
+        }
     }
 
     private void unifyParallelBridges(RegionRaster r, List<Drawn> bridges, Map<Long, Double> nodeDeck) {
-        short[] before = r.roadY.clone();
+        // Repeated until nothing moves: a way lifted to its neighbour in one round (a carriageway to the other one)
+        // lifts the ways beside it in the next (the cycleway beside that carriageway on Puddefjordsbroen stayed 2 to
+        // 5 blocks under the deck when every way was compared with the others' heights from before any lift).
+        for (int round = 0; round < 4; round++) {
+            short[] before = r.roadY.clone();
+            unifyParallelBridgesOnce(r, bridges, nodeDeck, before);
+            if (Arrays.equals(before, r.roadY)) break;
+        }
+    }
+
+    private void unifyParallelBridgesOnce(RegionRaster r, List<Drawn> bridges, Map<Long, Double> nodeDeck, short[] before) {
         int radius = Math.max(2, (int) Math.round(mapper.blocks(12.0)));
         for (Drawn b : bridges) {
             double half = b.rf().halfWidth + (b.rf().sidewalk ? 1 : 0);
@@ -1611,15 +2156,15 @@ public final class FeatureRasterizer {
 
     private static final boolean DEBUG_TUNNELS = Boolean.getBoolean("orbis.debugTunnels");
 
-    /** Blocks of tunnel after a portal before the road must be fully underground. */
-    private static final int PORTAL_MARGIN = 16;
-    /** Blocks of rock between a tunnel floor and the ground, street or building floor above it. */
-    private static final double TUNNEL_COVER = 6.5;
+    /** Blocks of tunnel after a portal before the road must be fully underground (16 m). */
+    private final int portalMargin;
+    /** Blocks of rock between a tunnel floor and the ground, street or building floor above it (6.5 m, at least 3.5 blocks). */
+    private final double tunnelCover;
 
     /**
      * Road height along a tunnel: a straight line between the two portals,
      * pushed down wherever it would come too close to the ground above
-     * ({@link #TUNNEL_COVER} blocks over the whole width of the tunnel, so a
+     * ({@link #tunnelCover} over the whole width of the tunnel, so a
      * hillside falling away beside it does not open the wall) or to a street
      * crossing above, each dip spread at {@link #RAMP_GRADE}.
      *
@@ -1637,14 +2182,25 @@ public final class FeatureRasterizer {
         Map<String, String> tags = way.tags();
         double widthM = OsmTags.parseLength(tags.get("width"), Double.NaN);
         int lanes = OsmTags.parseInt(tags.get("lanes"), -1);
-        // The surveyed width and lanes of the road under this way, from the Norwegian road database.
+        // The surveyed width and lanes of the road under this way, from a road database (NVDB, BD TOPO, Digiroad, HPMS...).
         if (nvdbIndex != null && kind == RoadFeature.Kind.ROAD && (Double.isNaN(widthM) || lanes < 0)) {
-            double[] m = nvdbIndex.match(toBlockRing(way.points()));
+            double[] m = halfForOneWay(way, nvdbIndex.match(toBlockRing(way.points())));
             if (Double.isNaN(widthM) && !Double.isNaN(m[0])) widthM = m[0];
             if (lanes < 0 && m[1] > 0) lanes = (int) m[1];
         }
         if (Double.isNaN(widthM)) widthM = defaultWidth(kind, highway, railway, tags, lanes);
         return Math.max(1, (int) Math.round(mapper.blocks(widthM)));
+    }
+
+    /** A database counting both directions (HPMS) matched to one carriageway of a divided road: half of it. */
+    private static double[] halfForOneWay(OsmWay way, double[] m) {
+        if (m.length < 3 || m[2] == 0) return m;
+        String oneway = way.tags().get("oneway");
+        String hw = way.tags().get("highway");
+        boolean oneWay = "yes".equals(oneway) || "1".equals(oneway) || "-1".equals(oneway)
+                || (oneway == null && ("motorway".equals(hw) || "motorway_link".equals(hw)));
+        if (!oneWay) return m;
+        return new double[]{m[0] / 2, m[1] > 0 ? Math.max(1, Math.round(m[1] / 2)) : m[1], m[2]};
     }
 
     private int roadHalfWidth(OsmWay way, RoadFeature.Kind kind, String highway, String railway, NvdbRoads.Index nvdbIndex) {
@@ -1662,6 +2218,9 @@ public final class FeatureRasterizer {
     private static boolean interiorTunnelNode(long node, Map<Long, Integer> tunnelEndCount, java.util.Set<Long> groundEnds) {
         return tunnelEndCount.getOrDefault(node, 0) >= 2 && !groundEnds.contains(node);
     }
+
+    /** A tunnel under another tunnel: its road at least this many blocks under the other's road. */
+    private static final int TUNNEL_STACK = 7;
 
     private double[] tunnelProfile(RegionRaster r, RoadFeature rf, List<double[]> pts, double halfWidth, double wayLen,
                                    double y0, double y1, java.util.function.Predicate<RoadFeature> isApproach, List<Cover> covers,
@@ -1705,21 +2264,30 @@ public final class FeatureRasterizer {
                             if (c.covers(qx, qz)) lowest = Math.min(lowest, c.baseY());
                         }
                     }
-                    if (lowest != Double.POSITIVE_INFINITY) cap[ai] = Math.min(cap[ai], lowest - TUNNEL_COVER);
+                    if (lowest != Double.POSITIVE_INFINITY) cap[ai] = Math.min(cap[ai], lowest - tunnelCover);
                 }
                 along += len;
             }
         }
-        // Streets crossing above it (known only inside this raster; a street in a cutting sits below the terrain).
+        // Streets crossing above it (known only inside this raster; a street in a cutting sits below the terrain), and
+        // shallower tunnels: a tube (4 blocks of air, a roof, gravel under the road) needs TUNNEL_STACK blocks under
+        // another's road. Without this the two Nygårdstunnelen tubes (layers -1 and -3) shared one floor.
         if (rf != null) walkThickLine(r, pts, halfWidth, (idx, x, z, dist, along, dir) -> {
             if (idx < 0) return;
             RoadFeature above = r.roadAt(idx);
-            if (above == null || above == rf || above.layer <= rf.layer || above.tunnel || isApproach.test(above)) return;
+            if (above == null || above == rf || above.layer <= rf.layer || isApproach.test(above)) return;
+            if (above.tunnel) {
+                int ty = r.roadY[idx];
+                if (ty == RegionRaster.NO_Y) return;
+                int a = (int) Math.max(0, Math.min(n - 1, Math.round(along)));
+                cap[a] = Math.min(cap[a], ty - TUNNEL_STACK);
+                return;
+            }
             int ay = r.roadY[idx];
             double base = ay != RegionRaster.NO_Y ? ay : elevationAt(x, z);
             if (Double.isNaN(base)) return;
             int a = (int) Math.max(0, Math.min(n - 1, Math.round(along)));
-            cap[a] = Math.min(cap[a], base - TUNNEL_COVER);
+            cap[a] = Math.min(cap[a], base - tunnelCover);
         });
         for (int i = 1; i < n; i++) cap[i] = Math.min(cap[i], cap[i - 1] + RAMP_GRADE);
         for (int i = n - 2; i >= 0; i--) cap[i] = Math.min(cap[i], cap[i + 1] + RAMP_GRADE);
@@ -1746,12 +2314,12 @@ public final class FeatureRasterizer {
         Arrays.fill(need, Double.NEGATIVE_INFINITY);
         // A viaduct over open ground (parking, grass, an unmapped yard) is still
         // a structure several metres up, not a road lying on the grass: a
-        // main-road or railway bridge keeps 5 blocks over the ground, a minor
-        // road 3, a footbridge 2.
+        // main-road or railway bridge keeps 5 m over the ground, a minor
+        // road 3, a footbridge 2 (in blocks at this world's scale).
         String hw = rf.highway == null ? "" : rf.highway;
         boolean major = hw.startsWith("motorway") || hw.startsWith("trunk") || hw.startsWith("primary") || hw.startsWith("secondary");
-        double groundClearance = rf.isRail() || (rf.kind == RoadFeature.Kind.ROAD && major) ? 5.0
-                : rf.kind == RoadFeature.Kind.ROAD ? 3.0 : 2.0;
+        double groundClearance = rf.isRail() || (rf.kind == RoadFeature.Kind.ROAD && major) ? heightBlocks(5.0, 2.0)
+                : rf.kind == RoadFeature.Kind.ROAD ? heightBlocks(3.0, 1.5) : heightBlocks(2.0, 1.0);
         // Ground clearance along the whole way from the terrain itself, so a bridge crossing a region boundary
         // gets the same deck in both regions (water and roads below are only known inside this raster).
         double along0 = 0;
@@ -1778,9 +2346,10 @@ public final class FeatureRasterizer {
                 int uy = r.roadY[idx];
                 double base = uy != RegionRaster.NO_Y ? uy : elevationAt(x, z);
                 if (Double.isNaN(base)) return;
-                req = base + (under.isRail() ? 6.5
-                        : under.kind == RoadFeature.Kind.PATH || under.kind == RoadFeature.Kind.STEPS || under.kind == RoadFeature.Kind.TRACK ? 3.5
-                        : 5.5);
+                // 6.5 m over a railway, 5.5 m over a road, 3.5 m over a path; at least 4 blocks over a road or railway.
+                req = base + (under.isRail() ? heightBlocks(6.5, 4.0)
+                        : under.kind == RoadFeature.Kind.PATH || under.kind == RoadFeature.Kind.STEPS || under.kind == RoadFeature.Kind.TRACK ? heightBlocks(3.5, 3.5)
+                        : heightBlocks(5.5, 4.0));
             } else if (dist <= 0.75) {
                 // Centreline only: clear the ground or the water surface.
                 WaterFeature wf = r.waterAt(idx);
@@ -1945,6 +2514,39 @@ public final class FeatureRasterizer {
             else if (b != null && !"no".equals(b)) mains.add(a);
         }
         Materials.Style style = Materials.styleForLatitude(mapper.originLat());
+        BuildingDatabases dbs = buildingDbs;
+        if (dbs != null && !mains.isEmpty()) {
+            // The building databases' tiles under the region's buildings, all at once, before the buildings ask.
+            double s = 90, w = 180, n = -90, e = -180;
+            for (OsmArea a : mains) {
+                for (List<LatLon> ring : a.outers()) {
+                    for (LatLon p : ring) {
+                        s = Math.min(s, p.lat());
+                        n = Math.max(n, p.lat());
+                        w = Math.min(w, p.lon());
+                        e = Math.max(e, p.lon());
+                    }
+                }
+            }
+            if (s <= n) dbs.prefetch(s, w, n, e);
+        }
+        if (surfacePrefetch != null && cfg.buildingHeightsFromSurfaceModel && !mains.isEmpty()) {
+            // Only the tiles under buildings: the surface model is big, and on a VPN's data allowance.
+            List<double[]> boxes = new ArrayList<>(mains.size());
+            for (OsmArea a : mains) {
+                double s = 90, w = 180, n = -90, e = -180;
+                for (List<LatLon> ring : a.outers()) {
+                    for (LatLon p : ring) {
+                        s = Math.min(s, p.lat());
+                        n = Math.max(n, p.lat());
+                        w = Math.min(w, p.lon());
+                        e = Math.max(e, p.lon());
+                    }
+                }
+                if (s <= n) boxes.add(new double[]{s, w, n, e});
+            }
+            surfacePrefetch.prefetch(boxes);
+        }
         for (OsmArea a : mains) rasterizeBuilding(r, a, false, style, atlas);
         for (OsmArea a : parts) rasterizeBuilding(r, a, true, style, atlas);
     }
@@ -2015,6 +2617,9 @@ public final class FeatureRasterizer {
                 || "mosque".equals(tags.get("building")) || "government".equals(tags.get("building")) || "civic".equals(tags.get("building"))) {
             storey = Math.max(storey, 4);
         }
+        // A storey is storeyM real metres (for a height known only as floors) and storey blocks apart inside (a floor
+        // a player can walk: the same at every scale). At 1:1 the two are equal.
+        double storeyM = storey;
         int levels = OsmTags.parseInt(tags.get("building:levels"), -1);
         double heightM = OsmTags.parseLength(tags.get("height"), Double.NaN);
         if (Double.isNaN(heightM)) heightM = OsmTags.parseLength(tags.get("building:height"), Double.NaN);
@@ -2083,6 +2688,27 @@ public final class FeatureRasterizer {
             }
         }
 
+        // A national or city building database (France, the Netherlands, Slovenia, Vienna, New York): the building's
+        // own height or floors, at any scale.
+        BuildingDatabases dbs = buildingDbs;
+        if ("default".equals(heightSource) && dbs != null && !part) {
+            LatLon c = area.centroid();
+            BuildingDatabases.Hit hit = dbs.lookup(c.lat(), c.lon());
+            if (hit != null) {
+                double hm = !Double.isNaN(hit.heightM()) ? hit.heightM() : hit.floors() * storeyM;
+                if (hm >= 2.0 && mapper.blocks(hm) <= cfg.maxBuildingHeightBlocks) {
+                    heightSource = "database:" + hit.source();
+                    levels = hit.floors() > 0 ? hit.floors() : Math.max(1, (int) Math.round(hm / storeyM));
+                    if (tags.get("roof:shape") == null) {
+                        shape = hit.flatRoof() ? RoofShape.FLAT : Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
+                        roofHeight = shape == RoofShape.FLAT ? 0 : Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
+                    }
+                    // A height to the gutter: the roof stands on top of it.
+                    heightM = hit.eaveHeight() && shape != RoofShape.FLAT ? hm + roofHeight * cfg.metersPerBlock : hm;
+                }
+            }
+        }
+
         // Still nothing? The GlobalBuildingAtlas has a height for nearly every building on Earth (satellite-derived,
         // a metre or two of noise on small houses); matched by OSM id, else by position.
         if ("default".equals(heightSource) && atlas != null && !part) {
@@ -2100,6 +2726,7 @@ public final class FeatureRasterizer {
         }
 
         int wallHeight;
+        int realLevels = levels;
         if (!Double.isNaN(heightM) && heightM > 0) {
             int totalBlocks = (int) Math.round(mapper.blocks(heightM));
             wallHeight = Math.max(1, totalBlocks - (shape == RoofShape.FLAT ? 0 : roofHeight));
@@ -2108,22 +2735,27 @@ public final class FeatureRasterizer {
                 wallHeight = totalBlocks - roofHeight;
             }
         } else {
-            wallHeight = Math.max(1, levels * storey);
-            if ("church".equals(type) || "cathedral".equals(type)) wallHeight = Math.max(wallHeight, 10);
+            // Only a floor count (the map's, or the type's usual one): the walls are that many real storeys high, scaled
+            // like a measured height, with the roof on top. At 1:2 a four-storey house is 12 m, 6 blocks of wall, like
+            // its measured neighbours (it used to get 4 x 3 = 12 blocks there, twice its height).
+            wallHeight = Math.max(1, (int) Math.round(mapper.blocks(levels * storeyM)));
+            if ("church".equals(type) || "cathedral".equals(type)) wallHeight = Math.max(wallHeight, (int) Math.round(mapper.blocks(10)));
         }
         wallHeight = Math.min(wallHeight, cfg.maxBuildingHeightBlocks);
+        // Floors inside, storey blocks apart: no more than the walls hold.
+        levels = Math.max(1, Math.min(levels, wallHeight / storey));
 
         int minHeight = 0;
         double minHeightM = OsmTags.parseLength(tags.get("min_height"), Double.NaN);
         if (!Double.isNaN(minHeightM)) minHeight = (int) Math.round(mapper.blocks(minHeightM));
         else {
             int minLevel = OsmTags.parseInt(tags.get("building:min_level"), 0);
-            if (minLevel > 0) minHeight = minLevel * storey;
+            if (minLevel > 0) minHeight = (int) Math.round(mapper.blocks(minLevel * storeyM));
         }
         if (minHeight >= wallHeight) minHeight = 0;
         if (roofOnly) minHeight = Math.max(minHeight, Math.max(0, wallHeight - 1));
 
-        Materials.BuildingMaterials mats = Materials.building(tags, type, area.id(), levels, style, shape, domed);
+        Materials.BuildingMaterials mats = Materials.building(tags, type, area.id(), realLevels, style, shape, domed);
         boolean minarets = "mosque".equals(type) && halfB >= 6;
 
         BuildingFeature bf = new BuildingFeature(area.id(), tags, type, wallHeight, minHeight, levels, shape, roofHeight,
@@ -2239,7 +2871,7 @@ public final class FeatureRasterizer {
                     // footprint and the photo are a few metres apart.
                     if (count[0] >= 400 && shape == RoofShape.FLAT) bf.roof = Blocks.MOSS_BLOCK.defaultBlockState();
                 } else if (look != GroundClass.WATER) {
-                    bf.roof = BlockPalette.nearestRoof(rgb);
+                    bf.roof = BlockPalette.nearestRoof(correctRoofColour(rgb, streetColour(r)));
                 }
             }
         }
@@ -2348,6 +2980,84 @@ public final class FeatureRasterizer {
     // =====================================================================
     // Decoration: trees, lamps, fences, ...
     // =====================================================================
+
+    /** Streets whose names go on junction signs (not motorways, service roads, tracks or paths). */
+    private static final java.util.Set<String> SIGNED_STREETS = java.util.Set.of(
+            "residential", "living_street", "tertiary", "secondary", "primary", "trunk", "unclassified", "pedestrian");
+
+    /**
+     * Street name signs: at every map node where streets of two or more names meet at ground level, each name gets
+     * a post at a corner: along its own street, just past the crossing street's carriageway, on the right-hand
+     * kerb (the first column off the carriageway, not a building or water). The sign stands along the street it
+     * names, as real street blades do. One per name within 16 blocks, so dual carriageways and roundabouts do not
+     * repeat it.
+     */
+    private void rasterizeStreetSigns(RegionRaster r, List<OsmWay> ways) {
+        record At(String name, List<double[]> pts, int i) {
+        }
+        Map<Long, List<At>> nodes = new java.util.LinkedHashMap<>();
+        for (OsmWay w : ways) {
+            Map<String, String> t = w.tags();
+            String hw = t.get("highway"), name = t.get("name");
+            if (hw == null || name == null || name.isBlank() || !SIGNED_STREETS.contains(hw)) continue;
+            if (OsmTags.has(t, "bridge") || isTunnelWay(t) || OsmTags.parseInt(t.get("layer"), 0) != 0) continue;
+            List<double[]> pts = toBlockRing(w.points());
+            if (pts.size() < 2) continue;
+            for (int i = 0; i < pts.size(); i++) {
+                double[] p = pts.get(i);
+                if (r.index((int) Math.floor(p[0]), (int) Math.floor(p[1])) < 0) continue;
+                nodes.computeIfAbsent(nodeKey(p), k -> new ArrayList<>()).add(new At(name.trim(), pts, i));
+            }
+        }
+        List<double[]> placedAt = new ArrayList<>();
+        List<String> placedName = new ArrayList<>();
+        for (List<At> at : nodes.values()) {
+            java.util.Set<String> names = new java.util.LinkedHashSet<>();
+            for (At a : at) names.add(a.name());
+            if (names.size() < 2) continue;
+            java.util.Set<String> done = new java.util.HashSet<>();
+            for (At a : at) {
+                if (!done.add(a.name())) continue;
+                double[] p = a.pts().get(a.i());
+                double[] q = a.pts().get(a.i() + 1 < a.pts().size() ? a.i() + 1 : a.i() - 1);
+                double dx = q[0] - p[0], dz = q[1] - p[1], len = Math.hypot(dx, dz);
+                if (len < 0.5) continue;
+                dx /= len;
+                dz /= len;
+                double nx = -dz, nz = dx; // right-hand side, walking away from the junction
+                int[] spot = null;
+                for (int step = 2; step <= 24 && step <= len + 8 && spot == null; step++) {
+                    double cx = p[0] + dx * step, cz = p[1] + dz * step;
+                    for (int s = 0; s <= 14; s++) {
+                        int x = (int) Math.floor(cx + nx * s), z = (int) Math.floor(cz + nz * s);
+                        int idx = r.index(x, z);
+                        if (idx < 0 || r.building[idx] != 0 || r.water[idx] != 0) break;
+                        RoadFeature rf = r.roadAt(idx);
+                        if (rf != null && r.roadDistAt(idx) <= rf.halfWidth) {
+                            if (!a.name().equals(rf.name == null ? null : rf.name.trim())) break; // still in the crossing street
+                            continue;
+                        }
+                        if (s > 0) spot = new int[]{x, z, idx};
+                        break;
+                    }
+                }
+                if (spot == null || r.decor[spot[2]] != 0) continue;
+                boolean near = false;
+                for (int k = 0; k < placedAt.size() && !near; k++) {
+                    near = placedName.get(k).equals(a.name()) && Math.hypot(placedAt.get(k)[0] - spot[0], placedAt.get(k)[1] - spot[1]) < 16;
+                }
+                if (near) continue;
+                // The blade along the street: it faces across it. Rotation 0 faces south (+Z), 4 west, 8 north, 12 east.
+                double deg = Math.toDegrees(Math.atan2(-nx, nz));
+                int rot = Math.floorMod((int) Math.round(deg / 22.5), 16);
+                r.decor[spot[2]] = DecorType.STREET_SIGN.code();
+                r.decorData[spot[2]] = (byte) rot;
+                r.labels.put(spot[2], a.name());
+                placedAt.add(new double[]{spot[0], spot[1]});
+                placedName.add(a.name());
+            }
+        }
+    }
 
     private void rasterizeDecor(RegionRaster r, OsmData data) {
         // Lines first (fences, hedges, tree rows), then points on top.
@@ -2504,7 +3214,7 @@ public final class FeatureRasterizer {
         return 0;
     }
 
-    /** Low nibble: 0 auto, 1 oak, 2 birch, 3 spruce, 4 pine, 5 jungle, 6 acacia, 7 cherry, 8 dark oak, 9 palm. */
+    /** Low nibble: 0 auto, 1 oak, 2 birch, 3 spruce, 4 pine, 5 jungle, 6 acacia, 7 cherry, 8 dark oak, 9 palm, 10 poplar. */
     private static byte treeSpecies(Map<String, String> tags) {
         String genus = tags.get("genus");
         String species = tags.get("species");
@@ -2512,7 +3222,8 @@ public final class FeatureRasterizer {
         String g = genus != null ? genus.toLowerCase(Locale.ROOT) : species != null ? species.toLowerCase(Locale.ROOT) : "";
         if (g.startsWith("picea") || g.startsWith("abies") || g.startsWith("pseudotsuga") || g.startsWith("larix") || g.startsWith("thuja") || g.startsWith("cupressus") || g.startsWith("juniperus") || g.startsWith("taxus")) return 3;
         if (g.startsWith("pinus") || g.startsWith("cedrus") || g.startsWith("sequoia") || g.startsWith("araucaria")) return 4;
-        if (g.startsWith("betula") || g.startsWith("populus") || g.startsWith("salix") || g.startsWith("alnus")) return 2;
+        if (g.startsWith("populus")) return 10;
+        if (g.startsWith("betula") || g.startsWith("salix") || g.startsWith("alnus")) return 2;
         if (g.startsWith("prunus") || g.startsWith("malus") || g.startsWith("magnolia")) return 7;
         if (g.startsWith("quercus") || g.startsWith("fagus") || g.startsWith("acer") || g.startsWith("tilia") || g.startsWith("ulmus") || g.startsWith("fraxinus") || g.startsWith("aesculus") || g.startsWith("platanus") || g.startsWith("carpinus") || g.startsWith("juglans")) return 1;
         if (g.startsWith("phoenix") || g.startsWith("cocos") || g.startsWith("washingtonia") || g.startsWith("arecaceae") || g.startsWith("palm")) return 9;

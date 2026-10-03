@@ -41,6 +41,67 @@ public final class OsmRegionManager {
         return t;
     });
 
+    /** For a region being built whose road-database fetch is still waiting its turn in {@link #NVDB_POOL}. */
+    private static final java.util.concurrent.ExecutorService NVDB_NOW = java.util.concurrent.Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "Orbis-NVDB-now");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * Road-database fetches under way, by box and settings, across world models: a model that replaces another (the
+     * one built at Create, then the one with the fitted height) joins the old one's fetch instead of asking NVDB again
+     * (50 to 100 s a box; the same boxes were fetched twice, 3 Oct 2026). Finished boxes come from the disk cache.
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, CompletableFuture<List<com.berg.orbis.osm.NvdbRoads.Segment>>> NVDB_IN_FLIGHT =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * A region's road-database fetch, started when the region is queued rather than when a worker takes it up: NVDB
+     * can take longer to answer than the map data, and a queued region may wait a while. It runs once, on whichever
+     * thread claims it first (the pool's, or the worker's own when the region's turn comes before the pool's).
+     */
+    private final class NvdbJob implements Runnable {
+        final com.berg.orbis.osm.NvdbRoads.Store store;
+        final double s, w, n, e;
+        final java.util.concurrent.atomic.AtomicBoolean claimed = new java.util.concurrent.atomic.AtomicBoolean();
+        final CompletableFuture<List<com.berg.orbis.osm.NvdbRoads.Segment>> result = new CompletableFuture<>();
+
+        NvdbJob(com.berg.orbis.osm.NvdbRoads.Store store, double s, double w, double n, double e) {
+            this.store = store;
+            this.s = s;
+            this.w = w;
+            this.n = n;
+            this.e = e;
+        }
+
+        @Override
+        public void run() {
+            if (!claimed.compareAndSet(false, true)) return;
+            if (shutdown) { // a retired world's queue
+                result.complete(List.of());
+                return;
+            }
+            String key = String.format(java.util.Locale.ROOT, "%.6f_%.6f_%.6f_%.6f_%s_%s", s, w, n, e, cfg.metersPerBlock, cfg.nvdbRoadWidths);
+            CompletableFuture<List<com.berg.orbis.osm.NvdbRoads.Segment>> mine = new CompletableFuture<>();
+            CompletableFuture<List<com.berg.orbis.osm.NvdbRoads.Segment>> other = NVDB_IN_FLIGHT.putIfAbsent(key, mine);
+            if (other != null) {
+                other.whenComplete((v, t) -> result.complete(v != null ? v : List.of()));
+                return;
+            }
+            List<com.berg.orbis.osm.NvdbRoads.Segment> segments = List.of();
+            try {
+                segments = rasterizer.roadSegments(s, w, n, e);
+            } catch (Throwable t) {
+                // none: road classes decide
+            } finally {
+                mine.complete(segments);
+                result.complete(segments);
+                NVDB_IN_FLIGHT.remove(key, mine);
+            }
+        }
+    }
+
     private static final class Request {
         final int rx, rz;
         final CompletableFuture<RegionRaster> future = new CompletableFuture<>();
@@ -49,6 +110,9 @@ public final class OsmRegionManager {
         volatile long retryAt;
         int retries;
         volatile boolean taken;
+        /** Its road-database fetch; null outside Norway, at coarse scales, or before {@link #future} started it. */
+        volatile NvdbJob nvdb;
+        boolean nvdbChecked;
 
         Request(int rx, int rz, int priority) {
             this.rx = rx;
@@ -128,10 +192,28 @@ public final class OsmRegionManager {
             }
             return new Request(rx, rz, priority);
         });
+        startNvdb(req);
         synchronized (queueLock) {
             queueLock.notifyAll();
         }
         return req.future;
+    }
+
+    private void startNvdb(Request req) {
+        synchronized (req) {
+            if (req.nvdbChecked) return;
+            req.nvdbChecked = true;
+        }
+        if (shutdown) return;
+        int minX = req.rx * size - cfg.regionMarginBlocks, maxX = (req.rx + 1) * size + cfg.regionMarginBlocks;
+        int minZ = req.rz * size - cfg.regionMarginBlocks, maxZ = (req.rz + 1) * size + cfg.regionMarginBlocks;
+        double[] ra = mapper.toLatLonExact(minX, maxZ);
+        double[] rb = mapper.toLatLonExact(maxX, minZ);
+        double rs = Math.min(ra[0], rb[0]), rn = Math.max(ra[0], rb[0]), rw = Math.min(ra[1], rb[1]), re = Math.max(ra[1], rb[1]);
+        if (!rasterizer.wantsNvdb(rs, rw, rn, re)) return;
+        NvdbJob job = new NvdbJob(rasterizer.nvdbStore(), rs, rw, rn, re);
+        req.nvdb = job;
+        NVDB_POOL.execute(job);
     }
 
     public CompletableFuture<RegionRaster> futureForBlock(int blockX, int blockZ) {
@@ -169,6 +251,8 @@ public final class OsmRegionManager {
                 if (dx == 0 && dz == 0) continue;
                 int nx = rx + dx, nz = rz + dz;
                 if (isLoaded(nx, nz)) continue;
+                // Regions wholly outside the hard limit are never generated: no need for their map data.
+                if (!com.berg.orbis.worldgen.HardLimit.needed(nx * size, nz * size, nx * size + size - 1, nz * size + size - 1)) continue;
                 int ring = Math.max(Math.abs(dx), Math.abs(dz));
                 future(nx, nz, 10 * ring);
             }
@@ -213,9 +297,28 @@ public final class OsmRegionManager {
     /** Ring around them, prefetched too so the first steps out of spawn are instant. */
     private static final int SPAWN_RING_MIN = -2, SPAWN_RING_MAX = 1;
 
+    /**
+     * The regions under the spawn point chosen on the World tab, with the 160 blocks around it that generating
+     * its chunk reads (structures, features): the server generates that chunk on its own thread when the world first
+     * starts (see WorldSpawn), so without them it froze there while they came in one after another (139 s for a
+     * spawn on Stord, outside the local extract). Empty without a custom spawn.
+     */
+    private List<int[]> customSpawnRegions() {
+        List<int[]> out = new ArrayList<>();
+        if (!cfg.customSpawn) return out;
+        int[] b = mapper.toBlock(cfg.spawnLat, cfg.spawnLon);
+        if (Math.abs(b[0]) > 29_999_000 || Math.abs(b[1]) > 29_999_000) return out;
+        int reach = 160;
+        for (int rz = regionCoord(b[1] - reach); rz <= regionCoord(b[1] + reach); rz++) {
+            for (int rx = regionCoord(b[0] - reach); rx <= regionCoord(b[0] + reach); rx++) out.add(new int[]{rx, rz});
+        }
+        return out;
+    }
+
     /** Queues the spawn regions (core first) without waiting; safe to call repeatedly. */
     public List<CompletableFuture<RegionRaster>> queueSpawnArea() {
         List<CompletableFuture<RegionRaster>> all = new ArrayList<>();
+        for (int[] rc : customSpawnRegions()) all.add(future(rc[0], rc[1], PRIORITY_DEMAND));
         for (int[] rc : CORE_SPAWN_REGIONS) all.add(future(rc[0], rc[1], PRIORITY_SPAWN));
         for (int rz = SPAWN_RING_MIN; rz <= SPAWN_RING_MAX; rz++) {
             for (int rx = SPAWN_RING_MIN; rx <= SPAWN_RING_MAX; rx++) all.add(future(rx, rz, PRIORITY_SPAWN + 1));
@@ -228,24 +331,42 @@ public final class OsmRegionManager {
         for (int[] rc : CORE_SPAWN_REGIONS) {
             if (!isLoaded(rc[0], rc[1])) return false;
         }
+        for (int[] rc : customSpawnRegions()) {
+            if (!isLoaded(rc[0], rc[1])) return false;
+        }
         return true;
     }
 
     /** How many of the 16 spawn-area regions are decoded. */
     public int spawnRegionsReady() {
         int n = 0;
-        for (int rz = SPAWN_RING_MIN; rz <= SPAWN_RING_MAX; rz++) {
-            for (int rx = SPAWN_RING_MIN; rx <= SPAWN_RING_MAX; rx++) if (isLoaded(rx, rz)) n++;
-        }
+        for (long k : spawnRegionKeys()) if (cache.containsKey(k)) n++;
         return n;
     }
 
     public int spawnRegionsTotal() {
-        return (SPAWN_RING_MAX - SPAWN_RING_MIN + 1) * (SPAWN_RING_MAX - SPAWN_RING_MIN + 1);
+        return spawnRegionKeys().size();
+    }
+
+    /** The ring around the origin and the regions under a custom spawn point, each once. */
+    private java.util.Set<Long> spawnRegionKeys() {
+        java.util.Set<Long> keys = new java.util.LinkedHashSet<>();
+        for (int rz = SPAWN_RING_MIN; rz <= SPAWN_RING_MAX; rz++) {
+            for (int rx = SPAWN_RING_MIN; rx <= SPAWN_RING_MAX; rx++) keys.add(key(rx, rz));
+        }
+        for (int[] rc : customSpawnRegions()) keys.add(key(rc[0], rc[1]));
+        return keys;
     }
 
     public int fetchFailures() {
         return failed.get();
+    }
+
+    /** Map regions being built right now (taken by a worker, not finished). */
+    public int preparing() {
+        int n = 0;
+        for (Request r : pending.values()) if (r.taken) n++;
+        return n;
     }
 
     public String stats() {
@@ -272,6 +393,7 @@ public final class OsmRegionManager {
     public void shutdown() {
         shutdown = true;
         provider.close(); // abort in-flight retries so a retired model stops competing for Overpass
+        rasterizer.cancel(); // and regions being built stop at their next step
         synchronized (queueLock) {
             queueLock.notifyAll();
         }
@@ -311,7 +433,10 @@ public final class OsmRegionManager {
             java.util.function.LongSupplier failures = terrainFailures;
             long failuresBefore = failures == null ? 0 : failures.getAsLong();
             try {
-                raster = fetchAndRasterize(req.rx, req.rz);
+                raster = fetchAndRasterize(req);
+            } catch (java.util.concurrent.CancellationException cancelled) {
+                req.future.complete(new RegionRaster(req.rx, req.rz, size, cfg.regionMarginBlocks));
+                return; // this world model was replaced
             } catch (Throwable t) {
                 System.err.println("[orbis] Region " + req.rx + "," + req.rz + " failed unexpectedly: " + t);
                 t.printStackTrace();
@@ -362,7 +487,8 @@ public final class OsmRegionManager {
         }
     }
 
-    private RegionRaster fetchAndRasterize(int rx, int rz) {
+    private RegionRaster fetchAndRasterize(Request req) {
+        int rx = req.rx, rz = req.rz;
         int minX = rx * size - cfg.regionMarginBlocks;
         int maxX = (rx + 1) * size + cfg.regionMarginBlocks;
         int minZ = rz * size - cfg.regionMarginBlocks;
@@ -372,17 +498,15 @@ public final class OsmRegionManager {
         double south = Math.min(sw[0], ne[0]), north = Math.max(sw[0], ne[0]);
         double west = Math.min(sw[1], ne[1]), east = Math.max(sw[1], ne[1]);
 
-        // Road widths from the Norwegian road database are fetched alongside the map data, not after it. The
-        // raster bbox is the region plus margin, the same box the rasteriser derives.
+        // Road widths from the Norwegian road database are fetched alongside the map data, not after it (started
+        // when the region was queued; if it is still waiting for a pool thread, it starts now). The raster bbox is
+        // the region plus margin, the same box the rasteriser derives.
+        startNvdb(req);
+        NvdbJob nvdbJob = req.nvdb;
         CompletableFuture<List<com.berg.orbis.osm.NvdbRoads.Segment>> nvdbFuture = null;
-        {
-            double[] ra = mapper.toLatLonExact(minX, maxZ);
-            double[] rb = mapper.toLatLonExact(maxX, minZ);
-            double rs = Math.min(ra[0], rb[0]), rn = Math.max(ra[0], rb[0]), rw = Math.min(ra[1], rb[1]), re = Math.max(ra[1], rb[1]);
-            if (rasterizer.wantsNvdb(rs, rw, rn, re)) {
-                com.berg.orbis.osm.NvdbRoads.Store store = rasterizer.nvdbStore();
-                nvdbFuture = CompletableFuture.supplyAsync(() -> store.get(rs, rw, rn, re), NVDB_POOL);
-            }
+        if (nvdbJob != null) {
+            if (!nvdbJob.claimed.get()) NVDB_NOW.execute(nvdbJob);
+            nvdbFuture = nvdbJob.result;
         }
 
         OsmData data = null;
@@ -421,7 +545,7 @@ public final class OsmRegionManager {
         List<com.berg.orbis.osm.NvdbRoads.Segment> nvdb = null;
         if (nvdbFuture != null) {
             try {
-                nvdb = nvdbFuture.get(90, java.util.concurrent.TimeUnit.SECONDS);
+                nvdb = nvdbFuture.get(60, java.util.concurrent.TimeUnit.SECONDS);
             } catch (Exception e) {
                 System.err.println("[orbis] Region " + rx + "," + rz + ": NVDB widths not ready (" + e.getClass().getSimpleName() + "); road classes decide");
                 nvdb = List.of();
@@ -430,6 +554,8 @@ public final class OsmRegionManager {
         RegionRaster raster;
         try {
             raster = rasterizer.rasterize(rx, rz, data, nvdb);
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            throw cancelled; // the world model was replaced: the worker stops quietly (workerLoop)
         } catch (RuntimeException e) {
             System.err.println("[orbis] Region " + rx + "," + rz + " rasterisation failed: " + e);
             e.printStackTrace();

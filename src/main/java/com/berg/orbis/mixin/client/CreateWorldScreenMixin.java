@@ -8,7 +8,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * "Create New World" first makes sure the map data around the spawn has
+ * "Create New World" first tells what the world's services need of the player, if anything (a VPN, patience),
+ * then makes sure the map data around the spawn has
  * arrived. Vanilla's spawn search generates chunks synchronously on the
  * server thread; with the data still downloading that looked like the game
  * hanging. Now a progress screen waits instead, and creation resumes by itself.
@@ -19,9 +20,18 @@ public abstract class CreateWorldScreenMixin {
     @Inject(method = "onCreate", at = @At("HEAD"), cancellable = true)
     private void orbis$waitForSpawnData(CallbackInfo ci) {
         CreateWorldScreen self = (CreateWorldScreen) (Object) this;
+        // The area selected on the world generator map is this world's, whether or not Customize was saved.
+        SpawnGate.takeSelection(self);
+        if (SpawnGate.showNeeds(self)) {
+            ci.cancel();
+            return;
+        }
         if (SpawnGate.shouldWait()) {
             SpawnGate.begin(self);
             ci.cancel();
+            return;
         }
+        // Being created now: the next world's generator map starts with nothing selected.
+        SpawnGate.selectionTaken(self);
     }
 }

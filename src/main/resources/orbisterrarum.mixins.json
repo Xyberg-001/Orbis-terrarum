@@ -7,20 +7,30 @@
     "ServerPlayerMixin",
     "DimensionTypeMixin",
     "StructureStartAccessor",
+    "ItemFrameAccessor",
     "BiomeMixin",
     "VillagerMixin",
     "SectionStorageAccessor",
     "ChunkMapAccessor",
+    "ChunkMapMixin",
     "SimpleRegionStorageAccessor",
     "IOWorkerAccessor",
-    "PoiManagerMixin"
+    "PoiManagerMixin",
+    "ServerLevelSeasonMixin",
+    "VillagerClockMixin",
+    "ServerLevelWritesMixin",
+    "ServerChunkCacheTicketsMixin",
+    "CompoundTagMixin",
+    "RegionFileStorageMixin",
+    "RegionFileAccessor"
   ],
   "client": [
     "client.ClientLevelDataMixin",
     "client.WorldCreationUiStateMixin",
     "client.CreateWorldScreenInvoker",
     "client.CreateWorldScreenMixin",
-    "client.MinecraftPauseMixin"
+    "client.MinecraftPauseMixin",
+    "client.WorldOpenFlowsMixin"
   ],
   "injectors": {
     "defaultRequire": 1

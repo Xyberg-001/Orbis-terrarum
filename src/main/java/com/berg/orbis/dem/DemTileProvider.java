@@ -122,6 +122,46 @@ public class DemTileProvider implements TileSource {
         return tile;
     }
 
+    /**
+     * Starts every tile under the lat/lon box (and one around it, for the bicubic sampling at its edges) on the
+     * download threads and waits for them: a map region's roads and water read the terrain point by point, and each
+     * missing tile then held the region up on its own (a fresh region spent seconds on them one after another).
+     */
+    public void prefetch(int zoom, double south, double west, double north, double east) {
+        double[] a = latLonToTileFraction(north, west, zoom), b = latLonToTileFraction(south, east, zoom);
+        int x0 = (int) Math.floor(a[0]) - 1, x1 = (int) Math.floor(b[0]) + 1, y0 = (int) Math.floor(a[1]) - 1, y1 = (int) Math.floor(b[1]) + 1;
+        if ((long) (x1 - x0 + 1) * (y1 - y0 + 1) > 400) return;
+        int n = 1 << zoom;
+        java.util.List<int[]> wanted = new java.util.ArrayList<>();
+        java.util.List<CompletableFuture<float[][]>> futures = new java.util.ArrayList<>();
+        for (int y = Math.max(0, y0); y <= Math.min(n - 1, y1); y++) {
+            for (int x = x0; x <= x1; x++) {
+                int tx = Math.floorMod(x, n), ty = y;
+                String key = zoom + "/" + tx + "/" + ty;
+                synchronized (memoryCache) {
+                    if (memoryCache.containsKey(key)) continue;
+                }
+                Instant lastFailure = recentFailures.get(key);
+                if (lastFailure != null && Duration.between(lastFailure, Instant.now()).compareTo(FAILURE_BACKOFF) < 0) continue;
+                futures.add(loading.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> load(zoom, tx, ty, k), DOWNLOADS)));
+                wanted.add(new int[]{tx, ty});
+            }
+        }
+        for (CompletableFuture<float[][]> f : futures) {
+            try {
+                f.join();
+            } catch (RuntimeException ignored) {
+                // reported (and backed off) by getTile below
+            }
+        }
+        for (int[] t : wanted) {
+            try {
+                getTile(zoom, t[0], t[1]);
+            } catch (RuntimeException ignored) {
+            }
+        }
+    }
+
     @Override
     public float[][] getTile(int zoom, int x, int y) {
         String key = zoom + "/" + x + "/" + y;
@@ -201,27 +241,58 @@ public class DemTileProvider implements TileSource {
      * 1 m lidar), so a world at zoom 15 must work everywhere; it just carries no more detail than the data has.
      */
     private float[][] fromParent(int zoom, int x, int y) {
-        float[][] parent = obtain(zoom - 1, x >> 1, y >> 1);
+        int px = x >> 1, py = y >> 1;
+        float[][] parent = obtain(zoom - 1, px, py);
         int n = parent.length;
         int half = n / 2;
         int ox = (x & 1) * half, oy = (y & 1) * half;
+        // The pixels just past the parent's edge come from its neighbours. Clamped to the edge, as they were, each
+        // side flattened towards its own last pixel and the whole step between two parent pixels fell between two
+        // children of different parents: 22 m in one 4 m pixel on a Himalayan slope (an 11-block wall along a
+        // zoom-12 tile edge at Everest, 1:2, 3 Oct 2026).
+        float[][][] near = new float[9][][];
+        near[4] = parent;
         float[][] out = new float[n][n];
         for (int j = 0; j < n; j++) {
             double sy = oy + (j + 0.5) / 2.0 - 0.5;
             int y0 = (int) Math.floor(sy);
             double fy = sy - y0;
-            int ya = Math.max(0, Math.min(n - 1, y0)), yb = Math.max(0, Math.min(n - 1, y0 + 1));
             for (int i = 0; i < n; i++) {
                 double sx = ox + (i + 0.5) / 2.0 - 0.5;
                 int x0 = (int) Math.floor(sx);
                 double fx = sx - x0;
-                int xa = Math.max(0, Math.min(n - 1, x0)), xb = Math.max(0, Math.min(n - 1, x0 + 1));
-                double top = parent[ya][xa] * (1 - fx) + parent[ya][xb] * fx;
-                double bottom = parent[yb][xa] * (1 - fx) + parent[yb][xb] * fx;
+                double top = parentPixel(near, zoom - 1, px, py, x0, y0) * (1 - fx) + parentPixel(near, zoom - 1, px, py, x0 + 1, y0) * fx;
+                double bottom = parentPixel(near, zoom - 1, px, py, x0, y0 + 1) * (1 - fx) + parentPixel(near, zoom - 1, px, py, x0 + 1, y0 + 1) * fx;
                 out[j][i] = (float) (top * (1 - fy) + bottom * fy);
             }
         }
         return out;
+    }
+
+    /**
+     * Pixel (ix, iy) of the parent tile (px, py), reaching into the neighbouring tile when it lies past an edge (west
+     * and east wrap round the world; north and south, and a neighbour that cannot be had, clamp to the parent).
+     */
+    private float parentPixel(float[][][] near, int zoom, int px, int py, int ix, int iy) {
+        float[][] parent = near[4];
+        int n = parent.length;
+        int dx = ix < 0 ? -1 : ix >= n ? 1 : 0, dy = iy < 0 ? -1 : iy >= n ? 1 : 0;
+        if (dx == 0 && dy == 0) return parent[iy][ix];
+        int tiles = 1 << zoom;
+        int ny = py + dy;
+        if (ny >= 0 && ny < tiles) {
+            int slot = (dy + 1) * 3 + (dx + 1);
+            if (near[slot] == null) {
+                try {
+                    near[slot] = obtain(zoom, Math.floorMod(px + dx, tiles), ny);
+                } catch (RuntimeException e) {
+                    near[slot] = parent;
+                }
+            }
+            float[][] tile = near[slot];
+            if (tile != parent && tile.length == n) return tile[Math.floorMod(iy, n)][Math.floorMod(ix, n)];
+        }
+        return parent[Math.max(0, Math.min(n - 1, iy))][Math.max(0, Math.min(n - 1, ix))];
     }
 
     /** A tile through the memory cache, loading it here (not through the async path) so nested loads cannot wait on each other. */
@@ -270,13 +341,14 @@ public class DemTileProvider implements TileSource {
         return true;
     }
 
-    private static float[][] decodeTerrarium(byte[] pngBytes) throws IOException {
+    public static float[][] decodeTerrarium(byte[] pngBytes) throws IOException {
         BufferedImage img = TileImages.decode(pngBytes); // PNG (AWS) or lossless WebP (Mapterhorn)
         int w = img.getWidth(), h = img.getHeight();
         float[][] elevation = new float[h][w];
+        int[] pixels = TileImages.argbPixels(img);
         for (int py = 0; py < h; py++) {
             for (int px = 0; px < w; px++) {
-                int rgb = img.getRGB(px, py);
+                int rgb = pixels[py * w + px];
                 int r = (rgb >> 16) & 0xFF;
                 int g = (rgb >> 8) & 0xFF;
                 int b = rgb & 0xFF;

@@ -82,9 +82,12 @@ public final class OreGenerator {
             if (x >= minLx && x < minLx + 16 && z >= minLz && z < minLz + 16 && y > minY + 1) {
                 pos.set(x, y, z);
                 BlockState here = chunk.getBlockState(pos);
-                if (here.is(Blocks.STONE)) {
+                // Ore in any of the rocks the bedrock map lays down (granite, diorite, andesite, calcite, sandstone as
+                // stone; tuff and basalt as deepslate), not only in plain stone.
+                if (here.is(Blocks.STONE) || here.is(Blocks.GRANITE) || here.is(Blocks.DIORITE) || here.is(Blocks.ANDESITE)
+                        || here.is(Blocks.CALCITE) || here.is(Blocks.SANDSTONE)) {
                     chunk.setBlockState(pos, (y < deepslateTop ? v.deepOre : v.ore).defaultBlockState(), 0);
-                } else if (here.is(Blocks.DEEPSLATE)) {
+                } else if (here.is(Blocks.DEEPSLATE) || here.is(Blocks.TUFF) || here.is(Blocks.SMOOTH_BASALT)) {
                     chunk.setBlockState(pos, v.deepOre.defaultBlockState(), 0);
                 }
             }

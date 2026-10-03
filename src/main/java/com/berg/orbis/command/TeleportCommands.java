@@ -42,6 +42,16 @@ public class TeleportCommands {
             dispatcher.register(Commands.literal("wherell").executes(TeleportCommands::reportLatLon));
 
             dispatcher.register(Commands.literal("orbis")
+                    // The mod's performance and network settings, for a server's operators (no settings screen there).
+                    .then(Commands.literal("settings")
+                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                            .executes(ctx -> reply(ctx, setting(null, null)))
+                            .then(Commands.argument("name", StringArgumentType.word())
+                                    .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(SERVER_SETTINGS.keySet(), b))
+                                    .executes(ctx -> reply(ctx, setting(StringArgumentType.getString(ctx, "name"), null)))
+                                    .then(Commands.argument("value", StringArgumentType.greedyString())
+                                            .executes(ctx -> reply(ctx, setting(StringArgumentType.getString(ctx, "name"),
+                                                    StringArgumentType.getString(ctx, "value")))))))
                     .then(Commands.literal("tpll")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.argument("target", StringArgumentType.greedyString())
@@ -65,9 +75,25 @@ public class TeleportCommands {
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.literal("render").executes(ctx -> reply(ctx, com.berg.orbis.map.BlockMapService.renderAll(ctx.getSource().getServer()))))
                             .then(Commands.literal("status").executes(ctx -> reply(ctx, com.berg.orbis.map.BlockMapService.status()))))
+                    .then(Commands.literal("export")
+                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                            .then(Commands.literal("aternos")
+                                    .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), false, false)))
+                                    .then(Commands.literal("zip")
+                                            .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), false, true))))
+                                    .then(Commands.literal("orbis")
+                                            .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), true, false)))
+                                            .then(Commands.literal("zip")
+                                                    .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), true, true)))))))
+                    .then(Commands.literal("hardlimit")
+                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                            .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.status()))
+                            .then(Commands.literal("on").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.set(ctx.getSource().getServer(), true))))
+                            .then(Commands.literal("off").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.set(ctx.getSource().getServer(), false)))))
                     .then(Commands.literal("pregen")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.literal("stop").executes(ctx -> reply(ctx, PregenTask.stop())))
+                            .then(Commands.literal("resume").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.AutoPregen.resume(ctx.getSource().getServer()))))
                             .then(Commands.literal("status").executes(ctx -> reply(ctx, PregenTask.status())))
                             .then(Commands.literal("map")
                                     .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.PregenMap.writeNow(ctx.getSource().getLevel())))
@@ -87,6 +113,78 @@ public class TeleportCommands {
                                                     .then(Commands.argument("radiusKm", DoubleArgumentType.doubleArg(0.1, 2000.0))
                                                             .executes(TeleportCommands::pregenAt)))))));
         });
+    }
+
+    /** What /orbis settings can show and change: the installation's performance and network settings. */
+    private static final java.util.Map<String, String> SERVER_SETTINGS = new java.util.LinkedHashMap<>();
+
+    static {
+        String[][] s = {
+                {"fastPregen", "build terrain ahead in memory during pre-generation"},
+                {"fastPregenThreads", "threads building terrain ahead, 0 = half the processor's"},
+                {"parallelChunkCompression", "compress chunks for saving on several threads"},
+                {"pregenPauseWorld", "pause mobs, crops, redstone and time while pre-generating"},
+                {"fastChunkWrites", "don't force every chunk to disk at once (restart)"},
+                {"waitForOsm", "hold new chunks until their map data has arrived"},
+                {"prefetchSpawnAtStartup", "download the map around the spawn when the server starts"},
+                {"regionPrefetchRadius", "map regions downloaded ahead of players, 0-6"},
+                {"regionCacheSize", "map regions kept in memory, 8-256 (restart)"},
+                {"terrainOnlyBeyondBlocks", "only terrain beyond this distance from the origin, 0 = off"},
+                {"overpassConcurrentRequests", "parallel OpenStreetMap downloads, 1-8"},
+                {"osmMaxWaitMinutes", "longest wait for a region's map data"},
+                {"demTileCacheSize", "terrain tiles kept in memory (restart)"},
+                {"imageryTileCacheSize", "photo tiles kept in memory (restart)"},
+                {"imageryZoom", "finest photo zoom, 14-20"},
+                {"debugLogging", "more detail in the server log"},
+        };
+        for (String[] e : s) SERVER_SETTINGS.put(e[0], e[1]);
+    }
+
+    /** Lists the settings (no name), shows one (no value), or changes and saves it. */
+    private static Component setting(String name, String value) {
+        com.berg.orbis.config.OrbisConfig cfg = OrbisMod.config();
+        if (name == null) {
+            StringBuilder sb = new StringBuilder("Orbis Terrarum settings (/orbis settings <name> <value>):");
+            for (var e : SERVER_SETTINGS.entrySet()) sb.append("\n ").append(e.getKey()).append(" = ").append(read(cfg, e.getKey())).append("  - ").append(e.getValue());
+            return Component.literal(sb.toString());
+        }
+        if (!SERVER_SETTINGS.containsKey(name)) return Component.literal("No setting called " + name + ". /orbis settings lists them.");
+        if (value == null) return Component.literal(name + " = " + read(cfg, name) + "  - " + SERVER_SETTINGS.get(name));
+        try {
+            java.lang.reflect.Field f = com.berg.orbis.config.OrbisConfig.class.getField(name);
+            String v = value.trim().toLowerCase(java.util.Locale.ROOT);
+            Object parsed;
+            if (f.getType() == boolean.class) {
+                if (v.equals("true") || v.equals("on") || v.equals("yes")) parsed = true;
+                else if (v.equals("false") || v.equals("off") || v.equals("no")) parsed = false;
+                else return Component.literal(name + " takes true or false.");
+            } else if (f.getType() == int.class) {
+                parsed = Integer.parseInt(v);
+            } else {
+                parsed = Double.parseDouble(v);
+            }
+            OrbisMod.updateConfig(c -> {
+                try {
+                    f.set(c, parsed);
+                } catch (IllegalAccessException e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            return Component.literal(name + " = " + read(OrbisMod.config(), name) + " (saved). Pre-generation settings apply to the next"
+                    + " pre-generation, the others when the server next starts.");
+        } catch (NumberFormatException e) {
+            return Component.literal(name + " takes a number.");
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return Component.literal("Could not change " + name + ": " + e);
+        }
+    }
+
+    private static String read(com.berg.orbis.config.OrbisConfig cfg, String name) {
+        try {
+            return String.valueOf(com.berg.orbis.config.OrbisConfig.class.getField(name).get(cfg));
+        } catch (ReflectiveOperationException e) {
+            return "?";
+        }
     }
 
     private static int reply(CommandContext<CommandSourceStack> ctx, Component msg) {
@@ -147,7 +245,7 @@ public class TeleportCommands {
             source.sendFailure(Component.literal("No such file: " + pbf.toAbsolutePath()));
             return 0;
         }
-        java.nio.file.Path extracts = OrbisMod.configDir().resolve("extracts");
+        java.nio.file.Path extracts = OrbisMod.dataDir().resolve("extracts");
         var server = source.getServer();
         final long freeMb = (Runtime.getRuntime().maxMemory() - (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())) >> 20;
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
@@ -179,7 +277,7 @@ public class TeleportCommands {
             source.sendFailure(Component.literal("No such file: " + geojson.toAbsolutePath()));
             return 0;
         }
-        java.nio.file.Path places = OrbisMod.configDir().resolve("places");
+        java.nio.file.Path places = OrbisMod.dataDir().resolve("places");
         var server = source.getServer();
         source.sendSuccess(() -> Component.literal("Importing places from " + geojson.getFileName() + " in the background..."), false);
         Thread t = new Thread(() -> {
@@ -218,7 +316,7 @@ public class TeleportCommands {
     }
 
     private static int listExtracts(CommandContext<CommandSourceStack> ctx) {
-        var store = com.berg.orbis.osm.extract.LocalExtractStore.get(OrbisMod.configDir().resolve("extracts"));
+        var store = com.berg.orbis.osm.extract.LocalExtractStore.get(OrbisMod.dataDir().resolve("extracts"));
         store.rescan();
         if (store.extracts().isEmpty()) {
             return reply(ctx, Component.literal("No local extracts in " + store.root() + ". Import one with /orbis import <file.osm.pbf>."));

@@ -33,7 +33,8 @@ public enum DecorType {
     CROSS,           // cemetery / church grave marker
     KERB,
     TRAIN_STOP,      // railway station / tram stop node: a minecart waits on the nearest rail, name on a sign
-    EMBEDDED_RAIL;   // rail centreline running inside a street: decorData = direction octant | 8 for a powered-rail spot
+    EMBEDDED_RAIL,   // rail centreline running inside a street: decorData = direction octant | 8 for a powered-rail spot
+    STREET_SIGN;     // street name sign at a junction corner: decorData = sign rotation (0-15), name in RegionRaster.labels
 
     private static final DecorType[] VALUES = values();
 

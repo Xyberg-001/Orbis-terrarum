@@ -60,6 +60,43 @@ public final class Interiors {
     private Interiors() {
     }
 
+    /** Shop goods worth taking: an older world's frames holding these are locked if they are this mod's. */
+    private static final java.util.Set<Item> VALUABLE_GOODS = java.util.Set.of(
+            Items.DIAMOND, Items.EMERALD, Items.GOLD_INGOT, Items.IRON_INGOT, Items.IRON_PICKAXE, Items.REDSTONE);
+
+    /**
+     * Worlds furnished before display frames were generated fixed: when a frame loads, it is locked if it is exactly
+     * one this mod made. A museum exhibit and a wall picture are recognised by position, facing and item (each spot
+     * always gets the same item, from a hash of its position; an exhibit stands on a quartz pillar); shop goods by
+     * the building's mapped shop matching the item. A player's own frames do not match.
+     */
+    public static void lockOldDisplay(ItemFrame frame, com.berg.orbis.worldgen.WorldModel model, net.minecraft.server.MinecraftServer server) {
+        com.berg.orbis.mixin.ItemFrameAccessor acc = (com.berg.orbis.mixin.ItemFrameAccessor) frame;
+        if (acc.orbis$isFixed()) return;
+        ItemStack stack = frame.getItem();
+        if (stack.isEmpty()) return;
+        Item item = stack.getItem();
+        BlockPos p = frame.getPos();
+        int x = p.getX(), z = p.getZ();
+        Direction facing = frame.getDirection();
+        boolean exhibit = facing == Direction.UP
+                && item == EXHIBITS[(int) Math.floorMod(ColumnPainter.hash(x, z, 0xE7B), (long) EXHIBITS.length)]
+                && frame.level().getBlockState(p.below()).is(Blocks.QUARTZ_PILLAR);
+        boolean picture = facing.getAxis().isHorizontal()
+                && item == ART[(int) Math.floorMod(ColumnPainter.hash(x, z, 0xA27), (long) ART.length)];
+        if (exhibit || picture) {
+            acc.orbis$setFixed(true);
+            return;
+        }
+        if (!facing.getAxis().isHorizontal() || !VALUABLE_GOODS.contains(item) || model == null || model.regions() == null) return;
+        model.regions().futureForBlock(x, z).thenAccept(r -> server.execute(() -> {
+            if (frame.isRemoved() || r == null) return;
+            int idx = r.index(x, z);
+            BuildingFeature bf = idx < 0 ? null : r.buildingAt(idx);
+            if (bf != null && frame.getItem().is(item) && goodsFor(useOf(bf)) == item) acc.orbis$setFixed(true);
+        }));
+    }
+
     public static void place(OrbisConfig cfg, WorldGenLevel level, RegionRaster r, int minX, int minZ) {
         if (r == null || !cfg.furnishInteriors || !cfg.hollowBuildings || !cfg.generateBuildings || cfg.metersPerBlock > 2.0) return;
         Map<Long, BuildingFeature> buildings = new LinkedHashMap<>();
@@ -358,6 +395,9 @@ public final class Interiors {
             frame.setSilent(true);
             frame.setItem(new ItemStack(item), false);
             frame.setSilent(false);
+            // A display, like the frames in vanilla's structures: it cannot be emptied, turned or broken in survival
+            // (otherwise every museum hands out nether stars and every jeweller diamonds).
+            ((com.berg.orbis.mixin.ItemFrameAccessor) frame).orbis$setFixed(true);
             level.addFreshEntity(frame);
         }
 

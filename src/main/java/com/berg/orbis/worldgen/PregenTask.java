@@ -102,6 +102,8 @@ public final class PregenTask {
     private final int maxLoaded;
     /** The world model the sweep runs against. */
     private WorldModel model;
+    /** A drawn area's own Skip open sea button; null: the world's setting (the /orbis pregen commands). */
+    private Boolean skipSeaChoice;
     /** The region cache size before the sweep widened it, or -1. */
     private int cacheSizeBefore = -1;
     /** Chunks whose five elevation samples are all below this many metres are open sea and skipped. */
@@ -129,9 +131,13 @@ public final class PregenTask {
     private final Path progressFile;
     private final int startRow;
     private boolean mainlandOnly = true;
+    /** The fingerprint of a drawn selection (resume only the same one), or null. */
+    private String selectionId;
     private long estimatedChunks;
     private final ConcurrentHashMap<Integer, AtomicInteger> outstanding = new ConcurrentHashMap<>();
     private final AtomicLong skippedSea = new AtomicLong();
+    /** Chunks already finished on disk, not loaded (see DiskChunks): loading them would rewrite them all. */
+    private final AtomicLong skippedExisting = new AtomicLong();
     private volatile int producerRow;
     private int completedRow;
     // both modes
@@ -151,6 +157,10 @@ public final class PregenTask {
     private volatile long producerFinishedAt;
     private final MemoryPoolMXBean oldGen = findOldGen();
     private Thread producer;
+    /** Builds the terrain ahead of the sweep (fast pre-generation), or null. */
+    private volatile FastPregen fast;
+    /** The row of the chunk the sweep asked for last (fast pre-generation keeps within a few tile-rows of it). */
+    private volatile int sweepRow;
     private int done, failed;
     private final long startedAt = System.currentTimeMillis();
     private long lastReport = System.currentTimeMillis();
@@ -227,6 +237,12 @@ public final class PregenTask {
         list.sort((a, b) -> Long.compare(a[2], b[2]));
         long[] packed = new long[list.size()];
         for (int i = 0; i < packed.length; i++) packed[i] = pack((int) list.get(i)[0], (int) list.get(i)[1]);
+        ChunkSelection circle = new ChunkSelection();
+        for (int dz = -r; dz <= r; dz++) {
+            int w = (int) Math.floor(Math.sqrt((double) r * r - (double) dz * dz));
+            circle.addRow(cz + dz, new int[]{cx - w, cx + w});
+        }
+        HardLimit.extend(level.getServer(), circle);
 
         // Queue the map data for the whole area now, nearest regions first, below player demand.
         WorldModel model = OrbisMod.model();
@@ -250,6 +266,7 @@ public final class PregenTask {
         t.widenRegionCache(2 * radiusBlocks);
         t.startRadiusProducer();
         active = t;
+        tellNeeds(level);
         double estMb = packed.length * 12 / 1024.0;
         return Component.literal(String.format(Locale.ROOT,
                 "Pre-generating %s: %,d chunks (%d map regions queued). Rough world size afterwards: %.0f MB. Progress every 30 s; /orbis pregen stop to end.%s",
@@ -257,11 +274,31 @@ public final class PregenTask {
     }
 
     private void startRadiusProducer() {
+        it.unimi.dsi.fastutil.longs.LongOpenHashSet planned = new it.unimi.dsi.fastutil.longs.LongOpenHashSet(chunks);
+        boolean skip = skipSea();
+        startFast(visitor -> {
+            for (long p : chunks) {
+                if (stopRequested) break;
+                int cx = (int) (p >> 32), cz = (int) p;
+                if (skip && isOpenSea(model, cx, cz)) continue;
+                visitor.visit(cx, cz);
+            }
+        }, (cx, cz) -> planned.contains(pack(cx, cz)) && !(skip && isOpenSea(model, cx, cz)));
         producer = new Thread(() -> {
+            DiskChunks disk = new DiskChunks(level);
             try {
                 for (long p : chunks) {
                     if (stopRequested) break;
-                    submit((int) (p >> 32), (int) p);
+                    int cx = (int) (p >> 32), cz = (int) p;
+                    if (disk.finished(cx, cz)) {
+                        skippedExisting.incrementAndGet();
+                        continue;
+                    }
+                    if (skip && isOpenSea(model, cx, cz)) {
+                        skippedSea.incrementAndGet();
+                        continue;
+                    }
+                    submit(cx, cz);
                 }
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
@@ -317,20 +354,29 @@ public final class PregenTask {
         // One pass over the rows for the estimate and the width (a country at 1:1 has a quarter of a million).
         long estimate = 0;
         int spanMin = Integer.MAX_VALUE, spanMax = Integer.MIN_VALUE;
+        ChunkSelection area = new ChunkSelection();
         for (int row = sweep.firstRow(); row <= sweep.lastRow(); row++) {
-            for (int[] range : sweep.rowRanges(row)) {
+            List<int[]> ranges = sweep.rowRanges(row);
+            int[] flat = new int[ranges.size() * 2];
+            int k = 0;
+            for (int[] range : ranges) {
                 estimate += range[1] - range[0] + 1;
                 spanMin = Math.min(spanMin, range[0]);
                 spanMax = Math.max(spanMax, range[1]);
+                flat[k++] = range[0];
+                flat[k++] = range[1];
             }
+            area.addRow(row, flat);
         }
+        HardLimit.extend(level.getServer(), area);
         t.estimatedChunks = estimate;
         if (spanMin <= spanMax) t.widenRegionCache((spanMax - spanMin + 1) * 16);
         t.startAreaProducer(model);
         active = t;
+        tellNeeds(level);
 
         String extractNote;
-        LocalExtractStore store = LocalExtractStore.get(OrbisMod.configDir().resolve("extracts"));
+        LocalExtractStore store = LocalExtractStore.get(OrbisMod.dataDir().resolve("extracts"));
         double midLat = (outline.south() + outline.north()) / 2, midLon = (outline.west() + outline.east()) / 2;
         LocalExtractStore.Extract ex = store.covering(midLat, midLon, midLat, midLon, model.cfg().metersPerBlock);
         if (model.regions() == null) {
@@ -349,61 +395,90 @@ public final class PregenTask {
                 label, (long) km2, sweep.rowCount(), t.estimatedChunks, resumed.isEmpty() ? "" : "\n " + resumed, extractNote, t.loadNote() + syncNote(level)));
     }
 
+    /**
+     * Starts (or resumes) a sweep over a selection drawn on the world map: exactly its chunks, north to south, sea
+     * included. Progress is kept per selection; drawing the same selection again and pressing Generate resumes.
+     */
+    public static Component startSelection(ServerLevel level, ChunkSelection selection) {
+        return startSelection(level, selection, null);
+    }
+
+    /** A drawn area, with its own Skip open sea choice (null: the world's setting). */
+    public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea) {
+        if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); /orbis pregen stop first.\n" + active.progress());
+        WorldModel model = OrbisMod.model();
+        if (model == null) return Component.literal("The world model is not ready yet.");
+        if (selection.isEmpty()) return Component.literal("The selection is empty.");
+        List<double[][]> outline = new ArrayList<>();
+        int[] xr = selection.xRange();
+        outline.add(new double[][]{{xr[0] * 16.0, selection.firstRow() * 16.0}, {(xr[1] + 1) * 16.0, selection.firstRow() * 16.0},
+                {(xr[1] + 1) * 16.0, (selection.lastRow() + 1) * 16.0}, {xr[0] * 16.0, (selection.lastRow() + 1) * 16.0}});
+        AreaSweep sweep = new AreaSweep(selection, outline);
+        lastSweep = sweep;
+        HardLimit.extend(level.getServer(), selection);
+        String id = selection.fingerprint();
+        Path file = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-pregen").resolve("selection-" + id + ".json");
+        int startRow = sweep.firstRow();
+        String resumed = "";
+        JsonObject saved = readProgress(file);
+        if (saved != null && matches(saved, model, true) && saved.has("selection") && id.equals(saved.get("selection").getAsString())) {
+            int completed = saved.get("completedRow").getAsInt();
+            if (completed >= sweep.firstRow() && completed < sweep.lastRow()) {
+                startRow = completed + 1;
+                resumed = String.format(Locale.ROOT, " Resuming at row %,d of %,d (%,d chunks were done before).",
+                        startRow - sweep.firstRow() + 1, sweep.rowCount(), saved.has("done") ? saved.get("done").getAsLong() : 0);
+            }
+        }
+        long chunks = selection.count();
+        double km2 = chunks * 256.0 * model.cfg().metersPerBlock * model.cfg().metersPerBlock / 1e6;
+        String label = String.format(Locale.ROOT, "Selection (%,.0f km²)", km2);
+        PregenTask t = new PregenTask(level, label, sweep, file, startRow);
+        t.model = model;
+        t.skipSeaChoice = skipSea;
+        t.selectionId = id;
+        t.estimatedChunks = chunks;
+        t.widenRegionCache((xr[1] - xr[0] + 1) * 16);
+        t.startAreaProducer(model);
+        active = t;
+        warnIfTooLow(level, model, selection);
+        tellNeeds(level);
+        return Component.literal(String.format(Locale.ROOT,
+                "Pre-generating the selection drawn on the map\n  %,d chunks, about %,.0f km², %,d chunk rows north to south.%s\n  Progress every 30 s; /orbis pregen stop to end (Generate the same selection again to resume).%s",
+                chunks, km2, sweep.rowCount(), resumed.isEmpty() ? "" : "\n " + resumed, t.loadNote() + syncNote(level)));
+    }
+
     /** The game's "sync chunk writes" option makes every chunk write a separate synchronous disk write. */
     private static String syncNote(ServerLevel level) {
         String pause = level.getServer().isSingleplayer()
                 ? "\n  The game will not pause while the sweep runs (Escape menu, switching windows): a paused game stops unloading and saving chunks."
                 : "";
-        if (!level.getServer().forceSynchronousWrites()) return pause;
-        return pause + "\n  Sync chunk writes is ON (options.txt: syncChunkWrites:true), so every chunk is a separate synchronous disk write and the "
+        if (!level.getServer().forceSynchronousWrites() || com.berg.orbis.OrbisMod.fastChunkWrites(level.getServer())) return pause;
+        return pause + "\n  Fast chunk writes is OFF (Orbis Terrarum settings, Streaming), so every chunk is a separate synchronous disk write and the "
                 + "sweep is paced by the disk (it waits whenever more than " + String.format(Locale.ROOT, "%,d", MAX_PENDING_WRITES)
-                + " chunks are queued for it). For a much faster sweep set syncChunkWrites:false and restart the game.";
+                + " chunks are queued for it). For a much faster sweep switch it on and open the world again.";
     }
 
     private void startAreaProducer(WorldModel model) {
+        sweepRow = startRow;
+        // At most two tile-rows ahead of the sweep: enough for every chunk's neighbours to be built before the sweep
+        // asks for it (in serpentine order those of a tile-row's last rows come late in the next tile-row), and the
+        // map regions are still in memory when Minecraft decorates the chunks.
+        startFast(visitor -> walkArea(model, false, (cx, row) -> {
+            while (!stopRequested && row > sweepRow + 2 * TILE + 4) Thread.sleep(50);
+            visitor.visit(cx, row);
+        }), (cx, cz) -> plannedInArea(model, cx, cz));
         producer = new Thread(() -> {
+            DiskChunks disk = new DiskChunks(level);
             try {
-                int lastRow = sweep.lastRow();
-                for (int tileRow = Math.floorDiv(startRow, TILE) * TILE; tileRow <= lastRow && !stopRequested; tileRow += TILE) {
-                    int r0 = Math.max(tileRow, startRow), r1 = Math.min(tileRow + TILE - 1, lastRow);
-                    producerRow = r0; // every row below this one is fully queued
-                    int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
-                    for (int row = r0; row <= r1; row++) {
-                        for (int[] range : sweep.rowRanges(row)) {
-                            minX = Math.min(minX, range[0]);
-                            maxX = Math.max(maxX, range[1]);
-                        }
+                walkArea(model, true, (cx, row) -> {
+                    if (disk.finished(cx, row)) {
+                        skippedExisting.incrementAndGet();
+                        return;
                     }
-                    if (minX > maxX) continue;
-                    // Queue the map regions of this tile-row and the next one now (below player demand), so the
-                    // workers find them decoded instead of waiting a minute per region at every region edge.
-                    if (model.regions() != null) {
-                        OsmRegionManager regions = model.regions();
-                        int rz0 = regions.regionCoord(r0 << 4), rz1 = regions.regionCoord(Math.min(lastRow, r1 + TILE) << 4);
-                        int rx0 = regions.regionCoord(minX << 4), rx1 = regions.regionCoord((maxX << 4) + 15);
-                        for (int rz = rz0; rz <= rz1; rz++) for (int rx = rx0; rx <= rx1; rx++) regions.future(rx, rz, 30);
-                    }
-                    int t0 = Math.floorDiv(minX, TILE), t1 = Math.floorDiv(maxX, TILE);
-                    boolean reverse = (Math.floorDiv(tileRow, TILE) & 1) != 0; // serpentine: the next tile-row starts where this one ends
-                    for (int ti = 0; ti <= t1 - t0 && !stopRequested; ti++) {
-                        int tx = reverse ? t1 - ti : t0 + ti;
-                        int x0 = tx * TILE, x1 = x0 + TILE - 1;
-                        for (int row = r0; row <= r1 && !stopRequested; row++) {
-                            for (int[] range : sweep.rowRanges(row)) {
-                                int a = Math.max(range[0], x0), b = Math.min(range[1], x1);
-                                for (int cx = a; cx <= b && !stopRequested; cx++) {
-                                    if (isOpenSea(model, cx, row)) {
-                                        skippedSea.incrementAndGet();
-                                        continue;
-                                    }
-                                    outstanding.computeIfAbsent(row, k -> new AtomicInteger()).incrementAndGet();
-                                    submit(cx, row);
-                                }
-                            }
-                        }
-                    }
-                }
-                if (!stopRequested) producerRow = lastRow + 1;
+                    outstanding.computeIfAbsent(row, k -> new AtomicInteger()).incrementAndGet();
+                    submit(cx, row);
+                });
+                if (!stopRequested) producerRow = sweep.lastRow() + 1;
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             } catch (RuntimeException e) {
@@ -418,8 +493,132 @@ public final class PregenTask {
         producer.start();
     }
 
+    /**
+     * The area's chunks in sweep order: tile-rows of TILE rows, tiles across in serpentine order. The sweep itself
+     * ({@code forSweep}) also records its row and queues the map regions ahead; fast pre-generation walks the same
+     * order to build the terrain ahead of it.
+     */
+    private void walkArea(WorldModel model, boolean forSweep, FastPregen.Visitor visitor) throws InterruptedException {
+        int lastRow = sweep.lastRow();
+        DiskChunks disk = new DiskChunks(level);
+        java.util.Map<Long, Boolean> work = new java.util.HashMap<>();
+        for (int tileRow = Math.floorDiv(startRow, TILE) * TILE; tileRow <= lastRow && !stopRequested; tileRow += TILE) {
+            int r0 = Math.max(tileRow, startRow), r1 = Math.min(tileRow + TILE - 1, lastRow);
+            if (forSweep) producerRow = r0; // every row below this one is fully queued
+            int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE;
+            for (int row = r0; row <= r1; row++) {
+                for (int[] range : sweep.rowRanges(row)) {
+                    minX = Math.min(minX, range[0]);
+                    maxX = Math.max(maxX, range[1]);
+                }
+            }
+            if (minX > maxX) continue;
+            // Queue the map regions of this tile-row and of the two region rows after it now (below player
+            // demand), so the workers find them decoded instead of waiting a minute per region at every region
+            // edge. In a fresh area every region downloads its photos, terrain, road widths and rock first; with
+            // one row queued the workers sat idle two thirds of the time while the terrain builders waited for
+            // the regions still downloading (Stavanger 1:2, 2 Oct 2026: 23-30 chunks/s with the world paused).
+            // Fast pre-generation walks ahead of the sweep, so its walk queues them earlier still.
+            if (model.regions() != null) {
+                OsmRegionManager regions = model.regions();
+                int ahead = 2 * regions.regionSize() / 16; // two region rows, in chunk rows
+                int rz0 = regions.regionCoord(r0 << 4), rz1 = regions.regionCoord(Math.min(lastRow, r1 + TILE + ahead) << 4);
+                int rx0 = regions.regionCoord(minX << 4), rx1 = regions.regionCoord((maxX << 4) + 15);
+                for (int rz = rz0; rz <= rz1; rz++) {
+                    for (int rx = rx0; rx <= rx1; rx++) {
+                        // Only regions with chunks left to make: a repair or a resume has most of the area on disk
+                        // already, and preparing every region in its path cost 10-15 s each for nothing (Bergen,
+                        // 2 Oct 2026). A neighbour a chunk needs is still fetched when it asks for it.
+                        int qrx = rx, qrz = rz;
+                        if (work.computeIfAbsent(((long) rx << 32) ^ (rz & 0xffffffffL), k -> regionHasWork(disk, regions.regionSize(), qrx, qrz))) {
+                            regions.future(rx, rz, 30);
+                        }
+                    }
+                }
+            }
+            int t0 = Math.floorDiv(minX, TILE), t1 = Math.floorDiv(maxX, TILE);
+            boolean reverse = (Math.floorDiv(tileRow, TILE) & 1) != 0; // serpentine: the next tile-row starts where this one ends
+            for (int ti = 0; ti <= t1 - t0 && !stopRequested; ti++) {
+                int tx = reverse ? t1 - ti : t0 + ti;
+                int x0 = tx * TILE, x1 = x0 + TILE - 1;
+                for (int row = r0; row <= r1 && !stopRequested; row++) {
+                    for (int[] range : sweep.rowRanges(row)) {
+                        int a = Math.max(range[0], x0), b = Math.min(range[1], x1);
+                        for (int cx = a; cx <= b && !stopRequested; cx++) {
+                            if (skipSea() && isOpenSea(model, cx, row)) {
+                                if (forSweep) skippedSea.incrementAndGet();
+                                continue;
+                            }
+                            visitor.visit(cx, row);
+                        }
+                    }
+                }
+                if (!forSweep) {
+                    // Fast pre-generation also builds the rows just below the tile now: the sweep asks for a chunk
+                    // only once the chunks around it are built, and in serpentine order the next tile-row reaches
+                    // the ones below a tile's last rows a whole tile-row later (all of it waiting in memory).
+                    int reach = FastPregen.RING + 1;
+                    for (int row = r1 + 1; row <= Math.min(lastRow, r1 + reach) && !stopRequested; row++) {
+                        for (int cx = x0 - reach; cx <= x1 + reach && !stopRequested; cx++) {
+                            if (plannedInArea(model, cx, row)) visitor.visit(cx, row);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Whether any chunk of the sweep in this map region is still to be made (not finished on disk). */
+    private boolean regionHasWork(DiskChunks disk, int regionSize, int rx, int rz) {
+        int c0x = Math.floorDiv(rx * regionSize, 16), c1x = Math.floorDiv((rx + 1) * regionSize, 16) - 1;
+        int c0z = Math.floorDiv(rz * regionSize, 16), c1z = Math.floorDiv((rz + 1) * regionSize, 16) - 1;
+        for (int cz = Math.max(c0z, startRow); cz <= Math.min(c1z, sweep.lastRow()); cz++) {
+            for (int[] range : sweep.rowRanges(cz)) {
+                for (int cx = Math.max(range[0], c0x); cx <= Math.min(range[1], c1x); cx++) {
+                    if (!disk.finished(cx, cz)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Whether the area sweep covers this chunk (what walkArea visits). */
+    private boolean plannedInArea(WorldModel model, int cx, int cz) {
+        if (cz < startRow || cz > sweep.lastRow()) return false;
+        for (int[] range : sweep.rowRanges(cz)) {
+            if (cx >= range[0] && cx <= range[1]) return !(skipSea() && isOpenSea(model, cx, cz));
+        }
+        return false;
+    }
+
+    /** Starts building the terrain ahead of the sweep when "Fast pre-generation" is on and this is an Orbis world. */
+    private void startFast(FastPregen.Walk walk, FastPregen.Planned planned) {
+        OrbisConfig cfg = OrbisMod.config();
+        if (cfg != null && !cfg.fastPregen) return;
+        if (!(level.getChunkSource().getGenerator() instanceof RealWorldChunkGenerator generator)) return;
+        try {
+            fast = FastPregen.start(level, generator, walk, planned);
+        } catch (RuntimeException | LinkageError e) {
+            System.err.println("[orbis] Fast pre-generation unavailable, sweeping the usual way: " + e);
+        }
+    }
+
+    private void stopFast() {
+        FastPregen f = fast;
+        fast = null;
+        if (f != null) f.stop();
+    }
+
     /** Asks the chunk system for a chunk (from this non-server thread the request is queued, not blocking). */
     private void submit(int cx, int cz) throws InterruptedException {
+        sweepRow = cz;
+        FastPregen f = fast;
+        if (f != null) {
+            while (!stopRequested && !f.ready(cx, cz)) {
+                waiting = "building terrain ahead";
+                Thread.sleep(20);
+            }
+        }
         slots.acquire();
         String why;
         while (!stopRequested && (why = mustWait()) != null) {
@@ -459,7 +658,7 @@ public final class PregenTask {
     private void widenRegionCache(int spanBlocks) {
         if (model == null || model.regions() == null) return;
         int across = spanBlocks / model.regions().regionSize() + 2;
-        int needed = Math.min(320, 3 * across + 16);
+        int needed = Math.min(480, 5 * across + 16); // the rows in use and the two queued ahead
         OrbisConfig cfg = model.cfg();
         if (cfg.regionCacheSize < needed) {
             cacheSizeBefore = cfg.regionCacheSize;
@@ -558,6 +757,15 @@ public final class PregenTask {
         return false;
     }
 
+    /**
+     * The world's "Skip open sea" setting: chunks that are deep sea all over are left out of every sweep (radius,
+     * place outline, drawn selection) and generate when someone sails there; off, the sweep generates them too.
+     */
+    private boolean skipSea() {
+        if (skipSeaChoice != null) return skipSeaChoice;
+        return model != null && model.cfg().pregenSkipOpenSea;
+    }
+
     private static boolean isOpenSea(WorldModel model, int cx, int cz) {
         int x0 = cx << 4, z0 = cz << 4;
         int[][] samples = {{x0 + 8, z0 + 8}, {x0 + 1, z0 + 1}, {x0 + 14, z0 + 1}, {x0 + 1, z0 + 14}, {x0 + 14, z0 + 14}};
@@ -609,9 +817,10 @@ public final class PregenTask {
             Files.createDirectories(progressFile.getParent());
             String json = String.format(Locale.ROOT,
                     "{\n  \"label\": \"%s\",\n  \"originLat\": %.7f,\n  \"originLon\": %.7f,\n  \"metersPerBlock\": %s,\n  \"mainlandOnly\": %s,\n"
-                            + "  \"firstRow\": %d,\n  \"lastRow\": %d,\n  \"completedRow\": %d,\n  \"done\": %d,\n  \"skippedSea\": %d,\n  \"saved\": \"%s\"\n}\n",
+                            + "  \"firstRow\": %d,\n  \"lastRow\": %d,\n  \"completedRow\": %d,\n  \"done\": %d,\n  \"skippedSea\": %d,\n%s  \"saved\": \"%s\"\n}\n",
                     label.replace("\"", "'"), model.cfg().originLat, model.cfg().originLon, model.cfg().metersPerBlock,
-                    mainlandOnly, sweep.firstRow(), sweep.lastRow(), flushedRow, done, skippedSea.get(), java.time.Instant.now());
+                    mainlandOnly, sweep.firstRow(), sweep.lastRow(), flushedRow, done, skippedSea.get(),
+                    selectionId == null ? "" : "  \"selection\": \"" + selectionId + "\",\n", java.time.Instant.now());
             Files.writeString(progressFile, json, StandardCharsets.UTF_8);
         } catch (IOException e) {
             System.err.println("[orbis] Could not save pregen progress: " + e.getMessage());
@@ -624,21 +833,157 @@ public final class PregenTask {
         PregenTask t = active;
         if (t == null) return Component.literal("No pre-generation is running.");
         t.stopRequested = true;
+        t.stopFast();
         if (t.producer != null) t.producer.interrupt();
         t.saveProgress(false);
         t.restoreRegionCache();
         active = null;
+        t.remember("stopped");
         for (Pending p : t.pending) t.level.getChunkSource().removeTicketWithRadius(PREGEN_TICKET, p.pos(), 0);
         t.pending.clear();
         while (!t.held.isEmpty()) t.level.getChunkSource().removeTicketWithRadius(PREGEN_TICKET, t.held.pollFirst(), 0);
         return Component.literal("Stopped " + t.label + "\n" + t.progress()
                 + "\n  Chunks still queued for the disk are written in the background."
-                + (t.sweep != null ? " Run the same command again to resume from the last row on disk." : ""));
+                + (t.selectionId != null ? " Generate the same selection from the map again to resume from the last row on disk."
+                : t.sweep != null ? " Run the same command again to resume from the last row on disk." : ""));
+    }
+
+    // ---- history (the mod's Overview tab) --------------------------------------------------
+
+    private static final java.nio.file.Path HISTORY_FILE_NAME = java.nio.file.Path.of("pregen-history.txt");
+    private static final int HISTORY_KEEP = 30;
+
+    /**
+     * One line in the installation's pre-generation history (config folder, newest last): when, which world, what,
+     * how many chunks, how long and how fast. Shown in Mod Menu → Orbis Terrarum → Overview.
+     */
+    private void remember(String how) {
+        try {
+            long seconds = Math.max(1, (System.currentTimeMillis() - startedAt) / 1000);
+            int chunks = done + failed;
+            String world = level.getServer().getWorldData().getLevelName();
+            WorldModel m = model != null ? model : OrbisMod.model();
+            String scale = m == null ? "" : String.format(Locale.ROOT, ", 1:%s", trimScale(m.cfg().metersPerBlock));
+            String line = String.format(Locale.ROOT, "%s  %s%s: %s, %s, %,d chunks in %s (%.1f chunks/s)",
+                    java.time.LocalDate.now(), world, scale, label, how, chunks, duration(seconds), chunks / (double) seconds);
+            java.nio.file.Path file = OrbisMod.configDir().resolve(HISTORY_FILE_NAME);
+            synchronized (HISTORY_FILE_NAME) {
+                List<String> lines = new ArrayList<>(java.nio.file.Files.exists(file)
+                        ? java.nio.file.Files.readAllLines(file, java.nio.charset.StandardCharsets.UTF_8) : List.of());
+                lines.add(line);
+                if (lines.size() > HISTORY_KEEP) lines = lines.subList(lines.size() - HISTORY_KEEP, lines.size());
+                java.nio.file.Files.write(file, lines, java.nio.charset.StandardCharsets.UTF_8);
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            System.err.println("[Orbis Terrarum] Could not note the pre-generation in its history: " + e);
+        }
+    }
+
+    /** The last pre-generations of this installation, newest first. */
+    public static List<String> history(int max) {
+        try {
+            java.nio.file.Path file = OrbisMod.configDir().resolve(HISTORY_FILE_NAME);
+            if (!java.nio.file.Files.exists(file)) return List.of();
+            List<String> lines = new ArrayList<>(java.nio.file.Files.readAllLines(file, java.nio.charset.StandardCharsets.UTF_8));
+            java.util.Collections.reverse(lines);
+            return lines.subList(0, Math.min(max, lines.size()));
+        } catch (java.io.IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    private static String trimScale(double metersPerBlock) {
+        return metersPerBlock == Math.rint(metersPerBlock) ? String.valueOf((long) metersPerBlock) : String.valueOf(metersPerBlock);
+    }
+
+    private static String duration(long seconds) {
+        return seconds >= 3600 ? String.format(Locale.ROOT, "%dh %02dm", seconds / 3600, seconds / 60 % 60)
+                : String.format(Locale.ROOT, "%dm %02ds", seconds / 60, seconds % 60);
+    }
+
+    /** The last task that ran to the end (not stopped), for {@link AutoPregen}. */
+    private static volatile PregenTask lastFinished;
+
+    public static PregenTask lastFinished() {
+        return lastFinished;
+    }
+
+    /**
+     * The server is stopping: put the sweep aside with its progress saved (an area or selection resumes when started
+     * again) and forget it, so the next world opened in this session does not find a stale task "running".
+     */
+    public static synchronized void serverStopping() {
+        MinecraftServer paused = pausedByUs;
+        if (paused != null) {
+            // Not left frozen for the next start (the sweep resumes, and freezes it again, by itself).
+            if (paused.tickRateManager().isFrozen()) paused.tickRateManager().setFrozen(false);
+            pausedByUs = null;
+        }
+        PregenTask t = active;
+        if (t == null) return;
+        t.stopRequested = true;
+        t.stopFast();
+        if (t.producer != null) t.producer.interrupt();
+        t.saveProgress(false);
+        t.restoreRegionCache();
+        active = null;
+        t.remember("put aside");
+        t.pending.clear();
+        t.held.clear();
+        System.out.println("[Orbis Terrarum] Pre-generation put aside as the server stops: " + t.label + " (resumes when started again)");
+    }
+
+    /** Blocks a selection's highest point may be lowered by before the players are told (noise of the coarse terrain). */
+    public static final int SQUEEZE_WARNING_BLOCKS = 8;
+
+    /**
+     * Tells the players, once worked out in the background, when the selection's mountains are higher than this world
+     * allows. A world's height is set for good when it is created (fitted to the place then), so a selection added
+     * later, the Himalayas to a Kathmandu world, has its peaks squeezed under the ceiling.
+     */
+    /** In chat, what the world's services need of the player (a VPN, patience), with whether each answers now. */
+    private static void tellNeeds(ServerLevel level) {
+        WorldModel model = OrbisMod.model();
+        if (model == null) return;
+        CompletableFuture.runAsync(() -> {
+            for (com.berg.orbis.config.DataSources.Requirement r : com.berg.orbis.config.DataSources.requirements(model.cfg())) {
+                boolean ok = com.berg.orbis.config.DataSources.reachable(r);
+                String text = r.name() + ": " + r.text() + (ok ? " It answers from this network." : " It does not answer from this network right now.");
+                System.out.println("[orbis] " + text);
+                level.getServer().execute(() -> level.getServer().getPlayerList().broadcastSystemMessage(
+                        Component.literal(text).withStyle(ok ? ChatFormatting.GOLD : ChatFormatting.RED), false));
+            }
+        }, net.minecraft.util.Util.backgroundExecutor()).exceptionally(e -> null);
+    }
+
+    private static void warnIfTooLow(ServerLevel level, WorldModel model, ChunkSelection selection) {
+        CompletableFuture.supplyAsync(() -> WorldHeight.peak(model, selection), net.minecraft.util.Util.backgroundExecutor())
+                .thenAccept(p -> {
+                    if (p == null || p.squeezedBy() <= SQUEEZE_WARNING_BLOCKS) return;
+                    String text = String.format(Locale.ROOT,
+                            "Mountains in this selection reach Y %,d, higher than this world allows (it ends at Y %,d): their tops are squeezed by up to %,d blocks."
+                                    + " A world created with a larger World height (Advanced tab) keeps them.",
+                            Math.round(p.unsqueezedY()), model.cfg().maxY(), p.squeezedBy());
+                    System.out.println("[orbis] " + text);
+                    level.getServer().execute(() -> level.getServer().getPlayerList().broadcastSystemMessage(
+                            Component.literal(text).withStyle(ChatFormatting.GOLD), false));
+                })
+                .exceptionally(e -> null);
     }
 
     /** True while a sweep is running (the client then refuses to pause the game, see MinecraftPauseMixin). */
     public static boolean isRunning() {
         return active != null;
+    }
+
+    /**
+     * Chunks the level must unload every tick while this sweep runs (see mixin ChunkMapMixin). 0 for other
+     * levels and when no sweep runs (vanilla rules).
+     */
+    public static int unloadsPerTick(ServerLevel level) {
+        PregenTask t = active;
+        if (t == null || t.level != level) return 0;
+        return 32;
     }
 
     public static PregenTask active() {
@@ -673,14 +1018,85 @@ public final class PregenTask {
         return t.chatProgress(false, true);
     }
 
+    /** The server whose world this mod froze for a sweep (so only that freeze is ever undone), or null. */
+    private static volatile MinecraftServer pausedByUs;
+    /** A sweep that finished no chunk for this long while the world was paused gets the world running again. */
+    private static final long PAUSE_STALL_MS = 120_000;
+    /** The sweep the pause was lifted for after repeated stalls (it stays lifted for that sweep). */
+    private static volatile PregenTask stalledUnderPause;
+    /** After a stall the world runs this long (tickets expire, chunks unload), then pauses again. */
+    private static final long PAUSE_RETRY_MS = 60_000;
+    private int doneAtLastCheck = -1;
+    private long doneChangedAt;
+    private int pauseStalls;
+    private long pauseAgainAt;
+
+    /**
+     * While a sweep runs the world stands still, as with /tick freeze: mobs, random block ticks, spawning,
+     * redstone, weather and time. Chunks keep loading, generating, unloading and saving, and players can move. A
+     * flight recording of a Stord sweep had the server thread spending 58% of its time on mobs, 17% on random block
+     * ticks and 9% on spawning around the player, while it also runs part of every chunk's generation and all the
+     * unloads. A freeze someone made themselves is left alone, and so is an unfreeze they make during the sweep.
+     */
+    private static void syncWorldPause(MinecraftServer server) {
+        OrbisConfig cfg = OrbisMod.config();
+        PregenTask t = active;
+        long now = System.currentTimeMillis();
+        boolean want = t != null && (cfg == null || cfg.pregenPauseWorld) && stalledUnderPause != t && now >= t.pauseAgainAt;
+        if (want && pausedByUs == server) {
+            // Waiting for Orbis's own data is not a stall the pause causes: a fresh area's map regions and terrain
+            // download for minutes before the first chunks finish (Stavanger, 2 Oct 2026: the pause was lifted for
+            // the whole sweep after two minutes of downloads, and mobs then took half the server thread).
+            WorldModel m = OrbisMod.model();
+            boolean ownData = "building terrain ahead".equals(t.waiting)
+                    || (m != null && m.regions() != null && m.regions().preparing() > 0);
+            if (t.done != t.doneAtLastCheck || ownData) {
+                t.doneAtLastCheck = t.done;
+                t.doneChangedAt = now;
+            } else if (now - t.doneChangedAt > PAUSE_STALL_MS) {
+                // Safety net: whatever else holds the sweep up while the world is paused (a frozen world keeps
+                // chunk tickets from expiring), the world runs a minute and pauses again; after three such stalls
+                // it runs for the rest of the sweep.
+                want = false;
+                if (++t.pauseStalls >= 3) {
+                    stalledUnderPause = t;
+                    System.out.println("[Orbis Terrarum] No chunk finished in " + PAUSE_STALL_MS / 1000 + " s while the world was paused ("
+                            + t.waiting + "), three times; the world runs again for the rest of this pre-generation");
+                } else {
+                    t.pauseAgainAt = now + PAUSE_RETRY_MS;
+                    System.out.println("[Orbis Terrarum] No chunk finished in " + PAUSE_STALL_MS / 1000 + " s while the world was paused ("
+                            + t.waiting + "); the world runs for " + PAUSE_RETRY_MS / 1000 + " s, then pauses again");
+                }
+            }
+        }
+        net.minecraft.server.ServerTickRateManager ticks = server.tickRateManager();
+        if (want && pausedByUs == null && !ticks.isFrozen()) {
+            ticks.setFrozen(true);
+            pausedByUs = server;
+            t.doneAtLastCheck = t.done;
+            t.doneChangedAt = System.currentTimeMillis();
+            server.getPlayerList().broadcastSystemMessage(Component.literal(
+                    "The world is paused while pre-generation runs (mobs, crops, redstone, time and weather stand still); it carries on when the pre-generation ends or stops.")
+                    .withStyle(ChatFormatting.GRAY), false);
+        } else if (!want && pausedByUs == server) {
+            if (ticks.isFrozen()) ticks.setFrozen(false);
+            pausedByUs = null;
+            server.getPlayerList().broadcastSystemMessage(Component.literal("The world carries on.").withStyle(ChatFormatting.GRAY), false);
+        }
+    }
+
     /** Called every server tick. */
     public static void tick(MinecraftServer server) {
+        syncWorldPause(server);
         PregenTask t = active;
         if (t == null) return;
         if (t.step()) {
             active = null;
+            lastFinished = t;
+            t.stopFast();
             t.saveProgress(true);
             t.restoreRegionCache();
+            t.remember("finished");
             PregenMap.writeInBackground(t.level);
             System.out.println("[Orbis Terrarum] Pre-generation finished: " + t.label + "\n" + t.progress());
             server.getPlayerList().broadcastSystemMessage(t.chatProgress(true, false), false);
@@ -781,9 +1197,11 @@ public final class PregenTask {
                 backlog < 0 ? "?" : String.format(Locale.ROOT, "%,d", backlog), MAX_PENDING_WRITES,
                 why != null ? " -- " + why : "", usedMb, maxMb, 100 * oldGenAfterGc(), regions);
         if (sweep == null) {
-            long remaining = rate > 0 ? (long) ((chunks.length - finished) / rate) : -1;
-            return String.format(Locale.ROOT, "  %,d / %,d chunks%s (%.0f%%), %.1f chunks/s, ETA %s\n%s",
-                    finished, chunks.length, failedNote, 100.0 * finished / Math.max(1, chunks.length), rate, eta(remaining), load);
+            long sea = skippedSea.get() + skippedExisting.get(); // counted as done: nothing to generate there
+            long remaining = rate > 0 ? (long) ((chunks.length - finished - sea) / rate) : -1;
+            return String.format(Locale.ROOT, "  %,d / %,d chunks%s%s (%.0f%%), %.1f chunks/s, ETA %s\n%s",
+                    finished, chunks.length, failedNote, sea > 0 ? String.format(Locale.ROOT, ", %,d open-sea skipped or already there", sea) : "",
+                    100.0 * (finished + sea) / Math.max(1, chunks.length), rate, eta(remaining), load);
         }
         int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1);
         int rowsOnDisk = Math.max(0, flushedRow - sweep.firstRow() + 1);
@@ -835,9 +1253,10 @@ public final class PregenTask {
         int backlog = writeBacklog();
         String pct, where, remaining;
         if (sweep == null) {
-            pct = String.format(Locale.ROOT, "%.0f%%", 100.0 * total / Math.max(1, chunks.length));
-            where = String.format(Locale.ROOT, "%,d of %,d chunks", total, chunks.length);
-            remaining = eta(avg > 0 ? (long) ((chunks.length - total) / avg) : -1);
+            long sea = skippedSea.get() + skippedExisting.get();
+            pct = String.format(Locale.ROOT, "%.0f%%", 100.0 * (total + sea) / Math.max(1, chunks.length));
+            where = String.format(Locale.ROOT, "%,d of %,d chunks", total + sea, chunks.length);
+            remaining = eta(avg > 0 ? (long) ((chunks.length - total - sea) / avg) : -1);
         } else {
             int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1);
             int rowsOnDisk = Math.max(0, flushedRow - sweep.firstRow() + 1);
@@ -850,9 +1269,12 @@ public final class PregenTask {
         msg.append(line(finished ? " - finished in " + eta(elapsed) : " - " + pct + " - ETA " + remaining, ChatFormatting.WHITE).withStyle(style -> style.withBold(false)));
         msg.append(line("\n  " + where, ChatFormatting.GRAY));
         msg.append(line(String.format(Locale.ROOT, "\n  %,d chunks - %.1f/s now - %.1f/s avg", total, rateNow, avg), ChatFormatting.WHITE));
+        if (skippedExisting.get() > 0) msg.append(line(String.format(Locale.ROOT, " - %,d already there", skippedExisting.get()), ChatFormatting.GRAY));
         if (failed > 0) msg.append(line(String.format(Locale.ROOT, " - %,d FAILED", failed), ChatFormatting.RED));
-        msg.append(line(String.format(Locale.ROOT, "\n  loaded %,d - disk queue %s - heap %.1f/%d GB",
-                level.getChunkSource().getLoadedChunksCount(), backlog < 0 ? "?" : String.format(Locale.ROOT, "%,d", backlog), usedMb / 1024.0, maxMb / 1024), ChatFormatting.GRAY));
+        msg.append(line(String.format(Locale.ROOT, "\n  loaded %,d - disk queue %s - heap %.1f/%.1f GB",
+                level.getChunkSource().getLoadedChunksCount(), backlog < 0 ? "?" : String.format(Locale.ROOT, "%,d", backlog), usedMb / 1024.0, maxMb / 1024.0), ChatFormatting.GRAY));
+        FastPregen f = fast;
+        if (f != null) msg.append(line("\n  " + f.summary(), ChatFormatting.GRAY));
         String why = waiting;
         int terrainWaits = RealWorldChunkGenerator.terrainWaiting();
         WorldModel wm = OrbisMod.model();

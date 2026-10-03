@@ -14,7 +14,9 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -52,6 +54,8 @@ public class ImageServiceDemSource implements DemSource, TileSource {
     private final AtomicInteger consecutiveFailures = new AtomicInteger();
     private volatile long disabledUntil;
     private volatile boolean announced;
+    /** The terrain in metres, for a service whose values are heights above the ground. */
+    private volatile java.util.function.DoubleBinaryOperator ground;
 
     public ImageServiceDemSource(OrbisConfig.ElevationSource src, Path cacheDir) {
         this.src = src;
@@ -69,11 +73,87 @@ public class ImageServiceDemSource implements DemSource, TileSource {
         return src.name;
     }
 
+    public void setGround(java.util.function.DoubleBinaryOperator ground) {
+        this.ground = ground;
+    }
+
+    /** Parallel downloads for {@link #prefetch}: a few at a time, as a busy public service can take. */
+    private static final java.util.concurrent.ExecutorService PREFETCH = java.util.concurrent.Executors.newFixedThreadPool(6, r -> {
+        Thread t = new Thread(r, "Orbis-lidar-prefetch");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * Loads every tile under the given lat/lon boxes (south, west, north, east) in parallel and waits for them, so a
+     * slow service (Kartverket answers some requests only after 30 s) is waited on once per region, not once per
+     * tile in a row. Tiles already on disk cost nothing.
+     */
+    public void prefetch(List<double[]> boxes) {
+        if (unavailable()) return;
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        List<CompletableFuture<?>> jobs = new ArrayList<>();
+        for (double[] b : boxes) {
+            if (b[2] < src.south || b[0] > src.north || b[3] < src.west || b[1] > src.east) continue;
+            if (!com.berg.orbis.config.DataSources.covers(src.name, b[0], b[1], b[2], b[3])) continue; // outside its country
+            double[] a = DemTileProvider.latLonToTileFraction(b[2], b[1], zoom), c = DemTileProvider.latLonToTileFraction(b[0], b[3], zoom);
+            for (int x = (int) Math.floor(a[0]); x <= (int) Math.floor(c[0]); x++) {
+                for (int y = (int) Math.floor(a[1]); y <= (int) Math.floor(c[1]); y++) {
+                    if (!seen.add(((long) x << 32) | (y & 0xffffffffL))) continue;
+                    int tx = x, ty = y;
+                    if (memoryCache.containsKey(zoom + "/" + tx + "/" + ty)) continue;
+                    jobs.add(CompletableFuture.runAsync(() -> {
+                        if (unavailable()) return; // gave up meanwhile: the rest of the queue is skipped at once
+                        try {
+                            getTile(zoom, tx, ty);
+                            consecutiveFailures.set(0);
+                        } catch (RuntimeException e) {
+                            noteFailure(e); // the next region tries again
+                        }
+                    }, PREFETCH));
+                }
+            }
+        }
+        for (CompletableFuture<?> j : jobs) {
+            try {
+                j.join();
+            } catch (RuntimeException ignored) {
+            }
+        }
+    }
+
+    /**
+     * Switched off for a while after a long run of failures, and while the server stops: closing the world must not
+     * wait minutes for a slow service (the chunks still being generated then use estimated heights).
+     */
+    private boolean unavailable() {
+        return System.currentTimeMillis() < disabledUntil || com.berg.orbis.OrbisMod.stopping();
+    }
+
+    private void noteFailure(RuntimeException e) {
+        // A tile has already had its tries (Kartverket answers half its requests with a 504 on a bad day): only a
+        // long run of failed tiles means the service is really gone, and then only for a short while.
+        if (consecutiveFailures.incrementAndGet() >= 12) {
+            disabledUntil = System.currentTimeMillis() + 3 * 60_000L;
+            consecutiveFailures.set(0);
+            System.err.println("[orbis] Elevation source '" + src.name + "' unavailable (" + e.getMessage()
+                    + "); falling back to the next source for 3 minutes");
+        }
+    }
+
     @Override
     public double sampleMeters(double lat, double lon) {
-        if (System.currentTimeMillis() < disabledUntil) return Double.NaN;
+        if (unavailable()) return Double.NaN;
         try {
             double v = sampler.sampleMeters(lat, lon);
+            if (!Double.isNaN(v)) {
+                v *= src.valueScale; // feet
+                if (src.aboveGround) {
+                    java.util.function.DoubleBinaryOperator g = ground;
+                    double terrain = g == null ? Double.NaN : g.applyAsDouble(lat, lon);
+                    v = Double.isNaN(terrain) ? Double.NaN : terrain + v;
+                }
+            }
             consecutiveFailures.set(0);
             if (!announced && !Double.isNaN(v)) {
                 announced = true;
@@ -81,12 +161,7 @@ public class ImageServiceDemSource implements DemSource, TileSource {
             }
             return v;
         } catch (RuntimeException e) {
-            if (consecutiveFailures.incrementAndGet() >= 4) {
-                disabledUntil = System.currentTimeMillis() + 10 * 60_000L;
-                consecutiveFailures.set(0);
-                System.err.println("[orbis] Elevation source '" + src.name + "' unavailable (" + e.getMessage()
-                        + "); falling back to the next source for 10 minutes");
-            }
+            noteFailure(e);
             return Double.NaN;
         }
     }
@@ -98,7 +173,7 @@ public class ImageServiceDemSource implements DemSource, TileSource {
 
     @Override
     public boolean hasCoverage(double lat, double lon) {
-        return lat >= src.south && lat <= src.north && lon >= src.west && lon <= src.east;
+        return lat >= src.south && lat <= src.north && lon >= src.west && lon <= src.east && !unavailable();
     }
 
     @Override
@@ -127,12 +202,36 @@ public class ImageServiceDemSource implements DemSource, TileSource {
                 double east = DemTileProvider.tileToLon(x + 1, z);
                 double north = DemTileProvider.tileToLat(y, z);
                 double south = DemTileProvider.tileToLat(y + 1, z);
+                if (!com.berg.orbis.config.DataSources.covers(src.name, south, west, north, east)) {
+                    // Outside the service's country (its box is wider): nothing to ask it for.
+                    float[][] none = new float[256][256];
+                    for (float[] row : none) java.util.Arrays.fill(row, Float.NaN);
+                    return none;
+                }
                 String url = src.urlTemplate
                         .replace("{west}", fmt(west)).replace("{south}", fmt(south))
                         .replace("{east}", fmt(east)).replace("{north}", fmt(north));
-                com.berg.orbis.net.OrbisHttp.Response resp = com.berg.orbis.net.OrbisHttp.get(url,
-                        java.util.Map.of("User-Agent", "Orbis-Minecraft-Mod/1.0"), 45);
-                if (resp.status() != 200) throw new IOException("HTTP " + resp.status());
+                // Kartverket's services answer about half the requests with 504 after 30 s on a bad day: a tile gets
+                // three tries (a missing tile leaves its buildings with estimated heights, and is tried again later).
+                com.berg.orbis.net.OrbisHttp.Response resp = null;
+                IOException lastError = null;
+                // Once tiles are failing in a row, one try each: three tries of 45 s would hold a region for minutes.
+                int tries = consecutiveFailures.get() >= 2 ? 1 : 3;
+                for (int attempt = 0; attempt < tries; attempt++) {
+                    if (unavailable()) throw new IOException("stopped asking (server stopping or service failing)");
+                    try {
+                        resp = com.berg.orbis.net.OrbisHttp.get(url, java.util.Map.of("User-Agent", "Orbis-Minecraft-Mod/1.0"), 45);
+                        if (resp.status() == 200) break;
+                        lastError = new IOException("HTTP " + resp.status());
+                        if (resp.status() < 500 && resp.status() != 429) break; // a real refusal: no point asking again
+                    } catch (IOException e) {
+                        lastError = e;
+                        if (e instanceof java.net.ConnectException || e instanceof java.net.http.HttpConnectTimeoutException) break; // unreachable
+                    }
+                    resp = null;
+                    if (attempt + 1 < tries) Thread.sleep(1000L * (attempt + 1));
+                }
+                if (resp == null || resp.status() != 200) throw lastError != null ? lastError : new IOException("no answer");
                 bytes = resp.body();
                 if (bytes.length < 100 || (bytes[0] != 'I' && bytes[0] != 'M')) {
                     String head = new String(bytes, 0, Math.min(bytes.length, 120), java.nio.charset.StandardCharsets.UTF_8)
@@ -143,7 +242,17 @@ public class ImageServiceDemSource implements DemSource, TileSource {
                 Files.write(tmp, bytes);
                 Files.move(tmp, cached, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
-            return decodeFloatTiff(bytes, src.noData);
+            try {
+                return decodeFloatTiff(bytes, src.noData);
+            } catch (java.io.EOFException e) {
+                // Kartverket answers a tile with no data at all (open sea) with an 848-byte TIFF that declares the
+                // full size but carries no pixels. Nothing measured here: not a failure (counting it as one switched
+                // the service off for minutes, and the buildings around with it).
+                if (bytes.length > 4096) throw e;
+                float[][] empty = new float[256][256];
+                for (float[] row : empty) java.util.Arrays.fill(row, Float.NaN);
+                return empty;
+            }
         } catch (IOException | InterruptedException e) {
             throw new RuntimeException(src.name + " tile " + z + "/" + x + "/" + y + ": " + e.getMessage(), e);
         }

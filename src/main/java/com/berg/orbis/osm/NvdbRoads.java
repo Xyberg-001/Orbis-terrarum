@@ -40,9 +40,26 @@ public final class NvdbRoads {
     private static final double MATCH_METERS = 7.0;
     private static final double MATCH_BEARING_DEG = 35.0;
 
-    /** One NVDB line: lat/lon points, carriageway width in metres (NaN if unknown), lane count (-1 if unknown). */
-    public record Segment(List<double[]> latLon, double widthM, int lanes) {
+    /**
+     * One road line: lat/lon points, carriageway width in metres (NaN if unknown), lane count (-1 if unknown), and
+     * whether width and lanes count both directions of a road OSM may draw as two one-way carriageways (HPMS).
+     */
+    public record Segment(List<double[]> latLon, double widthM, int lanes, boolean bothWays) {
+        public Segment(List<double[]> latLon, double widthM, int lanes) {
+            this(latLon, widthM, lanes, false);
+        }
     }
+
+    /**
+     * Threads for the pieces of one region's fetch (the widths, and the lanes of each quarter of the region), which
+     * run at the same time: NVDB answers a query slowly (from one to fifty seconds for a region's lanes), so one
+     * after another they were the slowest part of preparing a fresh region.
+     */
+    private static final java.util.concurrent.ExecutorService PARTS = java.util.concurrent.Executors.newFixedThreadPool(8, r -> {
+        Thread t = new Thread(r, "Orbis-NVDB-part");
+        t.setDaemon(true);
+        return t;
+    });
 
     private NvdbRoads() {
     }
@@ -73,11 +90,22 @@ public final class NvdbRoads {
             if (System.currentTimeMillis() < failedUntil) return List.of();
             try {
                 long t0 = System.currentTimeMillis();
-                List<Segment> widths = fetchWidths(south, west, north, east);
-                List<Segment> lanes = fetchLanes(south, west, north, east);
-                List<Segment> all = new ArrayList<>(widths.size() + lanes.size());
-                all.addAll(widths);
-                all.addAll(lanes);
+                // The widths and the lanes of the four quarters of the box, all at once. A lane link crossing a
+                // quarter's edge comes back from both quarters and is kept once.
+                java.util.concurrent.Future<List<Segment>> widthsF = PARTS.submit(() -> fetchWidths(south, west, north, east));
+                double midLat = (south + north) / 2, midLon = (west + east) / 2;
+                double[][] quarters = {{south, west, midLat, midLon}, {south, midLon, midLat, east}, {midLat, west, north, midLon}, {midLat, midLon, north, east}};
+                List<java.util.concurrent.Future<List<Segment>>> laneF = new ArrayList<>();
+                for (double[] q : quarters) laneF.add(PARTS.submit(() -> fetchLanes(q[0], q[1], q[2], q[3])));
+                List<Segment> all = new ArrayList<>(join(widthsF));
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                for (java.util.concurrent.Future<List<Segment>> f : laneF) {
+                    for (Segment seg : join(f)) {
+                        StringBuilder key = new StringBuilder().append(seg.lanes());
+                        for (double[] p : seg.latLon()) key.append(';').append(p[0]).append(',').append(p[1]);
+                        if (seen.add(key.toString())) all.add(seg);
+                    }
+                }
                 Files.createDirectories(cacheDir);
                 writeGzip(file, serialize(all));
                 System.out.println("[orbis] NVDB: " + describe(all) + " for " + String.format(Locale.ROOT, "%.3f,%.3f", south, west)
@@ -88,6 +116,18 @@ public final class NvdbRoads {
                 System.err.println("[orbis] NVDB road widths unavailable (" + e.getMessage() + "); road classes decide widths for 10 minutes");
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 return List.of();
+            }
+        }
+
+        private static List<Segment> join(java.util.concurrent.Future<List<Segment>> f) throws IOException, InterruptedException {
+            try {
+                return f.get();
+            } catch (java.util.concurrent.ExecutionException ex) {
+                Throwable c = ex.getCause();
+                if (c instanceof IOException io) throw io;
+                if (c instanceof InterruptedException ie) throw ie;
+                if (c instanceof RuntimeException re) throw re;
+                throw new IOException(c);
             }
         }
 
@@ -141,10 +181,27 @@ public final class NvdbRoads {
             return String.format(Locale.ROOT, "%.6f,%.6f,%.6f,%.6f", w, s, e, n); // x/y order: lon,lat
         }
 
+        /**
+         * One page, gzip-compressed (a sixth of the bytes). A page that has not arrived after 30 s is asked for once
+         * more with a minute to spare: NVDB now and then streams one answer very slowly while the next is quick.
+         */
         private static JsonObject fetch(String url) throws IOException, InterruptedException {
-            OrbisHttp.Response r = OrbisHttp.get(url, Map.of("Accept", "application/json", "X-Client", "orbisterrarum"), 60);
+            Map<String, String> headers = Map.of("Accept", "application/json", "Accept-Encoding", "gzip", "X-Client", "orbisterrarum");
+            OrbisHttp.Response r;
+            try {
+                r = OrbisHttp.get(url, headers, 15);
+            } catch (java.net.http.HttpTimeoutException slow) {
+                r = OrbisHttp.get(url, headers, 45);
+            }
             if (r.status() != 200) throw new IOException("HTTP " + r.status() + " from NVDB");
-            return JsonParser.parseString(r.text()).getAsJsonObject();
+            byte[] body = r.body();
+            String enc = r.header("content-encoding");
+            if (enc != null && enc.toLowerCase(Locale.ROOT).contains("gzip")) {
+                try (InputStream in = new GZIPInputStream(new java.io.ByteArrayInputStream(body))) {
+                    body = in.readAllBytes();
+                }
+            }
+            return JsonParser.parseString(new String(body, StandardCharsets.UTF_8)).getAsJsonObject();
         }
 
         private static String nextPage(JsonObject root, String url) {
@@ -245,6 +302,7 @@ public final class NvdbRoads {
         private final List<double[][]> lines = new ArrayList<>(); // each: [x, z] points
         private final List<Double> widths = new ArrayList<>();
         private final List<Integer> lanes = new ArrayList<>();
+        private final List<Boolean> bothWays = new ArrayList<>();
         private final Map<Long, List<Integer>> grid = new HashMap<>();
         private final double matchBlocks;
 
@@ -265,6 +323,7 @@ public final class NvdbRoads {
                 lines.add(pts);
                 widths.add(s.widthM);
                 lanes.add(s.lanes);
+                bothWays.add(s.bothWays);
                 int cx0 = (int) Math.floor((minX - matchBlocks) / CELL), cx1 = (int) Math.floor((maxX + matchBlocks) / CELL);
                 int cz0 = (int) Math.floor((minZ - matchBlocks) / CELL), cz1 = (int) Math.floor((maxZ + matchBlocks) / CELL);
                 if ((long) (cx1 - cx0 + 1) * (cz1 - cz0 + 1) > 4096) continue; // a segment spanning the world: skip
@@ -286,10 +345,11 @@ public final class NvdbRoads {
          * Returns {width or NaN, lanes or -1}.
          */
         public double[] match(List<double[]> way) {
-            if (way.size() < 2) return new double[]{Double.NaN, -1};
+            if (way.size() < 2) return new double[]{Double.NaN, -1, 0};
             double total = 0;
             for (int i = 0; i + 1 < way.size(); i++) total += Math.hypot(way.get(i + 1)[0] - way.get(i)[0], way.get(i + 1)[1] - way.get(i)[1]);
-            if (total <= 0) return new double[]{Double.NaN, -1};
+            if (total <= 0) return new double[]{Double.NaN, -1, 0};
+            boolean both = false;
             int samples = total < 12 ? 1 : total < 60 ? 3 : 5;
             List<Double> ws = new ArrayList<>();
             Map<Integer, Integer> laneVotes = new HashMap<>();
@@ -321,6 +381,7 @@ public final class NvdbRoads {
                                 bestLd = near[0];
                                 bestL = l;
                             }
+                            if ((!Double.isNaN(w) || l > 0) && bothWays.get(idx)) both = true;
                         }
                     }
                 }
@@ -339,7 +400,7 @@ public final class NvdbRoads {
                     lanesOut = e.getKey();
                 }
             }
-            return new double[]{width, lanesOut};
+            return new double[]{width, lanesOut, both ? 1 : 0};
         }
 
         /** Point {x, z, bearingDeg} at a distance along the polyline. */

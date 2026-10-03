@@ -20,7 +20,20 @@ public class BiomeClassifier {
 
     public enum Zone { ICE_CAP, TUNDRA, ALPINE, TAIGA, TEMPERATE, SUBTROPICAL, ARID, SAVANNA, TROPICAL_HUMID }
 
-    public record Climate(Zone zone, double meanTempC, boolean snowy, boolean frozenWater, double elevation) {
+    /**
+     * A column's climate. {@code snowy} is the year-round guess from temperature (it picks the biome);
+     * {@code snowDepthM} is today's real snow on the ground (metres, NaN when unknown or real snow is off), which the
+     * painter lays when known.
+     */
+    public record Climate(Zone zone, double meanTempC, boolean snowy, boolean frozenWater, double elevation, double snowDepthM) {
+        public Climate(Zone zone, double meanTempC, boolean snowy, boolean frozenWater, double elevation) {
+            this(zone, meanTempC, snowy, frozenWater, elevation, Double.NaN);
+        }
+
+        public Climate withSnowDepth(double depthM) {
+            return new Climate(zone, meanTempC, snowy, frozenWater, elevation, depthM);
+        }
+
         public boolean isArid() {
             return zone == Zone.ARID;
         }

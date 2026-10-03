@@ -51,7 +51,7 @@ public final class MapTilePayloads {
 
     /**
      * One region: its generated chunks (bit z*32+x), and when {@code colours} is not empty the deflated colours
-     * (one vanilla packed map colour per pixel, (512 >> level) squared). {@code version} lets the game keep what
+     * (one RGB565 colour per pixel, big-endian, 0 = nothing drawn, (512 >> level) squared). {@code version} lets the game keep what
      * it has; an empty {@code colours} with {@code sameColours} means "yours is current".
      */
     public record Data(int rx, int rz, int level, int version, long[] mask, boolean sameColours, byte[] colours) implements CustomPacketPayload {

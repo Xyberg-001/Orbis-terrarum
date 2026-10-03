@@ -1,5 +1,6 @@
 package com.berg.orbis.client.map;
 
+import com.berg.orbis.OrbisMod;
 import com.berg.orbis.client.MapTiles;
 import com.berg.orbis.net.Geocoder;
 import com.berg.orbis.net.WorldInfoPayload;
@@ -10,6 +11,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.core.BlockPos;
@@ -23,10 +25,11 @@ import java.util.Locale;
 
 /**
  * The world map (key N): the real world under the Minecraft world, as a street map, satellite photos with place
- * names, or a topographic map, lined up with the blocks through the world's own projection. Shows you (an arrow
+ * names, or elevation in colour, lined up with the blocks through the world's own projection. Shows you (an arrow
  * facing where you look), other players in sight, the world spawn, your marks and a searched place; drag to
  * move, scroll to zoom, right-click to teleport, mark a place or copy its coordinates. Needs the server to run
- * Orbis Terrarum (it sends where the world sits on Earth) and only works in the overworld.
+ * Orbis Terrarum (it sends where the world sits on Earth) and only works in the overworld. Operators also get
+ * {@link MapSelectTool}: select an area with a rectangle, ellipse or lasso and pre-generate it.
  */
 public final class WorldMapScreen extends Screen {
     private static final int TOP_H = 24;
@@ -59,6 +62,14 @@ public final class WorldMapScreen extends Screen {
     private MapMarks.Mark menuMark;
     private final List<String> menuItems = new ArrayList<>();
 
+    /** Area selection for pre-generation (operators only), null otherwise. */
+    private MapSelectTool select;
+    /** A right-button press on the map while selecting: a drag pans, a click opens the menu. */
+    private boolean rightDown, rightMoved;
+    private double rightX, rightY;
+    /** Space held while selecting: the left button pans instead of drawing. */
+    private boolean spaceDown;
+
     public WorldMapScreen(WorldInfoPayload info) {
         super(Component.translatable("orbisterrarum.map.title"));
         this.info = info;
@@ -81,29 +92,54 @@ public final class WorldMapScreen extends Screen {
     protected void init() {
         canvas.setBounds(0, TOP_H, width, height, gs());
         String query = searchBox != null ? searchBox.getValue() : "";
-        int boxW = Math.max(80, Math.min(240, width - 250 - 176));
+        boolean markersInBar = width >= 560; // on a large GUI scale it sits under the bar, top left, instead
+        // The bar, left to right with one gap everywhere: search box, Search, [Markers], Blocks, Grey, layer, Me. The box
+        // takes the room up to 360; past that the gaps share what is left, so nothing bunches at one end.
+        int[] bw = markersInBar ? new int[]{56, 80, 96, 72, 96, 46} : new int[]{56, 96, 72, 96, 46};
+        int sum = 0;
+        for (int w : bw) sum += w;
+        int boxW = Math.max(80, Math.min(360, width - 8 - sum - bw.length * 4));
+        int gap = Math.max(4, (width - 8 - boxW - sum) / bw.length);
+        int[] bx = new int[bw.length];
+        for (int i = 0, x = 4 + boxW + gap; i < bw.length; x += bw[i] + gap, i++) bx[i] = x;
+        int bi = 0;
         searchBox = new EditBox(font, 4, 3, boxW, 18, Component.translatable("orbisterrarum.map.search"));
         searchBox.setMaxLength(200);
         searchBox.setValue(query);
-        searchBox.setHint(Component.translatable("orbisterrarum.map.search.hint"));
+        // The hint cut to the box (it is not clipped, and ran on under the Search button).
+        String hint = Component.translatable("orbisterrarum.map.search.hint").getString();
+        if (font.width(hint) > boxW - 10) hint = font.plainSubstrByWidth(hint, Math.max(0, boxW - 10 - font.width("..."))).stripTrailing() + "...";
+        searchBox.setHint(Component.literal(hint));
         addRenderableWidget(searchBox);
         addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.search.go"), b -> search())
-                .bounds(boxW + 8, 2, 56, 20).build());
+                .bounds(bx[bi++], 2, 56, 20).build());
+        addRenderableWidget(Button.builder(markersLabel(), b -> {
+            double s = OrbisMod.config().mapMarkerScale;
+            int i = 0;
+            while (i < MARKER_SCALES.length && MARKER_SCALES[i] <= s + 1e-6) i++;
+            double next = MARKER_SCALES[i % MARKER_SCALES.length];
+            OrbisMod.updateConfig(c -> c.mapMarkerScale = next);
+            b.setMessage(markersLabel());
+        }).bounds(markersInBar ? bx[bi++] : 4, markersInBar ? 2 : TOP_H + 4, 80, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.markers.tip"))).build());
         addRenderableWidget(Button.builder(blocksLabel(), b -> {
             blockAlpha = (blockAlpha + 1) % BLOCK_ALPHA.length;
             b.setMessage(blocksLabel());
-        }).bounds(width - 326, 2, 96, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.blocks.tip"))).build());
+        }).bounds(bx[bi++], 2, 96, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.blocks.tip"))).build());
         addRenderableWidget(Button.builder(greyLabel(), b -> {
             greyOut = !greyOut;
             b.setMessage(greyLabel());
-        }).bounds(width - 226, 2, 72, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.grey.tip"))).build());
+        }).bounds(bx[bi++], 2, 72, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.grey.tip"))).build());
         addRenderableWidget(Button.builder(Component.literal(canvas.layer.label), b -> {
             canvas.layer = canvas.layer.next();
             lastLayer = canvas.layer;
             b.setMessage(Component.literal(canvas.layer.label));
-        }).bounds(width - 150, 2, 96, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.layer.tip"))).build());
+        }).bounds(bx[bi++], 2, 96, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.layer.tip"))).build());
         addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.me"), b -> centreOnPlayer())
-                .bounds(width - 50, 2, 46, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.me.tip"))).build());
+                .bounds(bx[bi++], 2, 46, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.me.tip"))).build());
+        if (select == null && mapper != null && MapSelectTool.allowed(minecraft)) {
+            select = new MapSelectTool(minecraft, canvas, mapper, info.metersPerBlock(), worldKey, true, s -> say(s, false, 8000));
+        }
+        if (select != null) select.addWidgets(this::addRenderableWidget, 4, markersInBar ? TOP_H + 4 : TOP_H + 28, width, height);
         if (!viewSet && mapper != null) {
             centreOnPlayer();
             if (lastScale > 0) canvas.scale = lastScale;
@@ -121,6 +157,16 @@ public final class WorldMapScreen extends Screen {
     private Component blocksLabel() {
         return blockAlpha == 0 ? Component.translatable("orbisterrarum.map.blocks.off")
                 : Component.translatable("orbisterrarum.map.blocks.on", Math.round(BLOCK_ALPHA[blockAlpha] * 100 / 255.0) + "%");
+    }
+
+    private static final double[] MARKER_SCALES = {0.5, 0.75, 1.0, 1.5, 2.0, 3.0};
+
+    private Component markersLabel() {
+        return Component.translatable("orbisterrarum.map.markers", Math.round(OrbisMod.config().mapMarkerScale * 100) + "%");
+    }
+
+    private static float markerScale() {
+        return (float) OrbisMod.config().mapMarkerScale;
     }
 
     private Component greyLabel() {
@@ -182,11 +228,24 @@ public final class WorldMapScreen extends Screen {
         if (super.mouseClicked(e, doubleClick)) return true;
         if (mapper == null || !canvas.contains(e.x(), e.y())) return false;
         setFocused(null);
-        if (e.button() == 1) {
-            openMenu((int) e.x(), (int) e.y());
+        boolean selecting = select != null && select.active;
+        if (e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+            if (selecting) {
+                rightDown = true;
+                rightMoved = false;
+                rightX = e.x();
+                rightY = e.y();
+            } else {
+                openMenu((int) e.x(), (int) e.y());
+            }
             return true;
         }
-        if (e.button() == 0) {
+        if (e.button() == InputConstants.MOUSE_BUTTON_MIDDLE || (e.button() == InputConstants.MOUSE_BUTTON_LEFT && selecting && spaceDown)) {
+            dragging = true;
+            return true;
+        }
+        if (selecting && select.mousePressed(e, doubleClick)) return true;
+        if (e.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             if (doubleClick) canvas.zoomAt(e.x(), e.y(), 2);
             dragging = true;
             return true;
@@ -196,6 +255,14 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent e, double dx, double dy) {
+        if (select != null && select.mouseDragged(e)) return true;
+        if (rightDown && e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+            if (rightMoved || Math.hypot(e.x() - rightX, e.y() - rightY) > 3) {
+                rightMoved = true;
+                canvas.pan(dx, dy);
+            }
+            return true;
+        }
         if (dragging) {
             canvas.pan(dx, dy);
             return true;
@@ -205,7 +272,13 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent e) {
-        if (dragging && e.button() == 0) {
+        if (select != null && select.mouseReleased(e)) return true;
+        if (rightDown && e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+            rightDown = false;
+            if (!rightMoved) openMenu((int) rightX, (int) rightY);
+            return true;
+        }
+        if (dragging && (e.button() == InputConstants.MOUSE_BUTTON_LEFT || e.button() == InputConstants.MOUSE_BUTTON_MIDDLE)) {
             dragging = false;
             return true;
         }
@@ -223,15 +296,28 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent e) {
-        if ((e.key() == 257 || e.key() == 335) && searchBox.isFocused()) {
+        if ((e.key() == InputConstants.KEY_RETURN || e.key() == InputConstants.KEY_NUMPADENTER) && searchBox.isFocused()) {
             search();
             return true;
+        }
+        if (!searchBox.isFocused() && select != null) {
+            if (select.keyPressed(e)) return true;
+            if (select.active && e.key() == InputConstants.KEY_SPACE) {
+                spaceDown = true;
+                return true;
+            }
         }
         if (!searchBox.isFocused() && com.berg.orbis.client.OrbisClient.MAP_KEY != null && com.berg.orbis.client.OrbisClient.MAP_KEY.matches(e)) {
             onClose();
             return true;
         }
         return super.keyPressed(e);
+    }
+
+    @Override
+    public boolean keyReleased(KeyEvent e) {
+        if (e.key() == InputConstants.KEY_SPACE) spaceDown = false;
+        return super.keyReleased(e);
     }
 
     private void openMenu(int x, int y) {
@@ -320,6 +406,8 @@ public final class WorldMapScreen extends Screen {
         } else {
             canvas.draw(g, minecraft);
             drawMinecraftLayer(g);
+            drawOutsideLimit(g);
+            if (select != null && select.active) select.draw(g, font, mouseX, mouseY);
             g.enableScissor(canvas.left(), canvas.top(), canvas.right(), canvas.bottom());
             drawSpawn(g);
             for (MapMarks.Mark m : marks) pin(g, canvas.gui(m.lat(), m.lon()), YELLOW, m.name());
@@ -327,17 +415,25 @@ public final class WorldMapScreen extends Screen {
             drawPlayers(g);
             g.disableScissor();
             drawScaleBar(g);
+            drawLimitLegend(g);
+            if (select != null) select.drawPanel(g, font, width, height);
             if (canvas.contains(mouseX, mouseY) && menuItems.isEmpty()) drawReadout(g, mouseX, mouseY);
-            g.text(font, "Map tiles © Esri", width - font.width("Map tiles © Esri") - 4, TOP_H + 3, 0xC0000000, false);
+            String credit = canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri" : "Map tiles © Esri";
+            g.text(font, credit, width - font.width(credit) - 4, TOP_H + 3, 0xC0000000, false);
+            // Bottom right, above the bottom line (the readout).
+            if (canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION) {
+                com.berg.orbis.client.ElevationTiles.drawLegend(g, font, width - 4, select != null && select.generateShown() ? height - 62 : height - 19);
+            }
         }
         g.fill(0, 0, width, TOP_H, TOP_BG);
         drawStatus(g);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
+        if (select != null) select.drawIcons(g);
         if (!menuItems.isEmpty()) drawMenu(g, mouseX, mouseY);
     }
 
     /**
-     * The Minecraft map over the real one (block colours as on a map item, from the server), and a grey veil over
+     * The Minecraft map over the real one (each block's real colour, shaded as on a map item, from the server), and a grey veil over
      * chunks not generated yet. Regions nearest the centre are asked for first.
      */
     private void drawMinecraftLayer(GuiGraphicsExtractor g) {
@@ -396,6 +492,83 @@ public final class WorldMapScreen extends Screen {
         BlockMapClient.send();
     }
 
+    /** Outside the hard limit: a dark red tint (the not-generated haze is light grey, and never drawn there). */
+    private static final int LIMIT_SHADE = 0x9C3A0A12, LIMIT_EDGE = 0xFFF87171, VEIL_SWATCH = 0xFFD4D8DC;
+
+    /**
+     * With the server's hard limit on: everything outside the allowed area darkened (it never generates), with a red
+     * line along its edge when zoomed in far enough to see chunks.
+     */
+    private void drawOutsideLimit(GuiGraphicsExtractor g) {
+        com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
+        if (limit == null || !limit.on() || limit.area().isEmpty()) return;
+        com.berg.orbis.worldgen.ChunkSelection a = limit.area();
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (double[] c : new double[][]{{canvas.left(), canvas.top()}, {canvas.right(), canvas.top()}, {canvas.left(), canvas.bottom()}, {canvas.right(), canvas.bottom()}}) {
+            double[] ll = canvas.latLonAt(c[0], c[1]);
+            double[] b = mapper.toBlockExact(ll[0], ll[1]);
+            minX = Math.min(minX, b[0]);
+            maxX = Math.max(maxX, b[0]);
+            minZ = Math.min(minZ, b[1]);
+            maxZ = Math.max(maxZ, b[1]);
+        }
+        int cx0 = (int) Math.floor(minX / 16) - 1, cx1 = (int) Math.floor(maxX / 16) + 1;
+        int r0 = (int) Math.floor(minZ / 16) - 1, r1 = (int) Math.floor(maxZ / 16) + 1;
+        double rowPx = Math.abs(physOfBlock(0, 16)[1] - physOfBlock(0, 0)[1]);
+        int step = Math.max(1, (int) Math.ceil(1.0 / Math.max(1e-6, rowPx)));
+        int[] view = {cx0, cx1};
+        canvas.beginOverlay(g);
+        // North and south of the area: whole bands.
+        if (r0 < a.firstRow()) shadeBlocks(g, cx0, r0, cx1, Math.min(r1, a.firstRow() - 1), LIMIT_SHADE);
+        if (r1 > a.lastRow()) shadeBlocks(g, cx0, Math.max(r0, a.lastRow() + 1), cx1, r1, LIMIT_SHADE);
+        int from = Math.max(r0, a.firstRow()), to = Math.min(r1, a.lastRow());
+        for (int cz = from; cz <= to; cz += step) {
+            int[] runs = a.rawRuns(cz);
+            int[] out = runs == null ? view : com.berg.orbis.worldgen.ChunkSelection.difference(view, runs);
+            int last = Math.min(to, cz + step - 1);
+            for (int i = 0; i < out.length; i += 2) shadeBlocks(g, out[i], cz, out[i + 1], last, LIMIT_SHADE);
+        }
+        if (step == 1 && rowPx >= 2) {
+            int t = Math.max(1, (int) Math.round(rowPx / 12));
+            for (int cz = from; cz <= to; cz++) {
+                int[] runs = a.rawRuns(cz);
+                if (runs == null) continue;
+                for (int i = 0; i < runs.length; i += 2) {
+                    if (runs[i + 1] < cx0 || runs[i] > cx1) continue;
+                    edgeLine(g, runs[i] * 16.0, cz * 16.0, runs[i] * 16.0, (cz + 1) * 16.0, t);
+                    edgeLine(g, (runs[i + 1] + 1) * 16.0, cz * 16.0, (runs[i + 1] + 1) * 16.0, (cz + 1) * 16.0, t);
+                }
+                for (int side = 0; side < 2; side++) {
+                    int[] other = a.rawRuns(side == 0 ? cz - 1 : cz + 1);
+                    int[] open = other == null ? runs : com.berg.orbis.worldgen.ChunkSelection.difference(runs, other);
+                    double ez = (side == 0 ? cz : cz + 1) * 16.0;
+                    for (int i = 0; i < open.length; i += 2) {
+                        int x0 = Math.max(open[i], cx0), x1 = Math.min(open[i + 1], cx1);
+                        if (x0 <= x1) edgeLine(g, x0 * 16.0, ez, (x1 + 1) * 16.0, ez, t);
+                    }
+                }
+            }
+        }
+        canvas.endOverlay(g);
+    }
+
+    /** Fills the chunks cx0..cx1 by cz0..cz1 (inclusive), in the overlay's physical pixels. */
+    private void shadeBlocks(GuiGraphicsExtractor g, int cx0, int cz0, int cx1, int cz1, int colour) {
+        if (cx1 < cx0 || cz1 < cz0) return;
+        double[] p = physOfBlock(cx0 * 16.0, cz0 * 16.0), q = physOfBlock((cx1 + 1) * 16.0, (cz1 + 1) * 16.0);
+        int x0 = (int) Math.round(Math.max(-1, Math.min(p[0], q[0]))), x1 = (int) Math.round(Math.min(canvas.w() + 1, Math.max(p[0], q[0])));
+        int y0 = (int) Math.round(Math.max(-1, Math.min(p[1], q[1]))), y1 = (int) Math.round(Math.min(canvas.h() + 1, Math.max(p[1], q[1])));
+        if (x1 > x0 && y1 > y0) g.fill(x0, y0, x1, y1, colour);
+    }
+
+    /** A straight edge of the allowed area (block coordinates), {@code t} physical pixels thick. */
+    private void edgeLine(GuiGraphicsExtractor g, double xa, double za, double xb, double zb, int t) {
+        double[] p = physOfBlock(xa, za), q = physOfBlock(xb, zb);
+        int x0 = (int) Math.round(Math.min(p[0], q[0])), x1 = (int) Math.round(Math.max(p[0], q[0]));
+        int y0 = (int) Math.round(Math.min(p[1], q[1])), y1 = (int) Math.round(Math.max(p[1], q[1]));
+        g.fill(x0 - t / 2, y0 - t / 2, Math.max(x1, x0 + 1) + (t + 1) / 2, Math.max(y1, y0 + 1) + (t + 1) / 2, LIMIT_EDGE);
+    }
+
     private double[] physOfBlock(double x, double z) {
         double[] ll = mapper.toLatLonExact(x, z);
         return canvas.phys(ll[0], ll[1]);
@@ -410,10 +583,13 @@ public final class WorldMapScreen extends Screen {
         if (minecraft.level == null) return;
         BlockPos p = minecraft.level.getRespawnData().pos();
         double[] s = guiOfBlock(p.getX() + 0.5, p.getZ() + 0.5);
-        int x = (int) Math.round(s[0]), y = (int) Math.round(s[1]);
-        g.fill(x - 4, y - 4, x + 5, y + 5, 0xFF000000);
-        g.fill(x - 3, y - 3, x + 4, y + 4, GREEN);
-        label(g, x + 7, y - 4, Component.translatable("orbisterrarum.map.spawn").getString(), GREEN);
+        g.pose().pushMatrix();
+        g.pose().translate((float) s[0], (float) s[1]);
+        g.pose().scale(markerScale(), markerScale());
+        g.fill(-4, -4, 5, 5, 0xFF000000);
+        g.fill(-3, -3, 4, 4, GREEN);
+        label(g, 7, -4, Component.translatable("orbisterrarum.map.spawn").getString(), GREEN);
+        g.pose().popMatrix();
     }
 
     private void drawPlayers(GuiGraphicsExtractor g) {
@@ -430,30 +606,49 @@ public final class WorldMapScreen extends Screen {
         double r = Math.toRadians(yaw);
         double[] a = guiOfBlock(x, z), b = guiOfBlock(x - Math.sin(r) * 16, z + Math.cos(r) * 16);
         float theta = (float) Math.atan2(b[0] - a[0], -(b[1] - a[1]));
+        float scale = markerScale();
         g.pose().pushMatrix();
         g.pose().translate((float) a[0], (float) a[1]);
+        g.pose().scale(scale, scale);
+        g.pose().pushMatrix();
         g.pose().rotate(theta);
-        triangle(g, 9, 0xFF000000);
-        triangle(g, 7, colour);
+        arrowHead(g, 10, 0xFF000000);
+        arrowHead(g, 8, colour);
         g.pose().popMatrix();
-        if (name != null) label(g, (int) Math.round(a[0]) + 8, (int) Math.round(a[1]) - 4, name, colour);
+        if (name != null) label(g, 10, -4, name, colour);
+        g.pose().popMatrix();
     }
 
-    /** A triangle pointing up, {@code size} from tip to base, centred on 0, 0. */
-    private void triangle(GuiGraphicsExtractor g, int size, int colour) {
-        int top = -size, bottom = size * 2 / 3;
-        for (int y = top; y <= bottom; y++) {
-            int hw = (int) Math.round((y - top) * 0.55);
-            g.fill(-hw, y, hw + 1, y + 1, colour);
+    /**
+     * A slim arrowhead pointing up (the way the player faces), notched at the back like a map's position arrow:
+     * {@code size} sets the scale, the tip sits well ahead of the centre so the direction reads at a glance.
+     */
+    private void arrowHead(GuiGraphicsExtractor g, int size, int colour) {
+        double top = -size * 1.3, bottom = size * 0.75, notch = size * 0.2, half = size * 0.68;
+        for (int y = (int) Math.floor(top); y <= (int) Math.ceil(bottom); y++) {
+            double t = (y + 0.5 - top) / (bottom - top);
+            if (t < 0 || t > 1) continue;
+            double hw = half * t;
+            if (y + 0.5 > notch) {
+                // The notch at the back: a V cut out between the two barbs.
+                double nw = half * (y + 0.5 - notch) / (bottom - notch);
+                g.fill((int) Math.round(-hw), y, (int) Math.round(-nw) + 1, y + 1, colour);
+                g.fill((int) Math.round(nw), y, (int) Math.round(hw) + 1, y + 1, colour);
+            } else {
+                g.fill((int) Math.round(-hw), y, (int) Math.round(hw) + 1, y + 1, colour);
+            }
         }
     }
 
     private void pin(GuiGraphicsExtractor g, double[] s, int colour, String name) {
-        int x = (int) Math.round(s[0]), y = (int) Math.round(s[1]);
-        g.fill(x - 3, y - 9, x + 4, y - 2, 0xFF000000);
-        g.fill(x - 2, y - 8, x + 3, y - 3, colour);
-        g.fill(x, y - 3, x + 1, y + 1, 0xFF000000);
-        if (name != null && !name.isEmpty()) label(g, x + 6, y - 10, name, colour);
+        g.pose().pushMatrix();
+        g.pose().translate((float) s[0], (float) s[1]);
+        g.pose().scale(markerScale(), markerScale());
+        g.fill(-3, -9, 4, -2, 0xFF000000);
+        g.fill(-2, -8, 3, -3, colour);
+        g.fill(0, -3, 1, 1, 0xFF000000);
+        if (name != null && !name.isEmpty()) label(g, 6, -10, name, colour);
+        g.pose().popMatrix();
     }
 
     private void label(GuiGraphicsExtractor g, int x, int y, String text, int colour) {
@@ -462,6 +657,43 @@ public final class WorldMapScreen extends Screen {
     }
 
     /** A bar of a round number of blocks, with the real distance it stands for. */
+    /** Says what each shading is, above the scale bar: the hard limit's red, and the grey haze when it is on. */
+    private void drawLimitLegend(GuiGraphicsExtractor g) {
+        com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
+        boolean red = limit != null && limit.on() && !limit.area().isEmpty();
+        boolean grey = greyOut && BlockMapClient.available();
+        if (!red && !grey) return;
+        String redText = Component.translatable("orbisterrarum.map.hardlimit").getString();
+        String greyText = Component.translatable("orbisterrarum.map.notyet").getString();
+        int rows = (red ? 1 : 0) + (grey ? 1 : 0);
+        // Above the scale bar (its box starts at height - 42), lined up with it; where the tool strip comes down that
+        // far, beside the scale bar on the same bottom line instead of out over the map.
+        int bottom = height - 46, top = bottom - rows * 12 - 2;
+        int x = 8;
+        if (select != null && select.textLeft(top, bottom, 8) != 8) {
+            bottom = height - 25;
+            top = bottom - rows * 12 - 2;
+            x = scaleRight + 7;
+        }
+        top += 2;
+        int w = Math.max(red ? font.width(redText) : 0, grey ? font.width(greyText) : 0);
+        g.fill(x - 3, top - 2, x + w + 13, bottom, 0xA0000000);
+        int y = top;
+        if (red) {
+            g.fill(x, y + 1, x + 7, y + 8, LIMIT_SHADE | 0xFF000000);
+            g.outline(x, y + 1, 7, 7, LIMIT_EDGE);
+            g.text(font, redText, x + 10, y, WHITE);
+            y += 12;
+        }
+        if (grey) {
+            g.fill(x, y + 1, x + 7, y + 8, VEIL_SWATCH);
+            g.text(font, greyText, x + 10, y, WHITE);
+        }
+    }
+
+    /** Right edge of the scale bar's box as last drawn (the legend sits beside it when the strip leaves no room above). */
+    private int scaleRight = 8;
+
     private void drawScaleBar(GuiGraphicsExtractor g) {
         double mpb = info.metersPerBlock();
         double blocksPerPx = canvas.metresPerGuiPixel() / mpb;
@@ -469,10 +701,11 @@ public final class WorldMapScreen extends Screen {
         double pow = Math.pow(10, Math.floor(Math.log10(target)));
         double nice = target / pow >= 5 ? 5 * pow : target / pow >= 2 ? 2 * pow : pow;
         int px = (int) Math.round(nice / blocksPerPx);
-        int x = 8, y = height - 30;
+        int y = height - 30, x = select != null ? select.textLeft(y - 12, y + 5, 8) : 8;
         double metres = nice * mpb;
         String text = String.format(Locale.ROOT, "%,.0f blocks (%s)", nice, metres >= 1000 ? String.format(Locale.ROOT, "%.1f km", metres / 1000) : String.format(Locale.ROOT, "%.0f m", metres));
-        g.fill(x - 3, y - 12, x + Math.max(px, font.width(text)) + 4, y + 5, 0xA0000000);
+        scaleRight = x + Math.max(px, font.width(text)) + 4;
+        g.fill(x - 3, y - 12, scaleRight, y + 5, 0xA0000000);
         g.text(font, text, x, y - 10, WHITE);
         g.fill(x, y, x + px, y + 2, WHITE);
         g.fill(x, y - 3, x + 1, y + 2, WHITE);
@@ -489,6 +722,10 @@ public final class WorldMapScreen extends Screen {
             double dx = b[0] - minecraft.player.getX(), dz = b[1] - minecraft.player.getZ();
             parts.add(String.format(Locale.ROOT, "%,.0f blocks %s", Math.hypot(dx, dz), compass(dx, dz)));
         }
+        if (canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION) {
+            double m = canvas.tiles.elevationAt(ll[0], ll[1], canvas.zoom());
+            if (!Double.isNaN(m)) parts.add(String.format(Locale.ROOT, m < 0 ? "%,.0f m below sea level" : "%,.0f m above sea level", Math.abs(m)));
+        }
         if (BlockMapClient.available()) {
             int cx = Math.floorDiv(b[0], 16), cz = Math.floorDiv(b[1], 16);
             long[] mask = BlockMapClient.mask(Math.floorDiv(cx, 32), Math.floorDiv(cz, 32));
@@ -498,9 +735,10 @@ public final class WorldMapScreen extends Screen {
             }
         }
         String text = String.join("   ", parts);
-        int w = Math.min(font.width(text), width - 16);
-        g.fill(4, height - 15, 4 + w + 8, height - 2, 0xC0000000);
-        g.text(font, font.plainSubstrByWidth(text, width - 16), 8, height - 12, WHITE);
+        int x = select != null ? select.textLeft(height - 15, height - 2, 8) : 8;
+        int w = Math.min(font.width(text), width - x - 8);
+        g.fill(x - 4, height - 15, x + w + 4, height - 2, 0xC0000000);
+        g.text(font, font.plainSubstrByWidth(text, width - x - 8), x, height - 12, WHITE);
     }
 
     private static String compass(double dx, double dz) {
@@ -518,11 +756,15 @@ public final class WorldMapScreen extends Screen {
         if (s == null && mapper != null && canvas.tiles.loading() > 0) s = Component.translatable("orbisterrarum.preview.loadingmap").getString();
         if (s == null) s = layerHint;
         if (s == null) return;
-        int maxW = Math.min(width - 40, 380);
+        // Clear of the selection tool strip on the left.
+        int left = select != null ? select.textLeft(TOP_H, height, 0) : 0;
+        // On a large GUI scale the Markers button (80 wide) sits under the bar, top left, wider than the strip.
+        if (width < 560) left = Math.max(left, 4 + 80 + 6);
+        int maxW = Math.min(width - left - 24, 380);
         List<FormattedCharSequence> lines = font.split(Component.literal(s), maxW);
         int w = 0;
         for (FormattedCharSequence l : lines) w = Math.max(w, font.width(l));
-        int x = (width - w) / 2, y = TOP_H + 16;
+        int x = left + (width - left - w) / 2, y = TOP_H + 16;
         g.fill(x - 6, y - 4, x + w + 6, y + lines.size() * 10 + 2, 0xD0000000);
         for (FormattedCharSequence l : lines) {
             g.text(font, l, x, y, statusError ? RED : WHITE);

@@ -10,6 +10,7 @@ import com.berg.orbis.feature.RoadFeature;
 import com.berg.orbis.feature.RoofShape;
 import com.berg.orbis.feature.WaterFeature;
 import com.berg.orbis.imagery.GroundClass;
+import com.berg.orbis.sky.SnowCover;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
@@ -17,10 +18,14 @@ import net.minecraft.world.level.block.PoweredRailBlock;
 import net.minecraft.world.level.block.DoublePlantBlock;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.RailBlock;
+import net.minecraft.world.level.block.SnowLayerBlock;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
+import net.minecraft.world.level.block.state.properties.Half;
 import net.minecraft.world.level.block.state.properties.RailShape;
+import net.minecraft.world.level.block.state.properties.StairsShape;
 
 /**
  * Writes one complete block column: bedrock, rock, soil, the real ground
@@ -61,6 +66,9 @@ public final class ColumnPainter {
     private static final BlockState SNOW_BLOCK = Blocks.SNOW_BLOCK.defaultBlockState();
     private static final BlockState FARMLAND = Blocks.FARMLAND.defaultBlockState().setValue(BlockStateProperties.MOISTURE, 7);
 
+    /** Depth the sea bed shelves down to from the shore where the elevation data has none, in metres. */
+    private static final double SHELF_M = 12;
+
     private final OrbisConfig cfg;
     private final int minY;
     private final int maxY;
@@ -87,6 +95,16 @@ public final class ColumnPainter {
         RoadFeature rf = hasRaster ? r.roadAt(idx) : null;
         BuildingFeature bf = hasRaster ? r.buildingAt(idx) : null;
         DecorType dec = hasRaster ? r.decorAt(idx) : DecorType.NONE;
+
+        // ---- side slopes of a graded road: the ground blends from the road height back to its own ------------
+        if (hasRaster && r.shoulderDist != null && rf == null && bf == null && wf == null) {
+            int k = r.shoulderDist[idx];
+            if (k > 0 && !(r.hasCoastline && r.isSea(idx))) {
+                int road = r.shoulderY[idx];
+                int blended = (int) Math.round(road + (terrainY - road) * (k / (double) (RegionRaster.SHOULDER + 1)));
+                if (!(terrainY >= seaLevel && blended < seaLevel)) terrainY = clampY(blended);
+            }
+        }
 
         boolean sea;
         if (hasRaster && r.hasCoastline) {
@@ -122,13 +140,26 @@ public final class ColumnPainter {
             if (sea || wf.atSeaLevel || (wf.surfaceY == WaterFeature.FOLLOW_TERRAIN && terrainY <= seaLevel)) {
                 waterTop = seaLevel;
                 int depth = wf != null ? wf.depth : 6;
-                groundTop = terrainY < seaLevel ? terrainY : Math.min(terrainY, seaLevel - depth);
+                int shore = hasRaster && r.seaShore != null ? r.seaShore[idx] : 0;
+                if (shore > 0) {
+                    // The elevation data records the sea surface as 0 m and blends into the bathymetry over tens of
+                    // metres, so near the shore it knows no depth. The bed shelves down from the shore (a block per
+                    // three blocks out) to about 12 m and follows the bathymetry wherever that is deeper: no trench
+                    // along the shore and no step up where the bathymetry begins.
+                    int cap = Math.min(depth, Math.max(2, (int) Math.round(SHELF_M / cfg.metersPerBlock)));
+                    groundTop = Math.min(terrainY, seaLevel - Math.min(cap, 1 + (shore - 1) / 3));
+                } else {
+                    groundTop = terrainY < seaLevel ? terrainY : Math.min(terrainY, seaLevel - depth);
+                }
             } else if (wf.surfaceY != WaterFeature.FOLLOW_TERRAIN) {
+                // A shaped bed (a surveyed lake, a bowl, a river channel) where there is one, else the body's own depth.
+                int bed = hasRaster ? r.bedDepthAt(idx) : 0;
                 waterTop = clampY(wf.surfaceY);
-                groundTop = Math.min(terrainY, waterTop - wf.depth);
+                groundTop = Math.min(terrainY, waterTop - (bed > 0 ? bed : wf.depth));
             } else {
+                int bed = hasRaster ? r.bedDepthAt(idx) : 0;
                 waterTop = terrainY - 1;
-                groundTop = waterTop - wf.depth;
+                groundTop = waterTop - (bed > 0 ? bed : wf.depth);
             }
             if (groundTop >= waterTop) groundTop = waterTop - 1;
             groundTop = Math.max(minY + 1, groundTop);
@@ -224,22 +255,24 @@ public final class ColumnPainter {
             }
         }
         BlockState top, sub, deep;
+        // The real rock under this column (bedrock map), else plain stone.
+        BlockState rock = hasRaster ? com.berg.orbis.geology.Rocks.Rock.of(r.rockAt(idx)).block : STONE;
         if (bf != null) {
             top = bf.minHeightBlocks > 0 ? groundBlock(lc, gc, climate, h, x, z) : bf.floor;
-            sub = STONE;
-            deep = STONE;
+            sub = rock;
+            deep = rock;
         } else if (waterColumn) {
             top = bedBlock(wf, sea, groundTop, h);
             sub = top.is(Blocks.SAND) ? SAND : GRAVEL;
-            deep = STONE;
+            deep = rock;
         } else if (roadOnGround) {
             top = roadSurface(rf, r, idx, x, z);
             sub = rf.isRail() ? GRAVEL : (rf.kind == RoadFeature.Kind.PATH || rf.kind == RoadFeature.Kind.TRACK ? DIRT : GRAVEL);
-            deep = STONE;
+            deep = rock;
         } else if (underRoad) {
             top = plainSurface(under, r.roadUnderDistAt(idx));
             sub = GRAVEL;
-            deep = STONE;
+            deep = rock;
         } else {
             top = groundBlock(lc, gc, climate, h, x, z);
             // Sports pitches get their white touchline where the pitch polygon ends.
@@ -247,7 +280,10 @@ public final class ColumnPainter {
                 top = Blocks.CONCRETE.white().defaultBlockState();
             }
             sub = subBlock(top, lc, climate);
-            deep = STONE;
+            deep = rock;
+            // Bare rock, screes and outcrops show the rock they are made of.
+            if (top == STONE) top = rock;
+            if (sub == STONE) sub = rock;
         }
 
         if (cfg.generateBedrock) s.set(x, minY, z, BEDROCK);
@@ -262,13 +298,9 @@ public final class ColumnPainter {
         // ---- water ---------------------------------------------------------------
         if (waterColumn) {
             s.fill(x, groundTop + 1, waterTop, z, WATER);
+            // Seagrass and kelp come from the water biomes in the decoration step (SeaVegetation).
             if (climate.frozenWater() && waterTop < maxY) {
                 s.set(x, waterTop, z, ICE);
-            } else if (wf == null || wf.kind == WaterFeature.Kind.SEA || wf.kind == WaterFeature.Kind.LAKE) {
-                int depth = waterTop - groundTop;
-                if (depth >= 2 && depth <= 12 && (h % 100) < 7 && !top.is(Blocks.GRAVEL)) {
-                    s.set(x, groundTop + 1, z, Blocks.SEAGRASS.defaultBlockState());
-                }
             }
             if (!climate.frozenWater() && wf != null && (wf.kind == WaterFeature.Kind.POND || wf.kind == WaterFeature.Kind.WETLAND_WATER)
                     && (h % 100) < 12 && waterTop < maxY) {
@@ -347,7 +379,7 @@ public final class ColumnPainter {
             if (gc == GroundClass.TREE_CANOPY && !lc.isForest()) lc = LandCover.FOREST;
             else if ((gc == GroundClass.PAVED_DARK || gc == GroundClass.PAVED_LIGHT || gc == GroundClass.ROCK) && lc == LandCover.NONE) lc = LandCover.PEDESTRIAN;
             decorateGround(s, x, z, groundTop, lc, climate, top, h);
-        } else if (roadOnGround && climate.snowy() && groundTop + 1 < maxY && !rf.isRail()) {
+        } else if (roadOnGround && snowLayers(climate) > 0 && groundTop + 1 < maxY && !rf.isRail()) {
             s.set(x, groundTop + 1, z, SNOW_LAYER);
         }
         boolean railHere = rf != null && rf.isRail() && r.roadDistAt(idx) == 0;
@@ -567,11 +599,33 @@ public final class ColumnPainter {
         return r < 70 ? GRAVEL : STONE;
     }
 
+    /**
+     * Snow layers (eight to a block) for a real snow depth: none below 2 cm, at least one above, at most
+     * {@link SnowCover#MAX_DEPTH_M}.
+     */
+    public static int snowLayers(double depthM, double metersPerBlock) {
+        if (!(depthM >= 0.02)) return 0;
+        return Math.max(1, (int) Math.round(Math.min(depthM, SnowCover.MAX_DEPTH_M) / metersPerBlock * 8));
+    }
+
+    /** Snow layers to lay on this column: today's real depth when known, else one layer where the climate is snowy. */
+    private int snowLayers(BiomeClassifier.Climate climate) {
+        if (Double.isNaN(climate.snowDepthM())) return climate.snowy() ? 1 : 0;
+        int layers = snowLayers(climate.snowDepthM(), cfg.metersPerBlock);
+        return climate.zone() == BiomeClassifier.Zone.ICE_CAP ? Math.max(1, layers) : layers;
+    }
+
     private void decorateGround(Sink s, int x, int z, int groundTop, LandCover lc, BiomeClassifier.Climate climate, BlockState top, long h) {
         int y = groundTop + 1;
-        if (climate.snowy()) {
+        int layers = snowLayers(climate);
+        if (layers > 0) {
             if (top.is(Blocks.GRASS_BLOCK)) s.set(x, groundTop, z, GRASS_SNOWY);
-            if (!top.is(Blocks.CONCRETE.gray()) && !top.is(Blocks.STONE_BRICKS) && !top.is(Blocks.SPRUCE_PLANKS)) s.set(x, y, z, SNOW_LAYER);
+            if (top.is(Blocks.CONCRETE.gray()) || top.is(Blocks.STONE_BRICKS) || top.is(Blocks.SPRUCE_PLANKS)) return;
+            // Deep snow: whole snow blocks, then the remaining layers on top.
+            int full = layers / 8;
+            for (int i = 0; i < full && y + i < maxY - 1; i++) s.set(x, y + i, z, SNOW_BLOCK);
+            int rest = layers % 8;
+            if (rest > 0 && y + full < maxY - 1) s.set(x, y + full, z, SNOW_LAYER.setValue(SnowLayerBlock.LAYERS, rest));
             return;
         }
         int r = (int) ((h >>> 16) % 1000);
@@ -579,6 +633,16 @@ public final class ColumnPainter {
         if (lc == LandCover.FARMLAND && top.is(Blocks.FARMLAND)) {
             long field = Materials.mix(((long) Math.floorDiv(x, 40) << 32) ^ (Math.floorDiv(z, 40) & 0xffffffffL));
             int crop = (int) (field % 100);
+            if (cfg.autumnColours && crop < 55) {
+                // Autumn: the grain is in; stubble fields with a few hay bales left on them.
+                if (r < 12) s.set(x, y, z, Blocks.HAY_BLOCK.defaultBlockState());
+                return;
+            }
+            if (cfg.autumnColours && crop >= 90) {
+                // Autumn: pumpkin patches where the beetroot would be.
+                if (r < 140) s.set(x, y, z, Blocks.PUMPKIN.defaultBlockState());
+                return;
+            }
             BlockState plant = crop < 55 ? Blocks.WHEAT.defaultBlockState().setValue(BlockStateProperties.AGE_7, 7)
                     : crop < 75 ? Blocks.POTATOES.defaultBlockState().setValue(BlockStateProperties.AGE_7, 7)
                     : crop < 90 ? Blocks.CARROTS.defaultBlockState().setValue(BlockStateProperties.AGE_7, 7)
@@ -643,11 +707,14 @@ public final class ColumnPainter {
         }
         switch (lc) {
             case FOREST, FOREST_BROADLEAF, FOREST_CONIFER -> {
+                boolean fall = cfg.autumnColours && lc != LandCover.FOREST_CONIFER;
+                int brown = fall ? 190 : 176; // autumn is mushroom season
                 if (r < 70) s.set(x, y, z, Blocks.FERN.defaultBlockState());
                 else if (r < 170) s.set(x, y, z, Blocks.SHORT_GRASS.defaultBlockState());
-                else if (r < 176) s.set(x, y, z, Blocks.BROWN_MUSHROOM.defaultBlockState());
-                else if (r < 179) s.set(x, y, z, Blocks.RED_MUSHROOM.defaultBlockState());
-                else if (r < 200 && lc != LandCover.FOREST_CONIFER) s.set(x, y, z, Blocks.LEAF_LITTER.defaultBlockState());
+                else if (r < brown) s.set(x, y, z, Blocks.BROWN_MUSHROOM.defaultBlockState());
+                else if (r < brown + 3) s.set(x, y, z, Blocks.RED_MUSHROOM.defaultBlockState());
+                else if (r < (fall ? 340 : 200) && lc != LandCover.FOREST_CONIFER) s.set(x, y, z, leafLitter(h, fall));
+                else if (fall && NewBlocks.RED_SHRUB != null && r < 352) s.set(x, y, z, NewBlocks.RED_SHRUB);
             }
             case MEADOW, GRASS -> {
                 if (r < 330) s.set(x, y, z, Blocks.SHORT_GRASS.defaultBlockState());
@@ -664,6 +731,7 @@ public final class ColumnPainter {
                 else if (r < 250) s.set(x, y, z, Blocks.BUSH.defaultBlockState());
                 else if (r < 262) s.set(x, y, z, Blocks.SWEET_BERRY_BUSH.defaultBlockState().setValue(BlockStateProperties.AGE_3, 2));
                 else if (r < 275) s.set(x, y, z, Blocks.DEAD_BUSH.defaultBlockState());
+                else if (cfg.autumnColours && NewBlocks.RED_SHRUB != null && r < 320) s.set(x, y, z, NewBlocks.RED_SHRUB); // heather turning red
             }
             case WETLAND, SALT_MARSH, MUD -> {
                 if (top.is(Blocks.MUD)) {
@@ -759,6 +827,9 @@ public final class ColumnPainter {
         boolean minaret = (flags & RegionRaster.FLAG_MINARET) != 0;
         boolean roofOnly = (flags & RegionRaster.FLAG_ROOF_ONLY) != 0;
         int extra = r.roofExtraAt(idx);
+        // Pitched roofs are shingled with stairs and capped with a slab (RoofBlocks picks the family).
+        RoofBlocks.Set3 roofSet = bf.roofShape.isPitched() ? RoofBlocks.of(bf.roof) : null;
+        BlockState roof = roofSet != null ? roofSet.full() : bf.roof;
 
         int wallBottom = base + 1 + bf.minHeightBlocks;
         int wallTop = clampY(base + bf.heightBlocks);
@@ -777,8 +848,9 @@ public final class ColumnPainter {
             if (corner) {
                 for (int y = base + 1; y < wallTop; y++) s.set(x, y, z, bf.wall);
             }
-            s.set(x, wallTop, z, bf.roof);
-            for (int y = wallTop + 1; y <= Math.min(maxY - 1, wallTop + extra); y++) s.set(x, y, z, bf.roof);
+            s.set(x, wallTop, z, roof);
+            for (int y = wallTop + 1; y <= Math.min(maxY - 1, wallTop + extra); y++) s.set(x, y, z, roof);
+            if (roofSet != null && roofSet.shaped()) shapeRoofTop(s, x, z, r, idx, Math.min(maxY - 1, wallTop + extra), extra, roofSet);
             return;
         }
 
@@ -812,7 +884,7 @@ public final class ColumnPainter {
                 }
             } else {
                 if (y == wallTop) {
-                    block = bf.roof;
+                    block = roof;
                 } else if (cfg.hollowBuildings) {
                     if (within == 0 && rel > 0) {
                         // Floor slab; every sixth block of it is a light, lighting the room
@@ -830,15 +902,77 @@ public final class ColumnPainter {
         }
 
         for (int y = wallTop + 1; y <= Math.min(maxY - 1, wallTop + extra); y++) {
-            s.set(x, y, z, gableEnd ? bf.wall : bf.roof);
+            s.set(x, y, z, gableEnd ? bf.wall : roof);
+        }
+        // The column's top is roof when the roof rises above the wall, or inside the footprint (where the wall top is roof).
+        if (roofSet != null && roofSet.shaped() && !gableEnd && (extra > 0 || !edge)) {
+            shapeRoofTop(s, x, z, r, idx, Math.min(maxY - 1, wallTop + extra), extra, roofSet);
         }
         if (extra > 0 && !gableEnd && bf.wall != bf.roof && edge && wallTop + extra + 1 < maxY
                 && (bf.roofShape == RoofShape.DOME || bf.roofShape == RoofShape.ONION)) {
             // nothing extra at the dome rim
         }
-        if (climate.snowy() && wallTop + extra + 1 < maxY && bf.roofShape == RoofShape.FLAT && !edge) {
+        if (snowLayers(climate) > 0 && wallTop + extra + 1 < maxY && bf.roofShape == RoofShape.FLAT && !edge) {
             s.set(x, wallTop + 1, z, SNOW_LAYER);
         }
+    }
+
+    /**
+     * Replaces a roof column's top block with a stair or slab, from the roof heights of its neighbours in the same
+     * building: a stair faces the higher neighbour (inner corner where two meet at a right angle, a valley; outer
+     * corner where only a diagonal is higher, a hip), and a column nothing rises above is capped with a slab (the
+     * ridge, or a peak). Generation writes block states without neighbour updates, so the shape is set here.
+     */
+    private static void shapeRoofTop(Sink s, int x, int z, RegionRaster r, int idx, int top, int extra, RoofBlocks.Set3 set) {
+        boolean n = roofHigher(r, idx, x, z - 1, extra), e = roofHigher(r, idx, x + 1, z, extra);
+        boolean so = roofHigher(r, idx, x, z + 1, extra), w = roofHigher(r, idx, x - 1, z, extra);
+        int count = (n ? 1 : 0) + (e ? 1 : 0) + (so ? 1 : 0) + (w ? 1 : 0);
+        BlockState state = null;
+        if (count == 1) {
+            state = stair(set, n ? Direction.NORTH : e ? Direction.EAST : so ? Direction.SOUTH : Direction.WEST, StairsShape.STRAIGHT);
+        } else if (count == 2 && !(n && so) && !(e && w)) {
+            // Facing the first of the two, the second is on its clockwise side: an inner-right corner.
+            Direction d = n && e ? Direction.NORTH : e && so ? Direction.EAST : so && w ? Direction.SOUTH : Direction.WEST;
+            state = stair(set, d, StairsShape.INNER_RIGHT);
+        } else if (count == 0) {
+            boolean ne = roofHigher(r, idx, x + 1, z - 1, extra), se = roofHigher(r, idx, x + 1, z + 1, extra);
+            boolean sw = roofHigher(r, idx, x - 1, z + 1, extra), nw = roofHigher(r, idx, x - 1, z - 1, extra);
+            int diagonals = (ne ? 1 : 0) + (se ? 1 : 0) + (sw ? 1 : 0) + (nw ? 1 : 0);
+            if (diagonals == 1) {
+                Direction d = ne ? Direction.NORTH : se ? Direction.EAST : sw ? Direction.SOUTH : Direction.WEST;
+                state = stair(set, d, StairsShape.OUTER_RIGHT);
+            } else if (diagonals == 0 && extra > 0 && set.slab() != null) {
+                state = set.slab();
+            }
+        }
+        if (state != null) s.set(x, top, z, state);
+    }
+
+    private static boolean roofHigher(RegionRaster r, int idx, int x, int z, int extra) {
+        int n = r.index(x, z);
+        return n >= 0 && r.building[n] == r.building[idx] && r.roofExtraAt(n) > extra;
+    }
+
+    private static BlockState stair(RoofBlocks.Set3 set, Direction facing, StairsShape shape) {
+        return set.stairs().setValue(StairBlock.FACING, facing).setValue(StairBlock.HALF, Half.BOTTOM).setValue(StairBlock.SHAPE, shape);
+    }
+
+    /**
+     * Fallen leaves: vanilla's single patch in summer, and in autumn a patch of one to four layers turned any way,
+     * as Minecraft 26.3's autumn forest scatters them.
+     */
+    public static BlockState leafLitter(long h, boolean autumn) {
+        BlockState s = Blocks.LEAF_LITTER.defaultBlockState();
+        if (!autumn) return s;
+        Direction facing = switch ((int) Math.floorMod(h >>> 40, 4)) {
+            case 0 -> Direction.NORTH;
+            case 1 -> Direction.EAST;
+            case 2 -> Direction.SOUTH;
+            default -> Direction.WEST;
+        };
+        if (s.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) s = s.setValue(BlockStateProperties.HORIZONTAL_FACING, facing);
+        if (s.hasProperty(BlockStateProperties.SEGMENT_AMOUNT)) s = s.setValue(BlockStateProperties.SEGMENT_AMOUNT, 1 + (int) Math.floorMod(h >>> 43, 4));
+        return s;
     }
 
     private static boolean windowHere(int x, int z, int storeyIndex) {

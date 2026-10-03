@@ -47,8 +47,8 @@ public final class OutlineCache {
     private static Path dir() {
         String override = System.getProperty("orbis.outlineCache");
         if (override != null) return Path.of(override);
-        Path config = OrbisMod.configDir();
-        return config == null ? null : config.resolve("outline-cache");
+        Path data = OrbisMod.dataDir();
+        return data == null ? null : data.resolve("outline-cache");
     }
 
     private static Path file(String key) {

@@ -1,5 +1,6 @@
 package com.berg.orbis.worldgen;
 
+import com.berg.orbis.mc.Mc;
 import com.berg.orbis.config.OrbisConfig;
 import com.berg.orbis.osm.CoordinateMapper;
 import com.berg.orbis.osm.LatLon;
@@ -51,7 +52,8 @@ public final class Landmarks {
         WorldModel model = gen.model();
         if (model == null || model.regions() == null || !(model.cfg().landmarkAdvancements || model.cfg().tunnelLoot)) return;
         Path dir = server.getWorldPath(LevelResource.DATAPACK_DIR).resolve(PACK_NAME);
-        if (Files.exists(dir.resolve("pack.mcmeta")) && Files.exists(lootTablePath(dir))) return;
+        // Written by another Minecraft version (an upgraded world): its advancement and loot formats may be outdated.
+        if (Files.exists(dir.resolve("pack.mcmeta")) && Files.exists(lootTablePath(dir)) && WorldHeight.isCurrent(dir)) return;
         Thread t = new Thread(() -> {
             try {
                 int n = write(model, dir);
@@ -120,56 +122,8 @@ public final class Landmarks {
      * experience / golden apples / torches / arrows / food, and one enchanted iron (rarely diamond) tool
      * or armour piece.
      */
-    private static final String TUNNEL_DEPOT_LOOT = """
-            {
-              "type": "minecraft:chest",
-              "pools": [
-                {
-                  "rolls": 1,
-                  "entries": [
-                    {"type": "minecraft:item", "name": "minecraft:iron_ingot", "functions": [{"function": "minecraft:set_count", "count": {"min": 12, "max": 24}}]}
-                  ]
-                },
-                {
-                  "rolls": 1,
-                  "entries": [
-                    {"type": "minecraft:item", "name": "minecraft:diamond", "weight": 1, "functions": [{"function": "minecraft:set_count", "count": {"min": 2, "max": 5}}]},
-                    {"type": "minecraft:empty", "weight": 3}
-                  ]
-                },
-                {
-                  "rolls": {"min": 3, "max": 5},
-                  "entries": [
-                    {"type": "minecraft:item", "name": "minecraft:emerald", "weight": 8, "functions": [{"function": "minecraft:set_count", "count": {"min": 3, "max": 8}}]},
-                    {"type": "minecraft:item", "name": "minecraft:gold_ingot", "weight": 6, "functions": [{"function": "minecraft:set_count", "count": {"min": 4, "max": 10}}]},
-                    {"type": "minecraft:item", "name": "minecraft:copper_ingot", "weight": 5, "functions": [{"function": "minecraft:set_count", "count": {"min": 8, "max": 16}}]},
-                    {"type": "minecraft:item", "name": "minecraft:lapis_lazuli", "weight": 4, "functions": [{"function": "minecraft:set_count", "count": {"min": 4, "max": 10}}]},
-                    {"type": "minecraft:item", "name": "minecraft:redstone", "weight": 4, "functions": [{"function": "minecraft:set_count", "count": {"min": 6, "max": 12}}]},
-                    {"type": "minecraft:item", "name": "minecraft:experience_bottle", "weight": 4, "functions": [{"function": "minecraft:set_count", "count": {"min": 3, "max": 6}}]},
-                    {"type": "minecraft:item", "name": "minecraft:golden_apple", "weight": 3, "functions": [{"function": "minecraft:set_count", "count": {"min": 1, "max": 2}}]},
-                    {"type": "minecraft:item", "name": "minecraft:torch", "weight": 6, "functions": [{"function": "minecraft:set_count", "count": {"min": 8, "max": 16}}]},
-                    {"type": "minecraft:item", "name": "minecraft:arrow", "weight": 4, "functions": [{"function": "minecraft:set_count", "count": {"min": 8, "max": 16}}]},
-                    {"type": "minecraft:item", "name": "minecraft:cooked_beef", "weight": 5, "functions": [{"function": "minecraft:set_count", "count": {"min": 4, "max": 8}}]},
-                    {"type": "minecraft:item", "name": "minecraft:minecart", "weight": 1},
-                    {"type": "minecraft:item", "name": "minecraft:tnt", "weight": 2, "functions": [{"function": "minecraft:set_count", "count": {"min": 2, "max": 4}}]}
-                  ]
-                },
-                {
-                  "rolls": 1,
-                  "entries": [
-                    {"type": "minecraft:item", "name": "minecraft:iron_pickaxe", "weight": 5, "functions": [{"function": "minecraft:enchant_randomly"}]},
-                    {"type": "minecraft:item", "name": "minecraft:iron_sword", "weight": 4, "functions": [{"function": "minecraft:enchant_randomly"}]},
-                    {"type": "minecraft:item", "name": "minecraft:iron_axe", "weight": 3, "functions": [{"function": "minecraft:enchant_randomly"}]},
-                    {"type": "minecraft:item", "name": "minecraft:iron_shovel", "weight": 2, "functions": [{"function": "minecraft:enchant_randomly"}]},
-                    {"type": "minecraft:item", "name": "minecraft:iron_chestplate", "weight": 3, "functions": [{"function": "minecraft:enchant_randomly"}]},
-                    {"type": "minecraft:item", "name": "minecraft:iron_helmet", "weight": 2},
-                    {"type": "minecraft:item", "name": "minecraft:diamond_pickaxe", "weight": 2},
-                    {"type": "minecraft:item", "name": "minecraft:diamond_sword", "weight": 1, "functions": [{"function": "minecraft:enchant_randomly"}]}
-                  ]
-                }
-              ]
-            }
-            """;
+    /** The tunnel depot chest loot; its JSON format differs between Minecraft versions (versions/<mc>/resources). */
+    private static final String TUNNEL_DEPOT_LOOT_TEMPLATE = "/assets/orbisterrarum/templates/tunnel_depot_loot.json";
 
     /** South, west, north, east of the area searched for landmarks: 4 km at 1:1, up to 60 km on coarse maps. */
     public static double[] searchBox(OrbisConfig cfg) {
@@ -224,16 +178,16 @@ public final class Landmarks {
         JsonObject meta = new JsonObject();
         JsonObject pack = new JsonObject();
         pack.addProperty("description", "Orbis Terrarum: real landmarks around " + String.format(Locale.ROOT, "%.4f, %.4f", cfg.originLat, cfg.originLon));
-        JsonArray min = new JsonArray();
-        min.add(107);
-        min.add(0);
-        pack.add("min_format", min);
-        pack.addProperty("max_format", 107);
+        WorldHeight.putPackFormat(pack);
         meta.add("pack", pack);
+        WorldHeight.stamp(meta);
         Files.writeString(dir.resolve("pack.mcmeta"), gson.toJson(meta), StandardCharsets.UTF_8);
 
         Files.createDirectories(lootTablePath(dir).getParent());
-        Files.writeString(lootTablePath(dir), TUNNEL_DEPOT_LOOT, StandardCharsets.UTF_8);
+        try (var in = Landmarks.class.getResourceAsStream(TUNNEL_DEPOT_LOOT_TEMPLATE)) {
+            if (in == null) throw new IOException("loot template missing from the mod jar: " + TUNNEL_DEPOT_LOOT_TEMPLATE);
+            Files.write(lootTablePath(dir), in.readAllBytes());
+        }
         if (!cfg.landmarkAdvancements) return 0;
 
         // Root: granted on the first tick, so the tab appears at once.
@@ -401,10 +355,6 @@ public final class Landmarks {
         JsonObject c = new JsonObject();
         c.addProperty("trigger", "minecraft:location");
         JsonObject conditions = new JsonObject();
-        JsonArray player = new JsonArray();
-        JsonObject cond = new JsonObject();
-        cond.addProperty("condition", "minecraft:entity_properties");
-        cond.addProperty("entity", "this");
         JsonObject predicate = new JsonObject();
         JsonObject location = new JsonObject();
         JsonObject position = new JsonObject();
@@ -412,9 +362,7 @@ public final class Landmarks {
         position.add("z", range(z0, z1 + 1));
         location.add("position", position);
         predicate.add("minecraft:location", location);
-        cond.add("predicate", predicate);
-        player.add(cond);
-        conditions.add("player", player);
+        conditions.add("player", Mc.playerCondition(predicate));
         c.add("conditions", conditions);
         return c;
     }

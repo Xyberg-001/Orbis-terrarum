@@ -87,6 +87,16 @@ public final class VerticalMapping {
         return cfg.seaLevelY + e;
     }
 
+    /**
+     * Block Y (fractional) of a real elevation before the squeeze near the ceiling and floor: where the column would
+     * be if the world had room. Above {@link #toY} only where a world is too low for its mountains.
+     */
+    public double unsqueezedY(double elevationMeters, int blockX, int blockZ) {
+        double e = elevationMeters / cfg.metersPerBlock;
+        if (mode == Mode.RELATIVE && e > kneeBlocks) e -= shiftBlocks(blockX, blockZ);
+        return cfg.seaLevelY + e;
+    }
+
     /** How many blocks the relief mode lowers this column's terrain (0 in the 1:1 zone). */
     public double shiftBlocks(int blockX, int blockZ) {
         if (base == null) return 0;

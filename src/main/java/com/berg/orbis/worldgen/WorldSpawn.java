@@ -18,7 +18,7 @@ import java.nio.file.Path;
 import java.util.Locale;
 
 /**
- * The spawn point chosen on the Location tab ("Spawn point"), applied once, the first time a world starts: the
+ * The spawn point chosen on the World tab ("Spawn point"), applied once, the first time a world starts: the
  * chunk at that real-world place is generated, and players appear on its surface (never inside a building or
  * under the ground), on exactly that block unless "Exact spawn" is off. A marker file in the world folder records
  * that it was done, so a later /setworldspawn is never undone. Without a custom spawn the world keeps Minecraft's

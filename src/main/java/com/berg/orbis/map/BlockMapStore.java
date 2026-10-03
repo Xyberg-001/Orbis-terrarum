@@ -3,6 +3,7 @@ package com.berg.orbis.map;
 import com.berg.orbis.worldgen.PregenMap;
 import com.mojang.serialization.Codec;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
@@ -10,10 +11,12 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.storage.LevelResource;
@@ -27,6 +30,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,24 +41,27 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
 
 /**
- * The Minecraft map of the overworld for the world map screen: one byte per block column (a vanilla map colour
- * with its brightness, as on a map item), 512 x 512 per region file, stored in {@code <world>/orbis-map/}.
+ * The Minecraft map of the overworld for the world map screen: one colour per block column (the top block's real
+ * colour, grass, leaves and water coloured by their biome, shaded by the slope as on a map item; RGB565, 0 = nothing
+ * drawn), 512 x 512 per region file, stored in {@code <world>/orbis-map/}.
  * Chunks are drawn in as they load and unload (so pre-generation and building keep it current at a few
  * microseconds a chunk), and a region pre-generated before this existed is drawn once from its region file the
  * first time someone looks at it. Also knows which chunks are fully generated, for greying the rest.
  */
 public final class BlockMapStore {
     public static final int SIZE = 512;
-    private static final int MAGIC = 0x4F4D4150; // "OMAP"
+    private static final int MAGIC = 0x4F4D4132; // "OMA2": RGB565 colours (older "OMAP" files held vanilla map colours and are drawn again)
     private static final int CACHE = 64;
 
     public static final class Region {
         final int rx, rz;
-        final byte[] col = new byte[SIZE * SIZE];
+        final short[] col = new short[SIZE * SIZE];
         final short[] height = new short[SIZE * SIZE];
         final long[] full = new long[16];
         int version;
         boolean complete, dirty;
+        /** One save at a time per region (a flush and an eviction both wrote the same .tmp file). */
+        final Object saving = new Object();
 
         Region(int rx, int rz) {
             this.rx = rx;
@@ -66,13 +73,16 @@ public final class BlockMapStore {
     private final ServerLevel level;
     private final Path dir, regionDir;
     private final Codec<PalettedContainer<BlockState>> sectionCodec;
+    private final Codec<PalettedContainerRO<Holder<Biome>>> biomeCodec;
     private final Map<Long, Region> cache = new LinkedHashMap<>(64, 0.75f, true);
 
     public BlockMapStore(ServerLevel level) {
         this.level = level;
         this.dir = level.getServer().getWorldPath(LevelResource.ROOT).resolve("orbis-map");
         this.regionDir = PregenMap.regionDir(level);
-        this.sectionCodec = PalettedContainerFactory.create(level.registryAccess()).blockStatesContainerCodec();
+        PalettedContainerFactory factory = PalettedContainerFactory.create(level.registryAccess());
+        this.sectionCodec = factory.blockStatesContainerCodec();
+        this.biomeCodec = factory.biomeContainerCodec();
     }
 
     private static long key(int rx, int rz) {
@@ -110,7 +120,8 @@ public final class BlockMapStore {
             r.complete = in.readBoolean();
             for (int i = 0; i < 16; i++) r.full[i] = in.readLong();
             try (InputStream z = new InflaterInputStream(in)) {
-                z.readNBytes(r.col, 0, r.col.length);
+                byte[] b = z.readNBytes(r.col.length * 2);
+                ByteBuffer.wrap(b).asShortBuffer().get(r.col, 0, b.length / 2);
             }
         } catch (IOException | RuntimeException e) {
             System.err.println("[orbis] Map region " + rx + "," + rz + " unreadable, drawing it again: " + e);
@@ -120,12 +131,18 @@ public final class BlockMapStore {
     }
 
     private void save(Region r) {
-        byte[] col;
+        synchronized (r.saving) {
+            saveNow(r);
+        }
+    }
+
+    private void saveNow(Region r) {
+        byte[] col = new byte[r.col.length * 2];
         long[] full;
         int version;
         boolean complete;
         synchronized (r) {
-            col = r.col.clone();
+            ByteBuffer.wrap(col).asShortBuffer().put(r.col);
             full = r.full.clone();
             version = r.version;
             complete = r.complete;
@@ -166,12 +183,17 @@ public final class BlockMapStore {
 
         /** Y of the top non-air block of the column, or below the world. */
         int top(int x, int z);
+
+        /** The biome at a block (local x, absolute y, local z), or null when unknown. */
+        Holder<Biome> biome(int x, int y, int z);
     }
 
     /** A loaded chunk (main thread). */
     public void draw(LevelChunk chunk) {
         BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
         ChunkPos pos = chunk.getPos();
+        // Left empty by the hard limit: nothing to draw, and the map shows it as not generated.
+        if (com.berg.orbis.worldgen.HardLimit.emptied(pos.x(), pos.z())) return;
         drawColumns(pos.x(), pos.z(), new Column() {
             @Override
             public BlockState at(int x, int y, int z) {
@@ -182,15 +204,23 @@ public final class BlockMapStore {
             public int top(int x, int z) {
                 return chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
             }
+
+            @Override
+            public Holder<Biome> biome(int x, int y, int z) {
+                return chunk.getNoiseBiome(x >> 2, y >> 2, z >> 2);
+            }
         });
     }
 
     /** A saved chunk, from its NBT (background thread). False when it is not fully generated. */
     private boolean draw(ChunkPos pos, CompoundTag tag) {
         if (!"minecraft:full".equals(tag.getStringOr("Status", ""))) return false;
+        if (com.berg.orbis.worldgen.HardLimit.emptied(pos.x(), pos.z())) return false;
         int minY = level.getMinY(), height = level.getHeight(), minSection = minY >> 4;
         @SuppressWarnings("unchecked")
         PalettedContainer<BlockState>[] sections = new PalettedContainer[height >> 4];
+        @SuppressWarnings("unchecked")
+        PalettedContainerRO<Holder<Biome>>[] biomes = new PalettedContainerRO[height >> 4];
         ListTag list = tag.getListOrEmpty("sections");
         for (int i = 0; i < list.size(); i++) {
             CompoundTag s = list.getCompoundOrEmpty(i);
@@ -198,6 +228,7 @@ public final class BlockMapStore {
             if (idx < 0 || idx >= sections.length || s.get("block_states") == null) continue;
             Optional<PalettedContainer<BlockState>> c = sectionCodec.parse(NbtOps.INSTANCE, s.get("block_states")).result();
             if (c.isPresent()) sections[idx] = c.get();
+            if (s.get("biomes") != null) biomeCodec.parse(NbtOps.INSTANCE, s.get("biomes")).result().ifPresent(b -> biomes[idx] = b);
         }
         long[] hm = tag.getCompoundOrEmpty("Heightmaps").getLongArray("WORLD_SURFACE").orElse(null);
         int bits = Mth.ceillog2(height + 1), per = 64 / bits;
@@ -208,6 +239,13 @@ public final class BlockMapStore {
                 int idx = (y >> 4) - minSection;
                 if (idx < 0 || idx >= sections.length || sections[idx] == null) return air;
                 return sections[idx].get(x, y & 15, z);
+            }
+
+            @Override
+            public Holder<Biome> biome(int x, int y, int z) {
+                int idx = (y >> 4) - minSection;
+                if (idx < 0 || idx >= biomes.length || biomes[idx] == null) return null;
+                return biomes[idx].get(x >> 2, (y & 15) >> 2, z >> 2);
             }
 
             @Override
@@ -225,7 +263,7 @@ public final class BlockMapStore {
         Region r = get(Math.floorDiv(cx, 32), Math.floorDiv(cz, 32));
         int minY = level.getMinY();
         int ox = Math.floorMod(cx, 32) * 16, oz = Math.floorMod(cz, 32) * 16;
-        byte[] col = new byte[256];
+        short[] col = new short[256];
         short[] h = new short[256];
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
@@ -237,7 +275,7 @@ public final class BlockMapStore {
                 }
                 MapColor mc = s == null ? MapColor.NONE : s.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
                 MapColor.Brightness b;
-                if (mc == MapColor.WATER) {
+                if (mc != MapColor.NONE && MapColours.isWater(s)) {
                     int depth = 0;
                     for (int yy = y - 1; yy > minY && depth < 32 && !c.at(x, yy, z).getFluidState().isEmpty(); yy--) depth++;
                     double d = depth * 0.1 + ((x + z) & 1) * 0.2;
@@ -255,7 +293,7 @@ public final class BlockMapStore {
                     double d = (y - north) * 0.8 + (((x + z) & 1) - 0.5) * 0.4;
                     b = d > 0.6 ? MapColor.Brightness.HIGH : d < -0.6 ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
                 }
-                col[z * 16 + x] = mc == MapColor.NONE ? 0 : mc.getPackedId(b);
+                col[z * 16 + x] = mc == MapColor.NONE ? 0 : rgb565(shade(MapColours.colour(s, c.biome(x, y, z)), b));
                 h[z * 16 + x] = (short) Math.max(Short.MIN_VALUE + 1, Math.min(Short.MAX_VALUE, y));
             }
         }
@@ -322,20 +360,41 @@ public final class BlockMapStore {
         } catch (IOException e) {
             // no file readable: only what the map knows
         }
+        // Chunks the hard limit left empty are not "generated" for the map (they would show as blank land).
+        for (int i = 0; i < 1024; i++) {
+            if ((mask[i >> 6] & (1L << (i & 63))) != 0 && com.berg.orbis.worldgen.HardLimit.emptied(rx * 32 + (i & 31), rz * 32 + (i >> 5))) {
+                mask[i >> 6] &= ~(1L << (i & 63));
+            }
+        }
         return mask;
     }
 
-    /** The region's colours at 1 pixel per 2^level blocks, deflated. */
+    /** The region's colours at 1 pixel per 2^level blocks (the average of the drawn columns under it), RGB565, deflated. */
     public byte[] tile(Region r, int lvl) {
-        int s = SIZE >> lvl, step = 1 << lvl, off = step / 2;
-        byte[] out = new byte[s * s];
+        int s = SIZE >> lvl, step = 1 << lvl;
+        byte[] out = new byte[s * s * 2];
+        ByteBuffer buf = ByteBuffer.wrap(out);
         synchronized (r) {
             for (int y = 0; y < s; y++) {
-                int row = (y * step + off) * SIZE;
                 for (int x = 0; x < s; x++) {
-                    byte v = r.col[row + x * step + off];
-                    if (v == 0 && step > 1) v = r.col[y * step * SIZE + x * step];
-                    out[y * s + x] = v;
+                    int n = 0, rs = 0, gs = 0, bs = 0;
+                    for (int dy = 0; dy < step; dy++) {
+                        int row = (y * step + dy) * SIZE + x * step;
+                        for (int dx = 0; dx < step; dx++) {
+                            int v = r.col[row + dx] & 0xFFFF;
+                            if (v == 0) continue;
+                            n++;
+                            rs += v >> 11;
+                            gs += (v >> 5) & 63;
+                            bs += v & 31;
+                        }
+                    }
+                    short v = 0;
+                    if (n > 0) {
+                        v = (short) ((rs + n / 2) / n << 11 | (gs + n / 2) / n << 5 | (bs + n / 2) / n);
+                        if (v == 0) v = 1;
+                    }
+                    buf.putShort((y * s + x) * 2, v);
                 }
             }
         }
@@ -346,6 +405,28 @@ public final class BlockMapStore {
             throw new RuntimeException(e);
         }
         return bos.toByteArray();
+    }
+
+    /**
+     * Shading as on a map item (a slope facing the light from the north brighter, one facing away darker), but with
+     * flat ground at the block's true colour (a map item draws flat ground at 86 %).
+     */
+    private static int shade(int rgb, MapColor.Brightness b) {
+        int m = switch (b) {
+            case HIGH -> 290;
+            case NORMAL -> 255;
+            case LOW -> 209;
+            default -> 157;
+        };
+        int red = Math.min(255, ((rgb >> 16) & 0xFF) * m / 255), green = Math.min(255, ((rgb >> 8) & 0xFF) * m / 255),
+                blue = Math.min(255, (rgb & 0xFF) * m / 255);
+        return red << 16 | green << 8 | blue;
+    }
+
+    /** 0xRRGGBB as RGB565; never 0 (which means "nothing drawn"). */
+    private static short rgb565(int rgb) {
+        int v = ((rgb >> 19) & 31) << 11 | ((rgb >> 10) & 63) << 5 | ((rgb >> 3) & 31);
+        return (short) (v == 0 ? 1 : v);
     }
 
     public int version(Region r) {

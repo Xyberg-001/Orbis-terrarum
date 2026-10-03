@@ -189,7 +189,7 @@ public final class PregenMap {
         double mpb = model == null ? 1.0 : model.cfg().metersPerBlock;
         return render(regionDir(level), outputDir(level), sweep,
                 running ? task.completedRow() : Integer.MIN_VALUE, running ? task.flushedRow() : Integer.MIN_VALUE,
-                mapper, mpb, OrbisMod.configDir().resolve("extracts"));
+                mapper, mpb, OrbisMod.dataDir().resolve("extracts"));
     }
 
     /**

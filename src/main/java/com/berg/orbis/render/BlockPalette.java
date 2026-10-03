@@ -241,6 +241,83 @@ public final class BlockPalette {
         }
     }
 
+    /** Blocks the hand-picked lists above name, so the automatic pass below does not add them twice. */
+    private static final java.util.Set<net.minecraft.world.level.block.Block> LISTED = new java.util.HashSet<>();
+    /** Blocks the automatic pass added (for the palette overview and tests). */
+    private static final List<Entry> AUTO_WALLS = new ArrayList<>(), AUTO_ROOFS = new ArrayList<>();
+
+
+    /** Extra distance for blocks the automatic pass adds, so a hand-picked block with the same colour stays the choice. */
+    private static final double AUTO_PENALTY = 2.0;
+
+    /**
+     * Every other block of the running Minecraft version that can make a wall or a roof joins the palette, with its colour
+     * from the build's colour table: a solid, full, opaque cube that gives no light, does not fall, has no block entity
+     * (no chests or workstations) and is not an ore, a valuable, a living or melting block, or a patterned one. Blocks a
+     * new Minecraft version adds join on their own. Busy textures (cobblestone, raw stone, cracked and chiseled blocks)
+     * count as further away, like the hand-picked ones.
+     */
+    private static void addEveryBuildingBlock() {
+        java.util.Map<String, Integer> colours = BlockColours.table();
+        if (colours.isEmpty()) return;
+        for (net.minecraft.world.level.block.Block b : net.minecraft.core.registries.BuiltInRegistries.BLOCK) {
+            if (LISTED.contains(b)) continue;
+            String name = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(b).getPath();
+            Integer rgb = colours.get(name);
+            if (rgb == null || !buildingBlock(b, name)) continue;
+            double penalty = AUTO_PENALTY + autoPenalty(name);
+            Entry e = new Entry(name, b.defaultBlockState(), rgb, penalty);
+            WALLS.add(e);
+            AUTO_WALLS.add(e);
+            ROOFS.add(e);
+            AUTO_ROOFS.add(e);
+        }
+    }
+
+    /** Whether a block can stand in a wall or a roof (see addEveryBuildingBlock). */
+    static boolean buildingBlock(net.minecraft.world.level.block.Block b, String name) {
+        BlockState s = b.defaultBlockState();
+        if (!s.isSolidRender() || !s.canOcclude() || s.hasBlockEntity() || s.getLightEmission() > 0) return false;
+        if (!s.isCollisionShapeFullBlock(net.minecraft.world.level.EmptyBlockGetter.INSTANCE, net.minecraft.core.BlockPos.ZERO)) return false;
+        if (b instanceof net.minecraft.world.level.block.FallingBlock) return false;
+        if (name.contains("copper") && !name.startsWith("waxed_")) return false; // unwaxed copper turns green over time
+        for (String bad : EXCLUDED_PARTS) {
+            if (name.contains(bad)) return false;
+        }
+        return !EXCLUDED.contains(name);
+    }
+
+    /** Name parts of blocks that do not belong in a building: ores and valuables, living, melting and patterned blocks. */
+    private static final String[] EXCLUDED_PARTS = {
+            "_ore", "raw_", "ancient_debris", "infested_", "glazed_terracotta", "command_block", "structure_block", "jigsaw",
+            "spawner", "sponge", "ice", "snow", "magma", "slime", "honey_block", "sculk", "coral", "mushroom_block", "_stem",
+            "_hyphae", "_log", "leaves", "wart_block", "_wool", "carpet", "shulker", "nylium", "dirt", "grass",
+            "podzol", "mycelium", "farmland", "clay", "soul_", "netherrack", "pumpkin", "melon", "hay", "dried_kelp", "tnt",
+            "target", "observer", "dispenser", "dropper", "piston", "crafting", "furnace", "smoker", "loom", "table",
+            "note_block", "jukebox", "bookshelf", "respawn_anchor", "lodestone", "budding_", "reinforced_", "copper_bulb",
+            "copper_grate", "potent_sulfur", "creaking", "vault", "crafter", "beehive", "bee_nest", "barrel", "moss_block",
+            "resin_block", "honeycomb", "bone_block", "froglight", "ochre", "verdant", "pearlescent", "stripped_bamboo",
+            "chiseled_", "lamp", "gilded_"};
+    private static final java.util.Set<String> EXCLUDED = java.util.Set.of(
+            "bedrock", "barrier", "diamond_block", "emerald_block", "netherite_block", "redstone_block", "coal_block",
+            "lapis_block", "amethyst_block", "obsidian", "crying_obsidian", "end_portal_frame", "cartography_table",
+            "fletching_table", "smithing_table", "light", "structure_void", "mud", "muddy_mangrove_roots", "cobweb",
+            "packed_mud", "bamboo_block");
+
+    private static double autoPenalty(String name) {
+        if (name.contains("cobble") || name.contains("mossy") || name.contains("cracked") || name.contains("chiseled")
+                || name.equals("andesite") || name.equals("diorite") || name.equals("granite") || name.equals("tuff")
+                || name.equals("blackstone") || name.contains("end_stone") || name.contains("purpur") || name.contains("prismarine")
+                || name.contains("basalt") || name.contains("dripstone") || name.contains("calcite") || name.contains("deepslate")
+                || name.endsWith("_wood") || name.contains("pillar") || name.equals("cinnabar") || name.equals("sulfur")) return 7.0;
+        return 0.0;
+    }
+
+    /** Blocks the automatic pass added to the wall palette (for the palette overview and tests). */
+    public static List<Entry> autoWallEntries() {
+        return AUTO_WALLS;
+    }
+
     /** Parses "#rrggbb", "#rgb", "rrggbb", or a colour name. Returns null if unrecognised. */
     public static Integer parseColour(String raw) {
         if (raw == null) return null;
@@ -358,5 +435,12 @@ public final class BlockPalette {
 
     public static List<Entry> roofEntries() {
         return ROOFS;
+    }
+
+    // Last in the class: static initialisers run in order, and this pass needs the exclusion lists above.
+    static {
+        for (Entry e : WALLS) LISTED.add(e.state().getBlock());
+        for (Entry e : ROOFS) LISTED.add(e.state().getBlock());
+        addEveryBuildingBlock();
     }
 }
