@@ -30,7 +30,13 @@ import java.util.stream.Stream;
  *   kept ways reference.</li>
  * </ol>
  * Then every way and relation is written into each 0.1 degree cell its
- * bounding box touches ({@link ExtractTiles}). A full-country "map" import
+ * bounding box touches ({@link ExtractTiles}).
+ *
+ * <p>A full import limited to an area (a box) reads only what that area needs,
+ * so its memory follows the area, not the country ({@link #collectArea}): the
+ * points inside the box, the ways and polygons touching them, and the rest of
+ * those polygons' outlines. A city out of Germany's 4 GB file then needs a few
+ * hundred MB, where the whole-country full import of Norway took 12 GB. A full-country "map" import
  * of Norway needs about 2 GB of heap; run it standalone with
  * {@code java -Xmx4g -cp orbisterrarum-<version>.jar com.berg.orbis.osm.extract.ExtractImporter <file.osm.pbf>}
  * from the Minecraft instance folder, or in game with {@code /orbis import <file>}.
@@ -141,6 +147,13 @@ public final class ExtractImporter {
         final long[] firstWay = {-1}, firstRel = {-1};
         final long[] seen = {0, 0};
         final long[] lastReport = {System.currentTimeMillis()};
+        // A full import of an area reads only what the area needs; everything else reads the whole file.
+        final double[] keepBox = bbox != null && profile == Profile.FULL ? cellAligned(bbox) : null;
+        int taggedWays;
+        if (keepBox != null) {
+            taggedWays = collectArea(pbf, keepBox, wayIds, wayTags, wayRefs, relIds, relTags, relMembers, relInner, firstWay, progress);
+            if (wayIds.size() == 0 && relIds.size() == 0) throw new IOException("nothing mapped inside the area in " + pbf);
+        } else {
 
         PbfReader.Visitor pass1 = new PbfReader.Visitor() {
             @Override
@@ -203,7 +216,8 @@ public final class ExtractImporter {
         if (wayIds.size() == 0 && relIds.size() == 0) throw new IOException("nothing kept from " + pbf + " (is it an OSM PBF file?)");
 
         // ---- pass 2: untagged member ways of the kept multipolygons -----------------
-        final int taggedWays = wayIds.size();
+        final int tagged0 = wayIds.size();
+        taggedWays = tagged0;
         final long[] memberSorted = memberWayIds.sortedUnique();
         final long[] keptSorted = wayIds.sortedUnique();
         if (memberSorted.length > 0 && firstWay[0] >= 0) {
@@ -227,10 +241,11 @@ public final class ExtractImporter {
                     if (System.currentTimeMillis() - lastReport[0] > 3000) {
                         lastReport[0] = System.currentTimeMillis();
                         progress.report(String.format(Locale.ROOT, "Pass 2/3: %,d MB read, %,d polygon outlines collected",
-                                r.blockOffset() >> 20, wayIds.size() - taggedWays));
+                                r.blockOffset() >> 20, wayIds.size() - tagged0));
                     }
                 }
             }
+        }
         }
 
         // ---- node index: every referenced node id, sorted, in one array -------------------
@@ -286,7 +301,7 @@ public final class ExtractImporter {
 
             @Override
             public void taggedNode(long id, int la, int lo, PbfReader.Tags tags) {
-                if (!keepNode(tags)) return;
+                if (!keepNode(tags) || keepBox != null && !inBox(keepBox, la, lo)) return;
                 nodeIdsTagged.add(id);
                 nodeLatTagged.add(la);
                 nodeLonTagged.add(lo);
@@ -316,7 +331,7 @@ public final class ExtractImporter {
             while (r.readBlock(pass3)) {
                 if (System.currentTimeMillis() - lastReport[0] > 3000) {
                     lastReport[0] = System.currentTimeMillis();
-                    progress.report(String.format(Locale.ROOT, "Pass 3/3: %,d MB read, %,d of %,d node positions found",
+                    progress.report(String.format(Locale.ROOT, "Node positions: %,d MB read, %,d of %,d found",
                             r.blockOffset() >> 20, found.cardinality(), nodeCount));
                 }
             }
@@ -432,6 +447,217 @@ public final class ExtractImporter {
                 + "}\n";
         Files.writeString(dir.resolve("index.json"), index, StandardCharsets.UTF_8);
         return new Summary(name, dir, taggedWays, relIds.size(), nodesFound, cellsWritten, millis);
+    }
+
+    /**
+     * The box around an area, out to whole 0.1 degree cells (and a little more): exactly the cells the writer keeps
+     * (every cell touching the area, also one whose edge is the area's edge, by the same test), so none of them is
+     * written half filled. Starting at the area's own edge left the outer cells of Bergen without 28,550 of 369,471
+     * ways.
+     */
+    private static double[] cellAligned(double[] b) {
+        double c = ExtractTiles.CELL_DEG, m = 0.005;
+        int la0 = Integer.MAX_VALUE, la1 = Integer.MIN_VALUE, lo0 = Integer.MAX_VALUE, lo1 = Integer.MIN_VALUE;
+        for (int i = (int) Math.floor(b[0] / c) - 1; i <= (int) Math.floor(b[2] / c) + 1; i++) {
+            double cs = i * c;
+            if (cs + c < b[0] || cs > b[2]) continue;
+            la0 = Math.min(la0, i);
+            la1 = Math.max(la1, i);
+        }
+        for (int i = (int) Math.floor(b[1] / c) - 1; i <= (int) Math.floor(b[3] / c) + 1; i++) {
+            double cw = i * c;
+            if (cw + c < b[1] || cw > b[3]) continue;
+            lo0 = Math.min(lo0, i);
+            lo1 = Math.max(lo1, i);
+        }
+        return new double[]{la0 * c - m, lo0 * c - m, (la1 + 1) * c + m, (lo1 + 1) * c + m};
+    }
+
+    private static boolean inBox(double[] b, int latE7, int lonE7) {
+        double la = latE7 / 1e7, lo = lonE7 / 1e7;
+        return la >= b[0] && la <= b[2] && lo >= b[1] && lo <= b[3];
+    }
+
+    /**
+     * What a full-detail store of one area needs, in three reads that keep only that much in memory:
+     * <ol>
+     *   <li>the nodes up to the first way block: the ids of those inside the box;</li>
+     *   <li>the ways and relations: every way with a node inside (tagged ones are kept, untagged ones may be polygon
+     *   pieces), and every multipolygon with a piece among them;</li>
+     *   <li>the ways again: the pieces of those polygons that lie wholly outside the box (a lake or coast crossing
+     *   the edge stays whole).</li>
+     * </ol>
+     * Fills the lists as the whole-file passes do (tagged ways first, then untagged polygon pieces); the positions of
+     * all their nodes come with the importer's last pass. Returns the number of tagged ways.
+     */
+    private static int collectArea(Path pbf, double[] box, Pb.LongList wayIds, List<String[]> wayTags, List<long[]> wayRefs,
+                                   Pb.LongList relIds, List<String[]> relTags, List<long[]> relMembers, List<boolean[]> relInner,
+                                   long[] firstWay, Progress progress) throws IOException {
+        long[] lastReport = {System.currentTimeMillis()};
+
+        // 1: node ids inside the box
+        Pb.LongList inside = new Pb.LongList(1 << 16);
+        boolean[] waysReached = {false};
+        PbfReader.Visitor nodes = new PbfReader.Visitor() {
+            @Override
+            public boolean wantsNodes() {
+                return true;
+            }
+
+            @Override
+            public void block(long offset, boolean hasNodes, boolean hasWays, boolean hasRelations) {
+                if (hasWays && firstWay[0] < 0) {
+                    firstWay[0] = offset;
+                    waysReached[0] = true;
+                }
+            }
+
+            @Override
+            public void node(long id, int la, int lo) {
+                if (inBox(box, la, lo)) inside.add(id);
+            }
+        };
+        try (PbfReader r = new PbfReader(pbf)) {
+            while (!waysReached[0] && r.readBlock(nodes)) {
+                if (System.currentTimeMillis() - lastReport[0] > 3000) {
+                    lastReport[0] = System.currentTimeMillis();
+                    progress.report(String.format(Locale.ROOT, "Area pass 1/3: %,d MB read, %,d points inside the area",
+                            r.blockOffset() >> 20, inside.size()));
+                }
+            }
+        }
+        if (firstWay[0] < 0) throw new IOException("no ways in " + pbf + " (is it an OSM PBF file?)");
+        final long[] in = inside.sortedUnique();
+        inside.clear();
+
+        // 2: ways touching the box, and the multipolygons with a piece among them
+        Pb.LongList touchIds = new Pb.LongList(1 << 14);
+        List<long[]> touchRefs = new ArrayList<>();
+        long[][] touchSorted = {null};
+        PbfReader.Visitor ways = new PbfReader.Visitor() {
+            @Override
+            public boolean wantsWays() {
+                return true;
+            }
+
+            @Override
+            public boolean wantsRelations() {
+                return true;
+            }
+
+            @Override
+            public void way(long id, PbfReader.Tags tags, long[] refs) {
+                if (refs.length < 2) return;
+                boolean touches = false;
+                for (long ref : refs) {
+                    if (Arrays.binarySearch(in, ref) >= 0) {
+                        touches = true;
+                        break;
+                    }
+                }
+                if (!touches) return;
+                touchIds.add(id);
+                touchRefs.add(refs);
+                if (keepWay(tags, Profile.FULL)) {
+                    wayIds.add(id);
+                    wayTags.add(tagArray(tags));
+                    wayRefs.add(refs);
+                }
+            }
+
+            @Override
+            public void relation(long id, PbfReader.Tags tags, long[] memberIds, byte[] memberTypes, String[] roles) {
+                if (!keepRelation(tags, Profile.FULL)) return;
+                if (touchSorted[0] == null) touchSorted[0] = touchIds.sortedUnique(); // relations come after every way
+                int k = 0;
+                boolean touches = false;
+                for (int i = 0; i < memberIds.length; i++) {
+                    if (memberTypes[i] != 1) continue;
+                    k++;
+                    if (!touches && Arrays.binarySearch(touchSorted[0], memberIds[i]) >= 0) touches = true;
+                }
+                if (!touches) return;
+                long[] mids = new long[k];
+                boolean[] inner = new boolean[k];
+                k = 0;
+                for (int i = 0; i < memberIds.length; i++) {
+                    if (memberTypes[i] != 1) continue;
+                    mids[k] = memberIds[i];
+                    inner[k] = "inner".equals(roles[i]);
+                    k++;
+                }
+                relIds.add(id);
+                relTags.add(tagArray(tags));
+                relMembers.add(mids);
+                relInner.add(inner);
+            }
+        };
+        try (PbfReader r = new PbfReader(pbf, firstWay[0], 0)) {
+            while (r.readBlock(ways)) {
+                if (System.currentTimeMillis() - lastReport[0] > 3000) {
+                    lastReport[0] = System.currentTimeMillis();
+                    progress.report(String.format(Locale.ROOT, "Area pass 2/3: %,d MB read, %,d ways and %,d polygons in the area",
+                            r.blockOffset() >> 20, wayIds.size(), relIds.size()));
+                }
+            }
+        }
+        final int tagged = wayIds.size();
+
+        // The polygons' pieces: from the touching ways where they are, else read once more.
+        Pb.LongList memberList = new Pb.LongList(1 << 12);
+        for (long[] mids : relMembers) for (long m : mids) memberList.add(m);
+        long[] members = memberList.sortedUnique();
+        long[] keptSorted = wayIds.sortedUnique();
+        long[] touchAll = touchIds.toArray();
+        Integer[] order = new Integer[touchAll.length];
+        for (int i = 0; i < order.length; i++) order[i] = i;
+        Arrays.sort(order, (x, y) -> Long.compare(touchAll[x], touchAll[y]));
+        long[] touchKeys = new long[order.length];
+        for (int i = 0; i < order.length; i++) touchKeys[i] = touchAll[order[i]];
+        Pb.LongList outside = new Pb.LongList(1 << 10);
+        for (long m : members) {
+            if (Arrays.binarySearch(keptSorted, m) >= 0) continue;
+            int t = Arrays.binarySearch(touchKeys, m);
+            if (t >= 0) {
+                wayIds.add(m);
+                wayTags.add(new String[0]);
+                wayRefs.add(touchRefs.get(order[t]));
+            } else {
+                outside.add(m);
+            }
+        }
+        touchRefs.clear();
+
+        // 3: the pieces wholly outside the box
+        if (outside.size() > 0) {
+            final long[] out = outside.sortedUnique();
+            final int[] got = {0};
+            PbfReader.Visitor pieces = new PbfReader.Visitor() {
+                @Override
+                public boolean wantsWays() {
+                    return true;
+                }
+
+                @Override
+                public void way(long id, PbfReader.Tags tags, long[] refs) {
+                    if (refs.length < 2 || Arrays.binarySearch(out, id) < 0) return;
+                    wayIds.add(id);
+                    wayTags.add(new String[0]);
+                    wayRefs.add(refs);
+                    got[0]++;
+                }
+            };
+            try (PbfReader r = new PbfReader(pbf, firstWay[0], 0)) {
+                while (r.readBlock(pieces)) {
+                    if (System.currentTimeMillis() - lastReport[0] > 3000) {
+                        lastReport[0] = System.currentTimeMillis();
+                        progress.report(String.format(Locale.ROOT, "Area pass 3/3: %,d MB read, %,d of %,d outline pieces beyond the edge",
+                                r.blockOffset() >> 20, got[0], out.length));
+                    }
+                }
+            }
+        }
+        return tagged;
     }
 
     /** Way geometry resolved on demand from the node index (nothing per way is kept beyond its node indices). */
