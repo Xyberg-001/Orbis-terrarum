@@ -489,5 +489,19 @@
   "orbisterrarum.preview.limit.note": "Hard limit: nothing outside this selection will generate, and an invisible wall keeps players inside.",
   "orbisterrarum.preview.foundmoved": "%s selected (%s km²). The spawn moved there.",
   "orbisterrarum.group.spawnpregen": "Spawn and /orbis pregen",
-  "orbisterrarum.preview.pointfound": "%s (%s): the spawn is there now. It is a place, not an area, so nothing was selected; draw an area or type a radius (5 km) to select around it."
+  "orbisterrarum.preview.pointfound": "%s (%s): the spawn is there now. It is a place, not an area, so nothing was selected; draw an area or type a radius (5 km) to select around it.",
+  "orbisterrarum.mapdata.title": "Map data for this world",
+  "orbisterrarum.mapdata.looking": "Looking for a map data file for this place...",
+  "orbisterrarum.mapdata.skip": "Skip",
+  "orbisterrarum.mapdata.offer": "This place's map (roads, buildings, water) can come from your disk instead of the online map servers, which are slow and sometimes overloaded.\n\nDownload OpenStreetMap's file for %s from Geofabrik (%s) and keep only this world's area (tens of MB)? It downloads in the background while the world opens; the world uses the online servers until it is ready, and the big file is deleted afterwards.",
+  "orbisterrarum.mapdata.download": "Download",
+  "orbisterrarum.mapdata.notnow": "Not now",
+  "orbisterrarum.mapdata.toast": "Map data: %s",
+  "orbisterrarum.mapdata.starting": "Starting the download...",
+  "orbisterrarum.mapdata.done": "Map data ready",
+  "orbisterrarum.mapdata.failed": "Map data not downloaded",
+  "orbisterrarum.opt.offerMapDownloads": "Offer map data downloads",
+  "orbisterrarum.opt.offerMapDownloads.desc": "When you create a world and no map data on your disk covers its area, offer OpenStreetMap's file for that place from Geofabrik (the smallest region that holds the area, with its size). Only the world's area is kept, so generation reads the map from your disk instead of the online servers. Off: the online servers, as before.",
+  "orbisterrarum.opt.keepDownloadedMapFiles": "Keep downloaded map files",
+  "orbisterrarum.opt.keepDownloadedMapFiles.desc": "Keep Geofabrik's country file after the world's area is imported (in extracts-src), so another world in the same country needs no new download. Off: deleted, which saves gigabytes."
 }

@@ -120,6 +120,7 @@ You are the white arrow, other players are cyan arrows, the world spawn is a gre
 | `/orbis hardlimit` [`on`/`off`] | Show or change the hard limit: only the selected and pre-generated area generates (op) |
 | `/orbis pregen map` | Draws a picture of what's generated; opens in your browser with `/orbismap` (op) |
 | `/orbis map render` / `status` | Draws the whole world into the N map's **Blocks** layer at once (op) |
+| `/orbis mapdata` [`stop`] | Downloads the map data for the land around you from Geofabrik and keeps only that area (op) |
 | `/orbis import <file.osm.pbf>` | Imports a downloaded OpenStreetMap file so generation doesn't need the online map servers (op) |
 | `/orbis extracts` | Lists imported map files |
 | `/orbis landmarks` | Rebuilds the landmark advancements |
@@ -167,7 +168,7 @@ Selections are for operators and are remembered per world.
 python tools/lod2_heights.py --bbox SOUTH WEST NORTH EAST --out <instance>/config/orbisterrarum/building-db-cache/de-lod2
 ```
 
-**Speed tip:** download your country from [Geofabrik](https://download.geofabrik.de) (`.osm.pbf`) and run `/orbis import <file>`. Generation then reads the map from your disk instead of the public map servers, which is faster and never rate-limited.
+**Map data on your disk.** When you create a world and no map data on your computer covers its area, Orbis offers OpenStreetMap's file for that place from [Geofabrik](https://download.geofabrik.de): the smallest region that holds the whole area (Norway for Bergen, the Düsseldorf district rather than all of Germany), with its size. Say **Download** and it downloads in the background while the world opens, keeps only your world's area (tens of MB) and deletes the big file. From then on generation reads the map from your disk instead of the public map servers, which is faster and never overloaded. Until it is done the world uses the online servers as before. An area across a border gets no offer (no single file holds it). On a server, `/orbis mapdata` does the same for the land around you. **Offer map data downloads** and **Keep downloaded map files** are in Mod Menu → Network.
 
 ---
 

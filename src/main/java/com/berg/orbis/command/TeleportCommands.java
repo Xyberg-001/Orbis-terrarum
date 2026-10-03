@@ -67,6 +67,14 @@ public class TeleportCommands {
                             .then(Commands.argument("file", StringArgumentType.greedyString())
                                     .executes(TeleportCommands::importExtract)))
                     .then(Commands.literal("extracts").executes(TeleportCommands::listExtracts))
+                    .then(Commands.literal("mapdata")
+                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                            .executes(TeleportCommands::mapData)
+                            .then(Commands.literal("stop").executes(ctx -> {
+                                com.berg.orbis.osm.extract.MapDataJob.stop();
+                                ctx.getSource().sendSuccess(() -> Component.literal("Stopping the map data download (it continues next time)."), false);
+                                return 1;
+                            })))
                     .then(Commands.literal("import-places")
                             .then(Commands.argument("file", StringArgumentType.greedyString())
                                     .executes(TeleportCommands::importPlaces)))
@@ -127,6 +135,7 @@ public class TeleportCommands {
                 {"fastChunkWrites", "don't force every chunk to disk at once (restart)"},
                 {"waitForOsm", "hold new chunks until their map data has arrived"},
                 {"prefetchSpawnAtStartup", "download the map around the spawn when the server starts"},
+                {"keepDownloadedMapFiles", "keep Geofabrik files after /orbis mapdata imported the area"},
                 {"regionPrefetchRadius", "map regions downloaded ahead of players, 0-6"},
                 {"regionCacheSize", "map regions kept in memory, 8-256 (restart)"},
                 {"terrainOnlyBeyondBlocks", "only terrain beyond this distance from the origin, 0 = off"},
@@ -233,6 +242,71 @@ public class TeleportCommands {
             var sweep = model == null ? null : com.berg.orbis.worldgen.AreaSweep.of(outline.largestOnly(), model.mapper());
             source.sendSuccess(() -> com.berg.orbis.worldgen.PregenMap.writeNow(level, sweep), false);
         }));
+        return 1;
+    }
+
+    /**
+     * /orbis mapdata: Geofabrik's file for the land around you (the smallest region that holds it), downloaded in the
+     * background, only that area imported, the file deleted afterwards (unless keepDownloadedMapFiles). For servers,
+     * which have no Create screen to offer it.
+     */
+    private static int mapData(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        var model = OrbisMod.model();
+        if (model == null) {
+            source.sendFailure(Component.literal("Not an Orbis Terrarum world."));
+            return 0;
+        }
+        if (com.berg.orbis.osm.extract.MapDataJob.busy()) {
+            source.sendFailure(Component.literal("A map data download is running already (/orbis mapdata stop stops it)."));
+            return 0;
+        }
+        double mpb = model.cfg().metersPerBlock;
+        if (mpb >= 8.0) {
+            source.sendFailure(Component.literal("At 8 m per block or coarser, import a country's map file with /orbis import instead."));
+            return 0;
+        }
+        var pos = source.getPosition();
+        double[] ll = model.mapper().toLatLon((int) Math.floor(pos.x), (int) Math.floor(pos.z));
+        double[] box = com.berg.orbis.osm.extract.MapDataJob.boxAround(ll[0], ll[1], mpb);
+        var server = source.getServer();
+        java.nio.file.Path data = OrbisMod.dataDir();
+        source.sendSuccess(() -> Component.literal("Looking up map data for the land around you..."), false);
+        Thread t = new Thread(() -> {
+            com.berg.orbis.osm.extract.MapDataJob.Plan plan;
+            try {
+                plan = com.berg.orbis.osm.extract.MapDataJob.plan(data, box, mpb);
+            } catch (Exception e) {
+                server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Map data look-up failed: " + e.getMessage())));
+                return;
+            }
+            if (plan == null) {
+                server.execute(() -> source.sendSystemMessage(Component.literal(
+                        "[Orbis Terrarum] Nothing to download: map data on disk covers this area already, or it crosses a border (no single region file holds it).")));
+                return;
+            }
+            server.execute(() -> source.sendSystemMessage(Component.literal(String.format(Locale.ROOT,
+                    "[Orbis Terrarum] Downloading map data for %s (%s); only this area is kept. The world uses the online servers until it is ready.",
+                    plan.region().name(), plan.sizeText()))));
+            long[] lastLine = {0};
+            com.berg.orbis.osm.extract.MapDataJob.start(data, plan, OrbisMod.config().keepDownloadedMapFiles, new com.berg.orbis.osm.extract.MapDataJob.Listener() {
+                @Override
+                public void progress(String line, float fraction) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastLine[0] < 30_000) return;
+                    lastLine[0] = now;
+                    server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] " + line)));
+                }
+
+                @Override
+                public void finished(String message, boolean ok) {
+                    System.out.println("[orbis] " + message);
+                    server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] " + message)));
+                }
+            });
+        }, "Orbis-map-data-plan");
+        t.setDaemon(true);
+        t.start();
         return 1;
     }
 

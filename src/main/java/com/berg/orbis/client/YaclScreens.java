@@ -626,6 +626,8 @@ public final class YaclScreens {
                         .option(intSlider("osmMaxWaitMinutes", 15, 1, 60, 1, () -> c.osmMaxWaitMinutes, v -> c.osmMaxWaitMinutes = v, v -> Component.literal(v + " min")))
                         .option(intSlider("demTileCacheSize", 384, 32, 2048, 32, () -> c.demTileCacheSize, v -> c.demTileCacheSize = v, v -> Component.literal(String.valueOf(v))))
                         .option(intSlider("imageryTileCacheSize", 512, 64, 4096, 64, () -> c.imageryTileCacheSize, v -> c.imageryTileCacheSize = v, v -> Component.literal(String.valueOf(v))))
+                        .option(bool("offerMapDownloads", true, () -> c.offerMapDownloads, v -> c.offerMapDownloads = v))
+                        .option(bool("keepDownloadedMapFiles", false, () -> c.keepDownloadedMapFiles, v -> c.keepDownloadedMapFiles = v))
                         .option(bool("debugLogging", false, () -> c.debugLogging, v -> c.debugLogging = v))
                         .build())
                 .build();

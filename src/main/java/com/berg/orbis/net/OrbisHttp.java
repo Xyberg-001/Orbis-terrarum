@@ -231,6 +231,120 @@ public final class OrbisHttp {
         return false;
     }
 
+    // ------------------------------------------------------------------ large files
+
+    /** Bytes received so far and the file's size (-1 while unknown), during a {@link #download}. */
+    public interface DownloadProgress {
+        void update(long done, long total);
+    }
+
+    /** The size of the file at a URL (the Content-Length of a HEAD request), or -1 when the server does not say. */
+    public static long size(String url, Map<String, String> headers) throws IOException, InterruptedException {
+        for (int hop = 0; hop < 6; hop++) {
+            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30))
+                    .method("HEAD", HttpRequest.BodyPublishers.noBody());
+            if (headers != null) headers.forEach(b::header);
+            HttpResponse<Void> r = CLIENT.send(b.build(), HttpResponse.BodyHandlers.discarding());
+            String next = redirect(r);
+            if (next != null) {
+                url = next;
+                continue;
+            }
+            if (r.statusCode() != 200) return -1;
+            return r.headers().firstValueAsLong("content-length").orElse(-1);
+        }
+        return -1;
+    }
+
+    /**
+     * Where a redirect points, as https, or null when the answer is not one. Geofabrik sends its "-latest" files on
+     * to the dated file, sometimes as plain http, which Java's client will not follow from an https page.
+     */
+    private static String redirect(HttpResponse<?> r) {
+        int s = r.statusCode();
+        if (s != 301 && s != 302 && s != 303 && s != 307 && s != 308) return null;
+        String loc = r.headers().firstValue("location").orElse(null);
+        if (loc == null) return null;
+        String next = r.uri().resolve(loc).toString();
+        return next.startsWith("http://") ? "https://" + next.substring(7) : next;
+    }
+
+    /**
+     * Streams a large file (a country's map data, gigabytes) to {@code target} without holding it in memory. It is
+     * written to {@code <target>.part} first and moved into place when complete; a part left by an earlier attempt
+     * is continued where it stopped (a Range request) when the server allows it. A connection that delivers nothing
+     * for 60 s is dropped (the part stays for next time); {@code cancelled} stops it between reads.
+     */
+    public static void download(String url, java.nio.file.Path target, Map<String, String> headers, DownloadProgress progress,
+                                java.util.function.BooleanSupplier cancelled) throws IOException, InterruptedException {
+        java.nio.file.Path part = target.resolveSibling(target.getFileName() + ".part");
+        java.nio.file.Files.createDirectories(target.toAbsolutePath().getParent());
+        long have = java.nio.file.Files.exists(part) ? java.nio.file.Files.size(part) : 0;
+        HttpResponse<InputStream> r = null;
+        for (int hop = 0; hop < 6; hop++) {
+            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30)).GET();
+            if (headers != null) headers.forEach(b::header);
+            if (have > 0) b.header("Range", "bytes=" + have + "-");
+            r = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofInputStream());
+            String next = redirect(r);
+            if (next == null) break;
+            r.body().close();
+            url = next;
+        }
+        int status = r.statusCode();
+        if (status != 200 && status != 206) {
+            r.body().close();
+            throw new IOException("HTTP " + status + " for " + url);
+        }
+        boolean append = status == 206 && have > 0;
+        long length = r.headers().firstValueAsLong("content-length").orElse(-1);
+        long total = length < 0 ? -1 : append ? have + length : length;
+        long[] done = {append ? have : 0};
+        long[] lastByte = {System.currentTimeMillis()};
+        InputStream in = r.body();
+        // A dropped connection can leave a read waiting for ever: close the stream when nothing arrives for 60 s.
+        Thread watchdog = new Thread(() -> {
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    Thread.sleep(5_000);
+                    if (System.currentTimeMillis() - lastByte[0] > 60_000) {
+                        in.close();
+                        return;
+                    }
+                }
+            } catch (InterruptedException | IOException ignored) {
+            }
+        }, "Orbis-download-watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
+        try (InputStream src = in; OutputStream out = java.nio.file.Files.newOutputStream(part, append
+                ? new java.nio.file.OpenOption[]{java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND}
+                : new java.nio.file.OpenOption[]{java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                java.nio.file.StandardOpenOption.WRITE})) {
+            byte[] buf = new byte[1 << 16];
+            long lastReport = 0;
+            int n;
+            while ((n = src.read(buf)) > 0) {
+                if (cancelled != null && cancelled.getAsBoolean()) throw new java.util.concurrent.CancellationException("download stopped");
+                out.write(buf, 0, n);
+                done[0] += n;
+                long now = System.currentTimeMillis();
+                lastByte[0] = now;
+                if (now - lastReport > 500) {
+                    lastReport = now;
+                    progress.update(done[0], total);
+                }
+            }
+        } finally {
+            watchdog.interrupt();
+        }
+        progress.update(done[0], total);
+        if (total >= 0 && done[0] != total) {
+            throw new IOException(String.format(Locale.ROOT, "download stopped at %,d of %,d bytes (it continues next time)", done[0], total));
+        }
+        java.nio.file.Files.move(part, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+
     // ------------------------------------------------------------------ DNS over HTTPS
 
     /** Resolves a host over DNS-over-HTTPS; cached for the record's TTL (at least 60 s). Null when nothing answers. */

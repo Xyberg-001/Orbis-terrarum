@@ -108,6 +108,7 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 |---|---|---|
 | Mapterhorn (tiles.mapterhorn.com) | Terrain elevation; the Elevation map layer | Tile coordinates |
 | Open Waters Seascape (tiles.openwaters.io) | Sea floor; sea depths on the Elevation map layer | Tile coordinates |
+| Geofabrik (download.geofabrik.de) | OpenStreetMap's file for the region holding a new world's area, only when you agree at Create (or run `/orbis mapdata`); the region list once a month | The region file's name |
 | Overpass API mirrors (overpass-api.de, overpass.kumi.systems, overpass.private.coffee, overpass.openstreetmap.fr) | OpenStreetMap buildings, roads, water | Bounding box of the area |
 | Nominatim (nominatim.openstreetmap.org), Photon (photon.komoot.io) | Place search and area outlines, only when you search or preview | Your search text / coordinates |
 | Esri ArcGIS Online (server.arcgisonline.com) | Aerial-imagery colours; map backgrounds in the preview and world map | Tile coordinates |

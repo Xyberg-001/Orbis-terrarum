@@ -952,6 +952,31 @@ all 1.16 billion blocks: terrain is identical; the few differing chunks
 between two runs of the same build, since vanilla features that cross
 chunk borders depend on the order threads finish in.
 
+### Map data from Geofabrik (`osm/extract/MapDataJob`, `client/MapDataOffer`)
+
+At Create, when no imported store covers the new world's area at its scale
+(finer than 8 m per block; the area is the selection, else about 4,000 blocks
+round the spawn, 8 to 40 km), Orbis looks up Geofabrik's region list
+(`index-v1.json`, 554 regions with their outlines, cached in `extracts-src/`
+for a month) and picks the smallest region whose outline holds the whole area
+(its corners, side middles and centre). Geofabrik cuts its files with a few
+km to spare past borders, so a summit on the border still fits one region
+(Everest: Tibet, 47 MB). No region short of a continent (over 8 GB) means no
+offer. The offer names the region and its size; Download starts the job and
+creation goes on: the file streams to `extracts-src/<id>-latest.osm.pbf.part`
+(`OrbisHttp.download`: no file in memory, a part continued with a Range
+request, dropped after 60 s without data; redirects followed by hand because
+Geofabrik sometimes sends the dated file's address as plain http), then only
+the area is imported at full detail (the area import above: memory by area)
+as `extracts/<id>-area-<lat>_<lon>`, the store is rescanned and running
+worlds pick it up for the regions they load next, and the file is deleted
+unless `keepDownloadedMapFiles`. Measured: Malta end to end in under a
+minute (8 MB file, 6 MB kept); Geofabrik gave 165 KB/s from India, so Norway
+(1.3 GB) takes over two hours there, shown as time left in the toast.
+`/orbis mapdata` does the same for the land around an operator (servers have
+no Create screen); `/orbis mapdata stop` stops it (the part is continued
+next time, or started again when 12 h old).
+
 ### Generation pipeline (`worldgen/RealWorldChunkGenerator`)
 - OSM is streamed per 512 × 512 m region with a 32 m margin (so nothing
   breaks at region edges), fetched from Overpass, cached on disk (gzip) and
@@ -964,6 +989,9 @@ chunk borders depend on the order threads finish in.
   server, and on a client when a world is created or opened (since 3 Oct
   2026 a client no longer fetches the remembered defaults' spawn area at
   launch; the world it then creates or opens has its own).
+- The extract store (`extracts/`) is asked first; where none covers a
+  region, Overpass. New worlds get their area's store from Geofabrik when the
+  player agrees at Create (see Map data from Geofabrik).
 - Chunk generation never blocks a world-generation thread on a download:
   `createBiomes` and `fillFromNoise` chain onto the region's future, so
   chunks in already-decoded regions keep generating at full speed while a

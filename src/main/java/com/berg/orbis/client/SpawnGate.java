@@ -48,7 +48,7 @@ public final class SpawnGate {
 
     private SpawnGate() {}
 
-    private static RealWorldChunkGenerator generatorForScreen(CreateWorldScreen screen) {
+    static RealWorldChunkGenerator generatorForScreen(CreateWorldScreen screen) {
         try {
             ChunkGenerator gen = screen.getUiState().getSettings().selectedDimensions().overworld();
             if (gen instanceof RealWorldChunkGenerator rw) return rw;
@@ -120,6 +120,11 @@ public final class SpawnGate {
         s.pregenSelectionSkipsSea = skipSea;
         screen.getUiState().updateDimensions((registries, dimensions) -> dimensions.replaceOverworldGenerator(registries,
                 new RealWorldChunkGenerator(dimensions.overworld().getBiomeSource(), Optional.of(s))));
+    }
+
+    /** Offers Geofabrik's map data for the new world's area when none is on disk (MapDataOffer); true while it waits. */
+    public static boolean offerMapData(CreateWorldScreen screen) {
+        return MapDataOffer.offer(screen);
     }
 
     /** The world is being created with the selection: clear the generator map for the next world. */
