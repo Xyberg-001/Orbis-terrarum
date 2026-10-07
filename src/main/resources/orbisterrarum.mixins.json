@@ -22,7 +22,8 @@
     "ServerChunkCacheTicketsMixin",
     "CompoundTagMixin",
     "RegionFileStorageMixin",
-    "RegionFileAccessor"
+    "RegionFileAccessor",
+    "JigsawPlacementMixin"
   ],
   "client": [
     "client.ClientLevelDataMixin",

@@ -451,9 +451,14 @@ public class OrbisMod implements ModInitializer {
         int[] tick = {0};
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             com.berg.orbis.worldgen.Landmarks.tick(server);
+            com.berg.orbis.export.AternosExport.tick(server);
             if (++tick[0] % 40 != 0) return;
             WorldModel m = model;
             if (m == null || m.regions() == null) return;
+            // Only in an Orbis world: the model of the installation's place exists in any world, and an Aternos
+            // export opened in singleplayer (a plain world) had Bergen's map regions loaded around the player.
+            net.minecraft.server.level.ServerLevel overworld = server.overworld();
+            if (overworld == null || !(overworld.getChunkSource().getGenerator() instanceof RealWorldChunkGenerator)) return;
             List<int[]> positions = new ArrayList<>();
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (p.level().dimension() != Level.OVERWORLD) continue;
@@ -477,6 +482,12 @@ public class OrbisMod implements ModInitializer {
         // ---- elevation ----
         DemTileProvider tiles = new DemTileProvider(data.resolve("dem-cache"), cfg.demTileUrl, cfg.demTileCacheSize);
         System.out.println("[orbis] Terrain tiles (zoom " + cfg.demZoom + "): " + tiles.describeSource());
+        if (cfg.bareEarthTerrain && cfg.demZoom >= 13 && cfg.demTileUrl != null && cfg.demTileUrl.contains("mapterhorn")) {
+            // Copernicus measures treetops and roofs; where no survey exists the ground comes from GEDTM30 instead.
+            tiles.setCorrection(cfg.demZoom, new com.berg.orbis.dem.BareEarthBlend(tiles, new com.berg.orbis.dem.BareEarth(data.resolve("dem-cache").resolve("gedtm30"))));
+            System.out.println("[orbis] Where no national survey exists: " + com.berg.orbis.dem.BareEarth.ATTRIBUTION
+                    + ", blended into the surveys over " + (int) com.berg.orbis.dem.BareEarthBlend.BLEND_METRES + " m");
+        }
         BicubicElevationSampler globalSampler = new BicubicElevationSampler(tiles, cfg.demZoom);
         List<DemSource> sources = new ArrayList<>();
         // Lidar is only worth its downloads at fine scales (whatever the switches say): see OrbisConfig.lidarUseful.
@@ -507,7 +518,10 @@ public class OrbisMod implements ModInitializer {
         if (lidar && cfg.buildingHeightsFromSurfaceModel) {
             for (OrbisConfig.ElevationSource es : cfg.surfaceModelSources) {
                 if (es == null || !es.enabled) continue;
-                if (es.needsSwitch && !(cfg.useHighResElevation || cfg.lidarSurfaceModel)) continue;
+                // Kartverket's: always with its switch on, else by itself while it answers from this network (new
+                // worlds; worlds made before 1.1.1 keep their heights from the other sources).
+                boolean auto = es.needsSwitch && !(cfg.useHighResElevation || cfg.lidarSurfaceModel);
+                if (auto && !cfg.kartverketWhenReachable) continue;
                 if (es.stacSearch != null && !es.stacSearch.isBlank()) {
                     // Files in a national grid, read block by block.
                     if (com.berg.orbis.dem.NationalGrids.knows(es.crs)) surfaceSources.add(new com.berg.orbis.dem.CogDemSource(es, data.resolve("dsm-cache")));
@@ -515,6 +529,7 @@ public class OrbisMod implements ModInitializer {
                 }
                 if (es.urlTemplate == null || es.urlTemplate.isBlank()) continue;
                 ImageServiceDemSource s = new ImageServiceDemSource(es, data.resolve("dsm-cache"));
+                if (auto) s.useWhenReachable(com.berg.orbis.config.DataSources.KARTVERKET_PROBE);
                 if (es.aboveGround) s.setGround(elevation::sampleMeters); // heights above the ground: on the terrain
                 surfaceSources.add(s);
             }
@@ -530,13 +545,15 @@ public class OrbisMod implements ModInitializer {
         CoordinateMapper mapper = new CoordinateMapper(cfg.originLat, cfg.originLon, cfg.metersPerBlock,
                 CoordinateMapper.Projection.of(cfg.projection));
         VerticalMapping vertical = new VerticalMapping(cfg, mapper, tiles);
-        System.out.println("[orbis] Vertical mapping: " + vertical.mode() + " (1:1 below " + cfg.reliefKneeMeters
+        System.out.println("[orbis] Vertical mapping: " + vertical.mode() + (cfg.heightSquash > 1 ? String.format(java.util.Locale.ROOT,
+                ", uniform heights: 1 block up = %.2f m", cfg.verticalMetersPerBlock()) : "") + " (1:1 below " + cfg.reliefKneeMeters
                 + " m, sea level Y=" + cfg.seaLevelY + ", ceiling Y=" + cfg.maxY() + ")");
         BiomeClassifier classifier = new BiomeClassifier(cfg);
         LandmarkRegistry landmarks = LandmarkRegistry.load(cfgDir.resolve("landmarks.json"), cfgDir.resolve("schematics"), mapper);
 
         // ---- OSM streaming ----
         OsmRegionManager regions = null;
+        com.berg.orbis.landcover.WorldCoverProvider worldCover = null;
         boolean anyOsm = cfg.generateBuildings || cfg.generateRoads || cfg.generateWater || cfg.generateLandCover
                 || cfg.generateTrees || cfg.generateStreetFurniture;
         if (anyOsm) {
@@ -607,7 +624,8 @@ public class OrbisMod implements ModInitializer {
                 if (!hs.isEmpty()) System.out.println("[orbis] Building heights found in heights/: GlobalBuildingAtlas (TUM, CC BY-NC 4.0) fills in untagged buildings");
             }
             if (cfg.generateLandCover && cfg.worldCoverLandCover) {
-                rasterizer.setWorldCover(new com.berg.orbis.landcover.WorldCoverProvider(data.resolve("worldcover-cache"), cfg.worldCoverUrl));
+                worldCover = new com.berg.orbis.landcover.WorldCoverProvider(data.resolve("worldcover-cache"), cfg.worldCoverUrl);
+                rasterizer.setWorldCover(worldCover);
                 System.out.println("[orbis] Land cover gaps are filled from " + com.berg.orbis.landcover.WorldCoverProvider.ATTRIBUTION);
             }
             // Tree canopy height in blocks: lidar surface minus terrain where a surface model covers, else the
@@ -683,6 +701,7 @@ public class OrbisMod implements ModInitializer {
         if (cfg.realSnow) model.setSnowCover(com.berg.orbis.sky.SnowCover.shared(data.resolve("snow-cache")));
         model.setCoarseSampler(new BicubicElevationSampler(tiles, Math.min(cfg.demZoom, 11)));
         model.setTerrainTiles(tiles, cfg.demZoom);
+        model.setWorldCover(worldCover);
         if (regions != null) regions.setTerrainFailures(tiles::failures);
         return model;
     }

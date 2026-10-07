@@ -138,7 +138,6 @@ public class TeleportCommands {
                 {"keepDownloadedMapFiles", "keep Geofabrik files after /orbis mapdata imported the area"},
                 {"regionPrefetchRadius", "map regions downloaded ahead of players, 0-6"},
                 {"regionCacheSize", "map regions kept in memory, 8-256 (restart)"},
-                {"terrainOnlyBeyondBlocks", "only terrain beyond this distance from the origin, 0 = off"},
                 {"overpassConcurrentRequests", "parallel OpenStreetMap downloads, 1-8"},
                 {"osmMaxWaitMinutes", "longest wait for a region's map data"},
                 {"demTileCacheSize", "terrain tiles kept in memory (restart)"},
@@ -295,7 +294,7 @@ public class TeleportCommands {
                     long now = System.currentTimeMillis();
                     if (now - lastLine[0] < 30_000) return;
                     lastLine[0] = now;
-                    server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] " + line)));
+                    server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Map data: " + line)));
                 }
 
                 @Override
@@ -462,7 +461,7 @@ public class TeleportCommands {
         int surfaceY = source.getLevel().getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
         if (surfaceY <= model.cfg().minY + 1) {
             // Chunk not generated yet: use the real elevation so we don't fall into the void.
-            surfaceY = Math.max(model.terrainHeight(blockX, blockZ), model.cfg().seaLevelY) + 1;
+            surfaceY = Math.max(model.terrainHeight(blockX, blockZ), model.cfg().waterLevelY()) + 1;
         }
         player.teleportTo(blockX + 0.5, surfaceY + 1, blockZ + 0.5);
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,

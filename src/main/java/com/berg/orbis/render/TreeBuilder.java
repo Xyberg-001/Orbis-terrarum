@@ -152,6 +152,22 @@ public final class TreeBuilder {
         sink.place(x + side.getStepX(), y + up, z + side.getStepZ(), m, true);
     }
 
+    /** The leaves of one tree of a species as the far view draws its crown, in autumn colours as {@link #place} gives them. */
+    public static BlockState crownLeaves(Species species, boolean autumn, long seed) {
+        long h = Materials.mix(seed);
+        BlockState fall = autumn ? autumnLeaves(species, h) : null;
+        BlockState summer = switch (species) {
+            case BIRCH, POPLAR -> Blocks.BIRCH_LEAVES.defaultBlockState();
+            case DARK_OAK -> Blocks.DARK_OAK_LEAVES.defaultBlockState();
+            case CHERRY -> Blocks.CHERRY_LEAVES.defaultBlockState();
+            case SPRUCE, PINE -> Blocks.SPRUCE_LEAVES.defaultBlockState();
+            case JUNGLE, PALM -> Blocks.JUNGLE_LEAVES.defaultBlockState();
+            case ACACIA -> Blocks.ACACIA_LEAVES.defaultBlockState();
+            default -> Blocks.OAK_LEAVES.defaultBlockState();
+        };
+        return leaves(NewBlocks.or(fall, summer));
+    }
+
     /** Trees that drop their leaves in autumn (litter under them, fallen trunks in the woods). */
     public static boolean isBroadleaf(Species s) {
         return s == Species.OAK || s == Species.BIRCH || s == Species.DARK_OAK || s == Species.POPLAR || s == Species.CHERRY;

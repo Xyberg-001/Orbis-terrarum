@@ -70,6 +70,12 @@ public final class WorldSettings {
     public double spawnLon = 5.32415;
     public boolean exactSpawn = true;
     public int seaLevelY = OrbisConfig.DEFAULT_SEA_LEVEL_Y;
+    /** Whether the world, when created, may lay its height range over a high area with no sea (see OrbisConfig). */
+    public boolean highAltitudeWindow = true;
+    /** Whether the world, when created, scales all its heights by one factor (see OrbisConfig.uniformHeights). */
+    public boolean uniformHeights = false;
+    /** Real metres per block of height over the scale's own, from the world's creation (see OrbisConfig). */
+    public double heightSquash = 1;
     /** Height of the world in blocks; 0 = fit to the terrain around the origin when the world is created (resolved and stored then). */
     public int worldHeight = 0;
     /**
@@ -145,14 +151,27 @@ public final class WorldSettings {
     public double snowTemperatureC = 0.5;
     public double temperatureOffsetC = 0.0;
     public int metersPerStorey = 3;
+    /** OrbisConfig.buildingHeights. "scale" here: worlds made before it existed were true to scale and must stay so. */
+    public String buildingHeights = "scale";
 
     // ---- data ----
     public boolean useAerialImagery = true;
     public boolean useHighResElevation = false;
     public boolean lidarSurfaceModel = false;
+    /** OrbisConfig.kartverketWhenReachable; false for worlds made before it existed (their buildings keep their heights). */
+    public boolean kartverketWhenReachable = false;
     public boolean worldCoverLandCover = true;
     public boolean atlasBuildingHeights = true;
     public boolean useBathymetry = true;
+    /**
+     * Bare-earth terrain where no national survey exists (OrbisConfig.bareEarthTerrain). False here: worlds made before
+     * it existed have no such entry and must keep their terrain; new worlds get the config's value.
+     */
+    public boolean bareEarthTerrain = false;
+    /** OrbisConfig.undergroundVersion; 1 for worlds made before it existed (their caves must meet their new chunks). */
+    public int undergroundVersion = 1;
+    /** OrbisConfig.reliefBiomes; false for worlds made before it existed (their biomes must meet their new chunks). */
+    public boolean reliefBiomes = false;
 
     public static WorldSettings fromConfig(OrbisConfig c) {
         WorldSettings s = new WorldSettings();
@@ -164,8 +183,13 @@ public final class WorldSettings {
         s.spawnLon = c.spawnLon;
         s.exactSpawn = c.exactSpawn;
         s.seaLevelY = c.seaLevelY;
+        s.highAltitudeWindow = c.highAltitudeWindow;
+        s.uniformHeights = c.uniformHeights;
+        s.heightSquash = 1; // worked out when the world is created, from its area (SpawnGate)
         s.worldHeight = c.worldHeight;
-        s.verticalMode = c.verticalMode;
+        // No longer a choice: a new world is relative, or 1:1 throughout where its scale leaves room for Everest
+        // (a window world is set to that too, when it is created). Worlds keep what they were made with.
+        s.verticalMode = c.uniformHeights ? "compress" : com.berg.orbis.dem.VerticalMapping.modeForNewWorld(c);
         s.reliefKneeMeters = c.reliefKneeMeters;
         s.reliefSmoothingKm = c.reliefSmoothingKm;
         s.projection = c.projection;
@@ -229,12 +253,17 @@ public final class WorldSettings {
         s.snowTemperatureC = c.snowTemperatureC;
         s.temperatureOffsetC = c.temperatureOffsetC;
         s.metersPerStorey = c.metersPerStorey;
+        s.buildingHeights = c.buildingHeights;
         s.useAerialImagery = c.useAerialImagery;
         s.useHighResElevation = c.useHighResElevation;
         s.lidarSurfaceModel = c.lidarSurfaceModel;
+        s.kartverketWhenReachable = c.kartverketWhenReachable;
         s.worldCoverLandCover = c.worldCoverLandCover;
         s.atlasBuildingHeights = c.atlasBuildingHeights;
         s.useBathymetry = c.useBathymetry;
+        s.bareEarthTerrain = c.bareEarthTerrain;
+        s.undergroundVersion = c.undergroundVersion;
+        s.reliefBiomes = c.reliefBiomes;
         return s;
     }
 
@@ -248,6 +277,9 @@ public final class WorldSettings {
         c.spawnLon = spawnLon;
         c.exactSpawn = exactSpawn;
         c.seaLevelY = seaLevelY;
+        c.highAltitudeWindow = highAltitudeWindow;
+        c.uniformHeights = uniformHeights;
+        c.heightSquash = heightSquash > 1 ? heightSquash : 1;
         c.worldHeight = worldHeight > 0 ? worldHeight : OrbisConfig.DIMENSION_HEIGHT;
         if (softCeilingBlocks > 0) c.softCeilingBlocks = softCeilingBlocks;
         c.verticalMode = verticalMode;
@@ -314,12 +346,17 @@ public final class WorldSettings {
         c.snowTemperatureC = snowTemperatureC;
         c.temperatureOffsetC = temperatureOffsetC;
         c.metersPerStorey = metersPerStorey;
+        c.buildingHeights = buildingHeights == null ? "scale" : buildingHeights;
         c.useAerialImagery = useAerialImagery;
         c.useHighResElevation = useHighResElevation;
         c.lidarSurfaceModel = lidarSurfaceModel;
+        c.kartverketWhenReachable = kartverketWhenReachable;
         c.worldCoverLandCover = worldCoverLandCover;
         c.atlasBuildingHeights = atlasBuildingHeights;
         c.useBathymetry = useBathymetry;
+        c.bareEarthTerrain = bareEarthTerrain;
+        c.undergroundVersion = undergroundVersion;
+        c.reliefBiomes = reliefBiomes;
     }
 
     /** The installation config with this world's settings applied (a copy; the base is untouched). */
@@ -346,6 +383,7 @@ public final class WorldSettings {
         if (s.demZoom < 8 || s.demZoom > 16) s.demZoom = 15;
         if (s.roadCenterLineColour == null) s.roadCenterLineColour = "white";
         if (s.climateOverride == null) s.climateOverride = "";
+        if (s.buildingHeights == null) s.buildingHeights = "scale";
         return s;
     }
 

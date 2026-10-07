@@ -374,22 +374,6 @@ public final class OsmRegionManager {
                 + ", loaded total=" + loaded.get() + ", fetch failures=" + failed.get();
     }
 
-    /**
-     * Chebyshev distance in blocks from the nearest known player, or 0 when
-     * no player position is known yet (world creation, spawn search): then
-     * everything counts as "near" and gets full detail.
-     */
-    public int nearestPlayerDistance(int blockX, int blockZ) {
-        int[][] ps = players;
-        if (ps.length == 0) return 0;
-        int best = Integer.MAX_VALUE;
-        for (int[] p : ps) {
-            int d = Math.max(Math.abs(p[0] - blockX), Math.abs(p[1] - blockZ));
-            if (d < best) best = d;
-        }
-        return best;
-    }
-
     public void shutdown() {
         shutdown = true;
         provider.close(); // abort in-flight retries so a retired model stops competing for Overpass

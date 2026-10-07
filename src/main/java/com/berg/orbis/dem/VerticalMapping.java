@@ -26,8 +26,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *   glacier. The remaining excess near the ceiling is squeezed by a smooth
  *   asymptotic curve so nothing ever flattens into a plateau.</li>
  *   <li><b>compress</b>: no regional shift, only the asymptotic squeeze near
- *   the ceiling and floor.</li>
- *   <li><b>clamp</b>: plain 1:1, cut off at the dimension limits (the old
+ *   the ceiling and floor: 1:1 throughout where the world has room; in a uniform-heights world every
+ *   height divided by one factor first ({@code heightSquash}). New worlds get it at
+ *   scales that fit Everest ({@link #modeForNewWorld}) and in a high-altitude window.</li>
+ *   <li><b>clamp</b>: worlds made before 1.1.1 only. Plain 1:1, cut off at the dimension limits (the old
  *   behaviour: Everest becomes a mesa).</li>
  * </ul>
  *
@@ -36,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class VerticalMapping {
 
+    /** CLAMP only for worlds made with it before 1.1.1: no new world gets it. */
     public enum Mode { RELATIVE, COMPRESS, CLAMP }
 
     private final OrbisConfig cfg;
@@ -44,7 +47,14 @@ public final class VerticalMapping {
     private final double softRange;
     private final double ceilingKnee;   // blocks above sea level where the top squeeze starts
     private final double floorKnee;     // blocks below sea level where the bottom squeeze starts (positive number)
+    private final double floorRange;    // blocks the bottom squeeze eases over
+    /** The bottom squeeze of a high-altitude window world, blocks. */
+    public static final int WINDOW_FLOOR_SQUEEZE = 400;
     private final RegionalBase base;
+    /** Sea level under the floor: a high-altitude window world. */
+    private final boolean underFloor;
+    /** Sea depth per block of a window world's shallow sea, metres: its 6 blocks reach the floor at 60 m. */
+    private static final double SHALLOW_SEA_M_PER_BLOCK = 10;
 
     public VerticalMapping(OrbisConfig cfg, CoordinateMapper mapper, TileSource coarseTiles) {
         this.cfg = cfg;
@@ -55,12 +65,17 @@ public final class VerticalMapping {
             m = Mode.RELATIVE;
         }
         this.mode = m;
-        this.kneeBlocks = cfg.reliefKneeMeters / cfg.metersPerBlock;
+        this.kneeBlocks = cfg.reliefKneeMeters / cfg.verticalMetersPerBlock();
         this.softRange = Math.max(50, cfg.softCeilingBlocks);
         double roomUp = (cfg.maxY() - 16) - cfg.seaLevelY;
         double roomDown = cfg.seaLevelY - (cfg.minY + 8);
         this.ceilingKnee = Math.max(0, roomUp - softRange);
-        this.floorKnee = Math.max(0, roomDown - Math.min(softRange, 150));
+        // Negative in a high-altitude window world (sea level far under the floor): the squeeze then starts that far
+        // above sea level, over the floor, so valleys under the window ease down to it instead of being cut off; and
+        // over a wide range there, so they keep their shape (with 64 blocks, Dingboche to Lukla lay flat on the floor).
+        this.floorRange = roomDown < 0 ? WINDOW_FLOOR_SQUEEZE : Math.min(softRange, 150);
+        this.floorKnee = roomDown - floorRange;
+        this.underFloor = roomDown < 0;
         this.base = (m == Mode.RELATIVE && coarseTiles != null && mapper != null)
                 ? new RegionalBase(coarseTiles, mapper, cfg.reliefSmoothingKm) : null;
     }
@@ -69,11 +84,30 @@ public final class VerticalMapping {
         return mode;
     }
 
+    /** Everest's height, metres: the highest ground a world can meet. */
+    private static final double HIGHEST_GROUND_M = 8849;
+
+    /**
+     * The mode a new world gets: compress (1:1 throughout) where the world's scale leaves room for Everest under the
+     * ceiling's squeeze, at about 1:3.2 and coarser, so no region is lowered for nothing; relative otherwise. A
+     * high-altitude window world is set to compress when it is created (WorldHeight.window).
+     */
+    public static String modeForNewWorld(OrbisConfig cfg) {
+        double roomUp = (OrbisConfig.DIMENSION_MIN_Y + OrbisConfig.DIMENSION_HEIGHT - 1 - 16) - cfg.seaLevelY;
+        double ceilingKnee = roomUp - Math.max(50, cfg.softCeilingBlocks);
+        return HIGHEST_GROUND_M / cfg.metersPerBlock <= ceilingKnee ? "compress" : "relative";
+    }
+
     /** Block Y (fractional) that a real elevation maps to at this column. */
     public double toY(double elevationMeters, int blockX, int blockZ) {
-        double e = elevationMeters / cfg.metersPerBlock;
+        double e = elevationMeters / cfg.verticalMetersPerBlock();
         if (mode == Mode.CLAMP) {
             return cfg.seaLevelY + e;
+        }
+        if (underFloor && elevationMeters <= 0) {
+            // A window world's sea, far off: sea level lies under the floor, and the low land around it eases down to
+            // just above it. A shallow sea there, its bed a block under the water and down to the floor at 60 m.
+            return cfg.waterLevelY() - 1 - Math.min(6, -elevationMeters / SHALLOW_SEA_M_PER_BLOCK);
         }
         if (mode == Mode.RELATIVE && e > kneeBlocks) {
             e -= shiftBlocks(blockX, blockZ);
@@ -81,7 +115,7 @@ public final class VerticalMapping {
         if (e > ceilingKnee) {
             e = ceilingKnee + softRange * (1.0 - Math.exp(-(e - ceilingKnee) / softRange));
         } else if (e < -floorKnee) {
-            double r = Math.min(softRange, 150);
+            double r = floorRange;
             e = -floorKnee - r * (1.0 - Math.exp(-(-floorKnee - e) / r));
         }
         return cfg.seaLevelY + e;
@@ -92,7 +126,7 @@ public final class VerticalMapping {
      * be if the world had room. Above {@link #toY} only where a world is too low for its mountains.
      */
     public double unsqueezedY(double elevationMeters, int blockX, int blockZ) {
-        double e = elevationMeters / cfg.metersPerBlock;
+        double e = elevationMeters / cfg.verticalMetersPerBlock();
         if (mode == Mode.RELATIVE && e > kneeBlocks) e -= shiftBlocks(blockX, blockZ);
         return cfg.seaLevelY + e;
     }
@@ -102,7 +136,7 @@ public final class VerticalMapping {
         if (base == null) return 0;
         double b = base.baseMeters(blockX, blockZ);
         if (Double.isNaN(b)) return 0;
-        double shift = b / cfg.metersPerBlock - kneeBlocks;
+        double shift = b / cfg.verticalMetersPerBlock() - kneeBlocks;
         return shift > 0 ? shift : 0;
     }
 

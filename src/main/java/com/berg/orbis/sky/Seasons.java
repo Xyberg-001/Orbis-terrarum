@@ -39,6 +39,8 @@ public final class Seasons {
     private record Look(String name, int grass, double grassBy, int foliage, double foliageBy, double cooling) {}
 
     private static final int WINTER_GRASS = 0x8C8A5E, WINTER_LEAVES = 0x8A7148;
+    /** Bumped whenever {@link #MONTHS} changes. */
+    private static final String LOOKS_VERSION = "-2";
     private static final Look[] MONTHS = {
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // January
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // February
@@ -46,9 +48,10 @@ public final class Seasons {
             new Look("spring", 0x7ED957, 0.25, 0x9ACD32, 0.30, 0.10),                        // April
             new Look("late spring", 0x7ED957, 0.15, 0x8FD14F, 0.20, 0.0),                    // May
             null, null, null,                                                                // June - August: summer
-            new Look("early autumn", 0xB5B04E, 0.20, 0xD9A520, 0.30, 0.0),                  // September
-            new Look("autumn", 0xB0A04A, 0.40, 0xE0782A, 0.65, 0.0),                        // October
-            new Look("late autumn", 0x9A8C55, 0.50, 0x9A6A3A, 0.65, 0.15),                  // November
+            // Autumn grass goes most of the way to straw (40% looked like a slightly duller green, 5 Oct 2026).
+            new Look("early autumn", 0xB5B04E, 0.35, 0xD9A520, 0.30, 0.0),                  // September
+            new Look("autumn", 0xB0A04A, 0.65, 0xE0782A, 0.65, 0.0),                        // October
+            new Look("late autumn", 0x9A8C55, 0.70, 0x9A6A3A, 0.65, 0.15),                  // November
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // December
     };
     private static final Set<String> NOT_OVERWORLD = Set.of("nether_wastes", "soul_sand_valley", "crimson_forest", "warped_forest",
@@ -86,7 +89,8 @@ public final class Seasons {
                 deleteTree(dir);
                 return true;
             }
-            String key = today.getMonthValue() + (lat < 0 ? "S" : "N");
+            // The looks' version is part of the key, so a change to them reaches packs written before it.
+            String key = today.getMonthValue() + (lat < 0 ? "S" : "N") + LOOKS_VERSION;
             if (WorldHeight.isCurrent(dir) && key.equals(packKey(dir))) return false;
             write(dir, look, key);
             return true;

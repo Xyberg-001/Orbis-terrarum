@@ -75,7 +75,7 @@ public final class Landmarks {
     public static void tick(MinecraftServer server) {
         if (reloadWanted != server || server.getTickCount() < 200 || !server.isReady()) return;
         reloadWanted = null;
-        System.out.println("[orbis] Enabling the landmark datapack (data pack reload)");
+        System.out.println("[orbis] Enabling the Orbis data packs (data pack reload)");
         enable(server);
     }
 
@@ -90,12 +90,24 @@ public final class Landmarks {
         return n;
     }
 
+    /**
+     * Asks for the reload that switches on the mod's packs once the server is idle: a pack written into a running
+     * world (this month's season) is otherwise found as new and never switched on.
+     */
+    public static void requestPackReload(MinecraftServer server) {
+        reloadWanted = server;
+    }
+
     private static void enable(MinecraftServer server) {
         PackRepository repo = server.getPackRepository();
         repo.reload();
         List<String> ids = new ArrayList<>(repo.getSelectedIds());
-        String id = "file/" + PACK_NAME;
-        if (repo.isAvailable(id) && !ids.contains(id)) ids.add(id);
+        // Every Orbis pack in the world folder, not only this one: Minecraft records each available pack left out of
+        // a reload as disabled, which until 5 Oct 2026 switched off the season pack (written as the world started)
+        // for good in every world that got its landmark pack.
+        for (String id : repo.getAvailableIds()) {
+            if (id.startsWith("file/orbis_") && !ids.contains(id)) ids.add(id);
+        }
         server.reloadResources(ids).exceptionally(e -> {
             System.err.println("[orbis] Data pack reload failed: " + e);
             return null;

@@ -34,7 +34,7 @@ public final class Decorator {
 
     public void decorateChunk(WorldGenLevel level, int chunkMinX, int chunkMinZ) {
         RegionRaster r = model.rasterIfLoaded(chunkMinX, chunkMinZ);
-        if (r == null && cfg.waitForOsm && !model.farFromPlayers(chunkMinX + 8, chunkMinZ + 8)) r = model.rasterForBlock(chunkMinX, chunkMinZ);
+        if (r == null && cfg.waitForOsm) r = model.rasterForBlock(chunkMinX, chunkMinZ);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int maxY = cfg.maxY();
 
@@ -103,7 +103,9 @@ public final class Decorator {
 
                 if (decor != DecorType.NONE && cfg.generateStreetFurniture) {
                     int[] shifted = shiftOffRoadway(r, idx, x, z, decor);
-                    if (shifted != null) {
+                    if (blocksTheWay(decor) && ColumnPainter.inFrontOfDoor(r, shifted != null ? shifted[0] : x, shifted != null ? shifted[1] : z)) {
+                        // The way to a door stays open: no fence, hedge, tree or bench across a doorstep.
+                    } else if (shifted != null) {
                         int sx = shifted[0], sz = shifted[1];
                         int sIdx = r.index(sx, sz);
                         int sSurface = level.getHeight(Heightmap.Types.OCEAN_FLOOR, sx, sz) - 1;
@@ -115,6 +117,7 @@ public final class Decorator {
                     }
                 }
                 if (occupied || !cfg.generateTrees) continue;
+                if (ColumnPainter.inFrontOfDoor(r, x, z)) continue;
                 if (r != null && r.canopyTrees) continue; // every real tree is already marked from the canopy model
                 if (!lc.allowsTrees()) continue;
                 if (!isPlantable(ground)) continue;
@@ -181,6 +184,14 @@ public final class Decorator {
      * is not placed where the ground steps or anything is in the way). Brown mushrooms grow on one log in ten and a
      * shelf mushroom on its side (Minecraft 26.3), as on 26.3's fallen poplars.
      */
+    /** Decor a player would have to climb over or walk around, kept off doorsteps. */
+    private static boolean blocksTheWay(DecorType type) {
+        return switch (type) {
+            case KERB, CROSSING, EMBEDDED_RAIL, TRAIN_STOP, STREET_SIGN, POWER_TOWER, LIGHTHOUSE, BRIDGE_PILLAR, CITY_WALL, NONE -> false;
+            default -> true;
+        };
+    }
+
     private boolean fallenTree(WorldGenLevel level, RegionRaster r, int x, int surfaceY, int z, TreeBuilder.Species species, long h) {
         boolean alongX = (h & 1) == 0;
         int length = 4 + (int) Math.floorMod(h >>> 8, 4);
@@ -287,7 +298,7 @@ public final class Decorator {
         return true;
     }
 
-    private static TreeBuilder.Species pickSpecies(LandCover lc, BiomeClassifier.Climate climate, int x, int z) {
+    public static TreeBuilder.Species pickSpecies(LandCover lc, BiomeClassifier.Climate climate, int x, int z) {
         int roll = (int) (ColumnPainter.hash(x, z, 0x5EED) % 100);
         BiomeClassifier.Zone zone = climate.zone();
         boolean cold = climate.isCold();

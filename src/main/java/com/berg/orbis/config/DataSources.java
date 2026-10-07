@@ -109,6 +109,7 @@ public final class DataSources {
         List<Source> l = new ArrayList<>();
         // ---- worldwide
         l.add(world("mapterhorn", "Terrain heights (Mapterhorn)", List.of("dem-cache/tiles.mapterhorn.com"), null));
+        l.add(world("gedtm30", "Bare-earth terrain outside surveys (GEDTM30)", List.of("dem-cache/gedtm30"), null));
         l.add(world("seascape", "Sea floor (Open Waters)", List.of("dem-cache/tiles.openwaters.io"), null));
         l.add(world("overpass", "OpenStreetMap downloads (Overpass)", List.of("osm-cache"), null));
         l.add(world("worldcover", "Land cover (ESA WorldCover)", List.of("worldcover-cache"), null));
@@ -235,10 +236,10 @@ public final class DataSources {
         }
         if (kartverket) {
             out.add(new Requirement("Kartverket lidar (Norway)",
-                    "Kartverket's servers only answer from some networks: outside Norway, connect a VPN to Norway before generating."
+                    "Kartverket's servers only answer from some networks: if this one says they don't, a VPN to Norway can help."
                             + " They are slow, so generation is slower while lidar is on. Switch it off in the Advanced tab if you"
                             + " don't need measured building heights and roofs.",
-                    "https://wcs.geonorge.no/skwms1/wcs.hoyde-dom-nhm-25833?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCapabilities"));
+                    KARTVERKET_PROBE));
         }
         return out;
     }
@@ -248,13 +249,27 @@ public final class DataSources {
         return false;
     }
 
+    /**
+     * A light request that answers with a small GeoTIFF when Kartverket's surface model can be reached from this
+     * network: an 8 x 8 pixel piece of central Bergen. Its GetCapabilities was the probe until it answered 502 Bad
+     * Gateway on 4 Oct 2026 while every tile request worked, and a world was created without the surface model.
+     */
+    public static final String KARTVERKET_PROBE = "https://wcs.geonorge.no/skwms1/wcs.hoyde-dom-nhm-25833?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage"
+            + "&COVERAGE=nhm_dom_topo_25833&CRS=EPSG:4326&RESPONSE_CRS=EPSG:4326&BBOX=5.3240,60.3920,5.3250,60.3925&WIDTH=8&HEIGHT=8&FORMAT=GeoTIFF";
+
     /** Whether a requirement's service answers from this network now (a few seconds at most). */
     public static boolean reachable(Requirement r) {
         try {
-            return com.berg.orbis.net.OrbisHttp.get(r.probe(), Map.of("User-Agent", "Orbis-Minecraft-Mod/1.0"), 8).status() == 200;
+            com.berg.orbis.net.OrbisHttp.Response resp = com.berg.orbis.net.OrbisHttp.get(r.probe(), Map.of("User-Agent", "Orbis-Minecraft-Mod/1.0"), 15);
+            return resp.status() == 200 && (!r.probe().contains("FORMAT=GeoTIFF") || isTiff(resp.body()));
         } catch (IOException | InterruptedException | RuntimeException e) {
             return false;
         }
+    }
+
+    /** Whether the bytes are a TIFF ("II*" or "MM*"): a service under strain can answer 200 with an error page. */
+    public static boolean isTiff(byte[] b) {
+        return b != null && b.length > 3 && ((b[0] == 'I' && b[1] == 'I') || (b[0] == 'M' && b[1] == 'M'));
     }
 
     /** The world's area as boxes (south, west, north, east): 30 km around the origin, 10 km around a custom spawn, the selection. */

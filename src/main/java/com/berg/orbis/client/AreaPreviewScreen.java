@@ -39,6 +39,7 @@ public final class AreaPreviewScreen extends Screen {
     private static final int BG = 0xFF1E2227, PANEL_BG = 0xF0151A20, TOP_BG = 0xE8101418;
     private static final int WHITE = 0xFFFFFFFF, GREY = 0xFFA0A8B0, GREEN = 0xFF4ADE80, RED = 0xFFF87171, AMBER = 0xFFF59E0B;
     private static MapTiles.Layer layer = MapTiles.Layer.STREET;
+    private Button nightButton;
 
     private final Screen parent;
     /** The world's centre (block 0, 0), which is also where players spawn: right-click or a search moves it. */
@@ -216,10 +217,14 @@ public final class AreaPreviewScreen extends Screen {
             onGenerate.accept(!generateOn.getAsBoolean());
             b.setMessage(generateLabel());
         }).bounds(px, height - 72, pw, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.generate.tip"))).build());
+        if (layer.isStreet()) layer = MapTiles.Layer.street(com.berg.orbis.OrbisMod.config().streetMapDark);
         addRenderableWidget(Button.builder(Component.literal(layer.label), b -> {
             layer = layer.next();
             b.setMessage(Component.literal(layer.label));
+            if (nightButton != null) nightButton.visible = layer.isStreet();
         }).bounds(px, height - 48, pw, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.layer.tip"))).build());
+        // Night mode for the street map: on the map's right edge, under the credit line.
+        nightButton = addRenderableWidget(MapTiles.nightButton(() -> layer, l -> layer = l, mapRight() - 24, TOP_H + 14));
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose()).bounds(px, height - 24, pw, 20).build());
 
         if (!viewSet) {
@@ -546,13 +551,15 @@ public final class AreaPreviewScreen extends Screen {
 
         g.fill(0, 0, mapRight(), TOP_H, TOP_BG);
         drawPanel(g);
-        String credit = layer == MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri" : "Map tiles © Esri";
-        g.text(font, credit, mapRight() - font.width(credit) - 4, TOP_H + 3, 0xC0000000, false);
+        String credit = layer == MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri"
+                : layer == MapTiles.Layer.STREET || layer == MapTiles.Layer.STREET_DARK ? StreetTiles.CREDIT : "Map tiles © Esri";
+        MapTiles.drawCredit(g, font, credit, mapRight() - 4, TOP_H + 3, mapRight());
         // Bottom right of the map; the cursor readout keeps clear of it.
         if (layer == MapTiles.Layer.ELEVATION) com.berg.orbis.client.ElevationTiles.drawLegend(g, font, mapRight() - 4, height - 4);
         drawStatus(g);
         if (onMap(mouseX, mouseY)) drawCursorReadout(g, mouseX, mouseY);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
+        MapTiles.drawNightIcon(g, nightButton, layer);
         select.drawIcons(g);
     }
 

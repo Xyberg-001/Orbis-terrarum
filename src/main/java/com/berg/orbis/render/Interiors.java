@@ -264,11 +264,13 @@ public final class Interiors {
 
         void set(int x, int y, int z, BlockState s) {
             if (y <= cfg.minY || y >= cfg.maxY()) return;
+            if (y > base && y <= base + 3 && !s.isAir() && ColumnPainter.behindDoor(r, x, z)) return; // the way in stays open
             level.setBlock(pos.set(x, y, z), s, 3);
         }
 
         /** Solid floor, two blocks of air, and not next to the staircase, a hole in the floor or a bed. */
         boolean free(int x, int z, int floorY) {
+            if (floorY == base && ColumnPainter.behindDoor(r, x, z)) return false;
             BlockState floor = get(x, floorY, z);
             if (!floor.isSolid() || floor.getBlock() instanceof BedBlock || floor.getBlock() instanceof StairBlock) return false;
             if (!get(x, floorY + 1, z).isAir() || !get(x, floorY + 2, z).isAir()) return false;
@@ -531,7 +533,8 @@ public final class Interiors {
                 if (Math.floorMod(c[0], 4) != 1 || Math.floorMod(c[1], 4) != 1) continue;
                 if (!free(c[0], c[1], floorY)) continue;
                 long hh = ColumnPainter.hash(c[0], c[1], 0x6E3);
-                set(c[0], floorY + 1, c[1], hh % 4 == 0 ? Blocks.ANVIL.defaultBlockState() : Blocks.IRON_BLOCK.defaultBlockState());
+                // Weights: dark stone, not iron (an anvil or an iron block would be 31 or 9 free ingots).
+                set(c[0], floorY + 1, c[1], hh % 4 == 0 ? Blocks.POLISHED_BLACKSTONE.defaultBlockState() : Blocks.SMOOTH_BASALT.defaultBlockState());
             }
             int n = 0;
             for (int[] c : wallCells) {

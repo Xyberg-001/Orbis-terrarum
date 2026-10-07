@@ -127,7 +127,55 @@ public class ImageServiceDemSource implements DemSource, TileSource {
      * wait minutes for a slow service (the chunks still being generated then use estimated heights).
      */
     private boolean unavailable() {
-        return System.currentTimeMillis() < disabledUntil || com.berg.orbis.OrbisMod.stopping();
+        return System.currentTimeMillis() < disabledUntil || com.berg.orbis.OrbisMod.stopping() || !answers();
+    }
+
+    /** A request that tells whether the service answers from this network, when it is only used if it does. */
+    private volatile String probe;
+    /** The last answer per probe, shared by every model built in this game: {answers (1/0), when it was asked}. */
+    private static final Map<String, long[]> PROBES = new ConcurrentHashMap<>();
+    private static final long TRUST_MS = 15 * 60_000L, RETRY_MS = 2 * 60_000L;
+
+    /**
+     * Use the service only while it answers from this network (Kartverket: some networks reach it, others never do):
+     * asked on first use with a tiny real tile, from the generation threads, never the render thread. A yes is
+     * trusted for 15 minutes across the models a world creation builds (the world height rebuilds it); a no is asked
+     * again after two minutes. Tile failures after that are handled like any service's (noteFailure).
+     */
+    public void useWhenReachable(String probeUrl) {
+        this.probe = probeUrl;
+    }
+
+    private boolean answers() {
+        String p = probe;
+        if (p == null) return true;
+        long now = System.currentTimeMillis();
+        long[] last = PROBES.get(p);
+        if (last != null && now - last[1] < (last[0] == 1 ? TRUST_MS : RETRY_MS)) return last[0] == 1;
+        synchronized (PROBES) {
+            last = PROBES.get(p);
+            if (last != null && System.currentTimeMillis() - last[1] < (last[0] == 1 ? TRUST_MS : RETRY_MS)) return last[0] == 1;
+            boolean ok = false;
+            for (int attempt = 0; attempt < 2 && !ok; attempt++) {
+                try {
+                    com.berg.orbis.net.OrbisHttp.Response r = com.berg.orbis.net.OrbisHttp.get(p, Map.of("User-Agent", "Orbis-Minecraft-Mod/1.0"), 20);
+                    ok = r.status() == 200 && com.berg.orbis.config.DataSources.isTiff(r.body());
+                } catch (IOException | RuntimeException e) {
+                    ok = false;
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            boolean before = last != null && last[0] == 1;
+            PROBES.put(p, new long[]{ok ? 1 : 0, System.currentTimeMillis()});
+            if (last == null || before != ok) {
+                System.out.println("[orbis] Surface model '" + src.name + "' " + (ok
+                        ? "answers from this network: measured building heights and roofs are on"
+                        : "does not answer from this network: building heights come from the other sources (asked again in 2 minutes)"));
+            }
+            return ok;
+        }
     }
 
     private void noteFailure(RuntimeException e) {
@@ -238,9 +286,7 @@ public class ImageServiceDemSource implements DemSource, TileSource {
                             .replaceAll("\\s+", " ");
                     throw new IOException("not a TIFF: " + head);
                 }
-                Path tmp = cached.resolveSibling(cached.getFileName() + ".tmp");
-                Files.write(tmp, bytes);
-                Files.move(tmp, cached, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                DemTileProvider.writeCached(cached, bytes);
             }
             try {
                 return decodeFloatTiff(bytes, src.noData);

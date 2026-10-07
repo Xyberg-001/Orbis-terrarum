@@ -14,7 +14,6 @@ import dev.isxander.yacl3.api.YetAnotherConfigLib;
 import dev.isxander.yacl3.api.controller.BooleanControllerBuilder;
 import dev.isxander.yacl3.api.controller.CyclingListControllerBuilder;
 import dev.isxander.yacl3.api.controller.DoubleSliderControllerBuilder;
-import dev.isxander.yacl3.api.controller.EnumControllerBuilder;
 import dev.isxander.yacl3.api.controller.IntegerFieldControllerBuilder;
 import dev.isxander.yacl3.api.controller.IntegerSliderControllerBuilder;
 import dev.isxander.yacl3.api.controller.StringControllerBuilder;
@@ -171,17 +170,12 @@ public final class YaclScreens {
 
     /** The scale and terrain options: World scale and World type on the World tab, the technical rest on Advanced. */
     private record ScaleOptions(Option<Double> metersPerBlock, ButtonOption worldPreset, Option<String> projection,
-                                Option<Integer> demZoom, Option<VerticalMode> verticalMode, Option<Integer> reliefKnee,
+                                Option<Integer> demZoom, Option<Integer> reliefKnee,
                                 Option<Integer> reliefSmoothing, Option<Integer> seaLevel, Option<Integer> worldHeight) {
     }
 
     private static ScaleOptions scaleOptions(OrbisConfig c, java.util.Map<String, Option<?>> reg) {
         Option<Double> metersPerBlock = dbl("metersPerBlock", 1.0, 0.25, 64.0, () -> c.metersPerBlock, v -> c.metersPerBlock = v);
-        Option<VerticalMode> verticalMode = Option.<VerticalMode>createBuilder()
-                .name(t("opt.verticalMode")).description(d("opt.verticalMode"))
-                .binding(VerticalMode.RELATIVE, () -> VerticalMode.of(c.verticalMode), v -> c.verticalMode = v.name().toLowerCase(Locale.ROOT))
-                .controller(o -> EnumControllerBuilder.create(o).enumClass(VerticalMode.class))
-                .build();
         Option<String> projection = cycling("projection", "equirectangular", List.of("equirectangular", "transverse_mercator"),
                 () -> c.projection, v -> c.projection = v);
         Option<Integer> demZoom = intSlider("demZoom", 15, 8, 16, 1, () -> c.demZoom, v -> c.demZoom = v, v -> Component.literal(String.valueOf(v)));
@@ -204,7 +198,6 @@ public final class YaclScreens {
                     toast(t("toast.worldType"), value.getDisplayName());
                     boolean map = value == WorldPreset.COUNTRY_MAP_1_32;
                     metersPerBlock.requestSet(map ? 32.0 : 1.0);
-                    verticalMode.requestSet(map ? VerticalMode.CLAMP : VerticalMode.RELATIVE);
                     projection.requestSet(map ? "transverse_mercator" : "equirectangular");
                     demZoom.requestSet(map ? 11 : 15);
                     // Off in a country map: things with a real-world size that cannot be drawn at 32 m per block,
@@ -237,7 +230,7 @@ public final class YaclScreens {
                 .build();
         reg.put("metersPerBlock", metersPerBlock);
         reg.put("projection", projection);
-        return new ScaleOptions(metersPerBlock, preset, projection, demZoom, verticalMode,
+        return new ScaleOptions(metersPerBlock, preset, projection, demZoom,
                 intSlider("reliefKneeMeters", 1500, 0, 6000, 100, () -> (int) c.reliefKneeMeters, v -> c.reliefKneeMeters = v, v -> Component.literal(v + " m")),
                 intSlider("reliefSmoothingKm", 25, 5, 80, 5, () -> (int) c.reliefSmoothingKm, v -> c.reliefSmoothingKm = v, v -> Component.literal(v + " km")),
                 Option.<Integer>createBuilder()
@@ -267,10 +260,11 @@ public final class YaclScreens {
                 .group(OptionGroup.createBuilder()
                         .name(t("group.terrain"))
                         .option(scale.worldHeight())
+                        .option(bool("highAltitudeWindow", true, () -> c.highAltitudeWindow, v -> c.highAltitudeWindow = v))
+                        .option(bool("uniformHeights", false, () -> c.uniformHeights, v -> c.uniformHeights = v))
                         .option(scale.seaLevel())
                         .option(scale.projection())
                         .option(scale.demZoom())
-                        .option(scale.verticalMode())
                         .option(scale.reliefKnee())
                         .option(scale.reliefSmoothing())
                         .option(bool("seaFromElevation", true, () -> c.seaFromElevation, v -> c.seaFromElevation = v))
@@ -381,6 +375,7 @@ public final class YaclScreens {
                         .option(bool("hollowBuildings", true, () -> c.hollowBuildings, v -> c.hollowBuildings = v))
                         .option(bool("buildingWindows", true, () -> c.buildingWindows, v -> c.buildingWindows = v))
                         .option(bool("buildingDoors", true, () -> c.buildingDoors, v -> c.buildingDoors = v))
+                        .option(cycling("buildingHeights", "auto", List.of("auto", "walkable", "scale"), () -> c.buildingHeights, v -> c.buildingHeights = v))
                         .option(intSlider("metersPerStorey", 3, 2, 6, 1, () -> c.metersPerStorey, v -> c.metersPerStorey = v, v -> Component.literal(v + " m")))
                         .build())
                 .group(OptionGroup.createBuilder()
@@ -610,8 +605,13 @@ public final class YaclScreens {
                         .option(bool("pregenPauseWorld", true, () -> c.pregenPauseWorld, v -> c.pregenPauseWorld = v))
                         .option(intSlider("regionPrefetchRadius", 2, 0, 6, 1, () -> c.regionPrefetchRadius, v -> c.regionPrefetchRadius = v, v -> Component.literal(v + " (" + (2 * v + 1) * 512 + " m)")))
                         .option(intSlider("regionCacheSize", 64, 8, 256, 8, () -> c.regionCacheSize, v -> c.regionCacheSize = v, v -> Component.literal(v + " (~" + (v * 6) + " MB)")))
-                        .option(intSlider("terrainOnlyBeyondBlocks", 0, 0, 8192, 256, () -> c.terrainOnlyBeyondBlocks, v -> c.terrainOnlyBeyondBlocks = v,
-                                v -> v == 0 ? t("value.off") : Component.literal(v + " m")))
+                        .build())
+                .group(OptionGroup.createBuilder()
+                        .name(t("group.farView"))
+                        .option(bool("farViewFromData", true, () -> c.farViewFromData, v -> c.farViewFromData = v))
+                        .option(bool("voxyFarView", false, () -> c.voxyFarView, v -> c.voxyFarView = v))
+                        .option(intSlider("voxyFarViewChunks", 512, 64, 1024, 64, () -> c.voxyFarViewChunks, v -> c.voxyFarViewChunks = v,
+                                v -> Component.literal(v + " chunks")))
                         .build())
                 .build();
     }
@@ -634,23 +634,6 @@ public final class YaclScreens {
     }
 
     // ------------------------------------------------------------------ helpers
-
-    public enum VerticalMode implements NameableEnum {
-        RELATIVE, COMPRESS, CLAMP;
-
-        static VerticalMode of(String s) {
-            try {
-                return valueOf(s == null ? "RELATIVE" : s.trim().toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException e) {
-                return RELATIVE;
-            }
-        }
-
-        @Override
-        public Component getDisplayName() {
-            return Component.translatable("orbisterrarum.value.verticalMode." + name().toLowerCase(Locale.ROOT));
-        }
-    }
 
     private static MutableComponent t(String key) {
         return Component.translatable("orbisterrarum." + key);

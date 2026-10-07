@@ -88,10 +88,10 @@
 <div class="wrap">
   <header>
     <h1>Orbis Data Sources</h1>
-    <span class="stamp">Orbis Terrarum 1.1.1 · sources as of 3 Oct 2026 (rev 21: map data from Geofabrik)</span>
+    <span class="stamp">Orbis Terrarum 1.1.1 · sources as of 4 Oct 2026 (rev 24: street map drawn from OpenFreeMap)</span>
   </header>
 
-  <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in. National services (a country's photos, NGU, NVE, NVDB) are used automatically inside their country's outline; the lidar services only when switched on, with a notice at world creation saying what they need (a VPN to Norway for Kartverket) and whether they answer. Data Sources → Downloads by country shows, re-imports and deletes each source's copies.</p>
+  <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in. National services (a country's photos, NGU, NVE, NVDB) are used automatically inside their country's outline; Kartverket's surface model whenever it answers from the player's network (its switch forces it on, with a notice at world creation saying whether it answers). Data Sources → Downloads by country shows, re-imports and deletes each source's copies.</p>
 
   <figure>
     <div class="figure-scroll">
@@ -113,16 +113,16 @@
         <!-- ===== sources: terrain ===== -->
         <g font-size="13" fill="currentColor">
           <rect x="24" y="56" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
-          <text x="36" y="72" font-weight="600">Mapterhorn terrain tiles</text>
-          <text x="36" y="88" font-size="11.5" opacity="0.75">national lidar (Kartverket 1 m) over Copernicus 30 m</text>
+          <text x="36" y="72" font-weight="600">Mapterhorn tiles + GEDTM30</text>
+          <text x="36" y="88" font-size="11.5" opacity="0.75">national lidar (Kartverket 1 m); bare earth 30 m elsewhere</text>
 
           <rect x="24" y="104" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
           <text x="36" y="120" font-weight="600">Open Waters Seascape bathymetry</text>
           <text x="36" y="136" font-size="11.5" opacity="0.75">GEBCO 2026 + regional surveys · sea floor depths</text>
 
-          <rect x="24" y="152" width="270" height="40" rx="3" fill="none" stroke="#b4432f" stroke-width="1.4" stroke-dasharray="5 3" />
-          <text x="36" y="168" font-weight="600" fill="#b4432f">Kartverket WCS: surface model (DOM)</text>
-          <text x="36" y="184" font-size="11.5" fill="#b4432f">building heights and roofs · VPN outside Norway</text>
+          <rect x="24" y="152" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <text x="36" y="168" font-weight="600">Kartverket WCS: surface model (DOM)</text>
+          <text x="36" y="184" font-size="11.5" opacity="0.75">building heights and roofs · when it answers</text>
         </g>
 
         <!-- ===== sources: map data ===== -->
@@ -190,7 +190,7 @@
           <rect x="470" y="56" width="310" height="108" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
           <text x="482" y="76" font-weight="600" font-size="14">1 · Terrain</text>
           <text x="482" y="96">Height per column: Mapterhorn at zoom 15,</text>
-          <text x="482" y="112">1.2 m per pixel at 60° N; zoom 12 where only 30 m data exists</text>
+          <text x="482" y="112">1.2 m per pixel at 60° N; no survey: GEDTM30, blended over 400 m</text>
           <text x="482" y="130">Lidar terrain services dropped: Mapterhorn has them</text>
           <text x="482" y="150">Sea floor: Seascape depth wherever the land data is at 0, down to 300 m</text>
 
@@ -283,15 +283,15 @@
           <path d="M294,548 L440,548 L440,540 L470,540" />
           <path d="M455,548 L455,274 L470,274" />
         </g>
-        <!-- Kartverket (down) -> terrain and buildings, rust -->
-        <g fill="none" stroke="#b4432f" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#arr-rust)">
+        <!-- Kartverket -> buildings (automatic when it answers) -->
+        <g fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#arr)">
           <path d="M294,172 L360,172 L360,256 L470,256" />
         </g>
         <!-- arrow labels -->
         <g font-size="11" fill="currentColor" opacity="0.85">
           <text x="382" y="70" text-anchor="middle">height tiles · on demand</text>
           <text x="367" y="118" text-anchor="middle">depth tiles · on demand</text>
-          <text x="357" y="166" text-anchor="middle" fill="#b4432f">when switched on</text>
+          <text x="357" y="166" text-anchor="middle">when it answers</text>
           <text x="347" y="234" text-anchor="middle">all features</text>
           <text x="404" y="316" font-size="10.5" transform="rotate(90 404 316)" opacity="0.7">OSM feeds every stage</text>
           <text x="327" y="283" text-anchor="middle" font-size="10.5">width · lanes</text>
@@ -338,7 +338,7 @@
         </g>
       </svg>
     </div>
-    <figcaption>Eighteen sources feed five build stages and the sky. Terrain, sea floor, WorldCover, NVDB, imagery, the geological maps and NVE's lake surveys arrive by themselves, and the weather and snow depth are fetched while the world runs; canopy trees, building heights and places need one tool run per area; the OSM extract is imported once. Kartverket's lidar services answer only from some networks (a VPN to Norway works) and half their requests time out, so they are off by default; the surface model has its own switch for measured building heights and roof shapes.</figcaption>
+    <figcaption>Eighteen sources feed five build stages and the sky. Terrain, sea floor, WorldCover, NVDB, imagery, the geological maps and NVE's lake surveys arrive by themselves, and the weather and snow depth are fetched while the world runs; canopy trees, building heights and places need one tool run per area; the OSM extract is imported once. Kartverket's surface model is used for new Norwegian worlds whenever a quick check finds it reachable from the player's network (directly from India since 4 Oct 2026; elsewhere a VPN to Norway may be needed), and its switch forces it on.</figcaption>
   </figure>
 
   <h2>Source register</h2>
@@ -347,12 +347,14 @@
     <thead><tr><th>Source</th><th>Feeds</th><th>How it gets in</th><th>Where it lives</th><th>Licence</th><th>Status</th></tr></thead>
     <tbody>
       <tr><td><strong>Mapterhorn</strong> terrain tiles</td><td>Ground height of every column; bridge and tunnel profiles; building bases</td><td><span class="pill auto">automatic</span> 512 px WebP tiles, zoom 15 (16 max), parent tile where a zoom is missing</td><td class="mono">dem-cache/tiles.mapterhorn.com/</td><td>open data, per-source attribution</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>GEDTM30</strong> bare-earth terrain (OpenLandMap)</td><td>Ground height wherever Mapterhorn has no national survey (Copernicus measures treetops and roofs: forests stood 5–25 m too high); new worlds from 1.1.1</td><td><span class="pill auto">automatic</span> 256 kB range requests into one global 30 m GeoTIFF, only the 2048 px blocks a world touches; blended into the surveys over 400 m</td><td class="mono">dem-cache/gedtm30/</td><td>CC BY 4.0, OpenGeoHub</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>OpenFreeMap</strong> vector tiles (OpenStreetMap, OpenMapTiles schema)</td><td>The street map in the world generator map and the world map (N): streets with names, buildings, shops and other places, house numbers</td><td><span class="pill auto">automatic</span> vector tiles to zoom 14, drawn by the mod (finer zooms from the zoom-14 tile); the weekly build from its TileJSON</td><td class="mono">map-tile-cache/openfreemap/</td><td>ODbL (OpenStreetMap), OpenMapTiles</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Open Waters Seascape</strong> bathymetry</td><td>Sea floor depth wherever the land data sits at sea level: fjords, harbours, open sea (capped at 300 m)</td><td><span class="pill auto">automatic</span> 512 px terrarium WebP, zoom 14 (regional detail) with global GEBCO below</td><td class="mono">dem-cache/tiles.openwaters.io/</td><td>CC BY 4.0, © Open Waters</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>National lidar surface models</strong>: swissSURFACE3D (CH), HRDEM (CA), AHN (NL), IGN MNS (FR), NRW nDOM, Estonia nDSM, ČÚZK DMP 1G (CZ), Oregon, Kentucky, Washington DC, New Brunswick</td><td>Measured building and tree heights and roof shapes, at 1:4 or finer</td><td><span class="pill auto">automatic</span> each inside its country's outline: WCS 2.0 / WMS / ArcGIS exportImage answering for a lat/lon box, 2–6 s a tile; heights above ground get the terrain added, feet become metres</td><td class="mono">dsm-cache/</td><td>CC0, Licence Ouverte, dl-de/zero, CC BY 4.0, state open data</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Lake depth surveys</strong>: Minnesota DNR, Ontario MNRF, Finland's SYKE</td><td>The real bed of surveyed lakes outside Norway, from their depth contours</td><td><span class="pill auto">automatic</span> WFS / ArcGIS per 0.05° tile; contours become soundings every 5 m and build the same smooth bed as NVE's</td><td class="mono">lake-depth-cache/</td><td>Minnesota DNR, OGL-Ontario</td><td><span class="pill ok">working</span> </td></tr>
       <tr><td><strong>Road databases</strong>: BD TOPO (FR), Digiroad (FI), FHWA HPMS (US), BC Digital Road Atlas</td><td>Real road widths and lane counts where OSM has none, like NVDB in Norway (at 1:2 or finer)</td><td><span class="pill auto">automatic</span> WFS / OGC API / ArcGIS per 0.01° tile; the NVDB matcher pairs their lines with OSM roads; HPMS counts both directions, halved for one carriageway of a divided road</td><td class="mono">road-db-cache/</td><td>Licence Ouverte, CC BY 4.0, public domain, OGL-BC</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Building registers</strong>: BD TOPO (FR), 3DBAG (NL), GURS cadastre (SI), Vienna building model, NYC footprints</td><td>Each building's height or floors (and flat roofs in the Netherlands), at any scale, after tags and lidar, before the building atlas</td><td><span class="pill auto">automatic</span> WFS 2.0 / Socrata per 0.01° tile, only the fields needed; matched to OSM buildings by their centre</td><td class="mono">building-db-cache/</td><td>Licence Ouverte, CC BY 4.0, NYC Open Data</td><td><span class="pill ok">working</span> <span class="pill down">3DBAG down 1 Oct 2026</span></td></tr>
-      <tr><td><strong>Kartverket WCS</strong> surface model (DOM)</td><td>Measured building heights and roof shapes</td><td><span class="pill off">off by default</span> GeoTIFF web service: <code>lidarSurfaceModel</code> (Advanced tab; three tries a tile, tiles under buildings fetched six at a time; a "Before generating" notice says it needs a VPN outside Norway and whether it answers)</td><td class="mono">dsm-cache/</td><td>CC BY 4.0</td><td><span class="pill ok">works via a VPN to Norway</span> <span class="pill down">half the requests time out</span></td></tr>
+      <tr><td><strong>Kartverket WCS</strong> surface model (DOM)</td><td>Measured building heights and roof shapes</td><td><span class="pill auto">automatic when it answers</span> GeoTIFF web service, used for new Norwegian worlds whenever a quick check finds it reachable from the player's network (again every 10 min while it is not); <code>lidarSurfaceModel</code> forces it on (Advanced tab, with a "Before generating" reachability notice). Three tries a tile, tiles under buildings fetched six at a time</td><td class="mono">dsm-cache/</td><td>CC BY 4.0</td><td><span class="pill ok">answers directly from India since 4 Oct 2026 (1.6 s a tile)</span></td></tr>
       <tr><td><strong>OpenStreetMap</strong> extracts</td><td>Buildings, roads, rails, water, land use, trees, furniture, shops, stations, landmarks</td><td><span class="pill auto">offered at Create</span> Geofabrik's smallest region file holding the world's area, downloaded in the background; only the area imported (memory by area), the file deleted. <code>/orbis mapdata</code> on servers, <code>/orbis import &lt;pbf&gt;</code> for whole countries; Overpass on demand elsewhere</td><td class="mono">extracts/bergen-full, extracts/norway, osm-cache/</td><td>ODbL</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>NVDB</strong> road database</td><td>Real road widths and lane counts (Norway)</td><td><span class="pill auto">automatic</span> API v4, fetched with each region</td><td class="mono">nvdb-cache/</td><td>NLOD</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Overture Places</strong></td><td>Shops, bars, museums, clinics OSM lacks: interiors and door signs</td><td>one-time: <code>overturemaps download --type=place</code> then <code>/orbis import-places</code></td><td class="mono">places/</td><td>CDLA-Permissive 2.0</td><td><span class="pill ok">working</span></td></tr>

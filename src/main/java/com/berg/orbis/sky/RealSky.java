@@ -74,6 +74,13 @@ public final class RealSky {
                 if (Seasons.update(packs, m.cfg().originLat, seasons)) {
                     System.out.println("[orbis] Season now " + Seasons.seasonName(m.cfg().originLat) + ": the world shows it from the next time it is opened");
                 }
+                // A season pack the world has not switched on (new, or once left out of a reload and so disabled):
+                // switch it on with a reload once the server is idle, so the world shows it from the next opening.
+                if (java.nio.file.Files.isDirectory(packs.resolve(Seasons.PACK_NAME))
+                        && !server.getPackRepository().getSelectedIds().contains("file/" + Seasons.PACK_NAME)) {
+                    System.out.println("[orbis] The season pack is not switched on in this world: switching it on");
+                    com.berg.orbis.worldgen.Landmarks.requestPackReload(server);
+                }
             }
         });
         ServerTickEvents.END_SERVER_TICK.register(RealSky::tick);

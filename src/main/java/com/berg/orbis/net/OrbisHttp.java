@@ -173,13 +173,57 @@ public final class OrbisHttp {
 
     private OrbisHttp() {}
 
+    /** Requests running now, by host: what pre-generation is waiting for, shown to the players (PregenTask's bar). */
+    private static final ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> ACTIVE = new ConcurrentHashMap<>();
+
+    /** The hosts with requests running now and how many each. */
+    public static Map<String, Integer> activeRequests() {
+        Map<String, Integer> out = new java.util.TreeMap<>();
+        ACTIVE.forEach((h, n) -> {
+            int v = n.get();
+            if (v > 0) out.put(h, v);
+        });
+        return out;
+    }
+
+    private static java.util.concurrent.atomic.AtomicInteger begin(String url) {
+        String host;
+        try {
+            host = URI.create(url).getHost();
+        } catch (IllegalArgumentException e) {
+            host = null;
+        }
+        java.util.concurrent.atomic.AtomicInteger n = ACTIVE.computeIfAbsent(host == null ? "?" : host, h -> new java.util.concurrent.atomic.AtomicInteger());
+        n.incrementAndGet();
+        return n;
+    }
+
+    /** Bytes of response bodies received since the game started (all hosts), for speed and data-use figures. */
+    private static final java.util.concurrent.atomic.AtomicLong RECEIVED = new java.util.concurrent.atomic.AtomicLong();
+
+    public static long bytesReceived() {
+        return RECEIVED.get();
+    }
+
     public static Response get(String url, Map<String, String> headers, int timeoutSeconds) throws IOException, InterruptedException {
-        return send("GET", url, headers, null, null, timeoutSeconds);
+        java.util.concurrent.atomic.AtomicInteger n = begin(url);
+        try {
+            Response r = send("GET", url, headers, null, null, timeoutSeconds);
+            if (r != null && r.body() != null) RECEIVED.addAndGet(r.body().length);
+            return r;
+        } finally {
+            n.decrementAndGet();
+        }
     }
 
     public static Response post(String url, Map<String, String> headers, String contentType, byte[] body, int timeoutSeconds)
             throws IOException, InterruptedException {
-        return send("POST", url, headers, contentType, body, timeoutSeconds);
+        java.util.concurrent.atomic.AtomicInteger n = begin(url);
+        try {
+            return send("POST", url, headers, contentType, body, timeoutSeconds);
+        } finally {
+            n.decrementAndGet();
+        }
     }
 
     private static Response send(String method, String url, Map<String, String> headers, String contentType, byte[] body, int timeoutSeconds)
@@ -276,6 +320,16 @@ public final class OrbisHttp {
      * for 60 s is dropped (the part stays for next time); {@code cancelled} stops it between reads.
      */
     public static void download(String url, java.nio.file.Path target, Map<String, String> headers, DownloadProgress progress,
+                                java.util.function.BooleanSupplier cancelled) throws IOException, InterruptedException {
+        java.util.concurrent.atomic.AtomicInteger n = begin(url);
+        try {
+            downloadInner(url, target, headers, progress, cancelled);
+        } finally {
+            n.decrementAndGet();
+        }
+    }
+
+    private static void downloadInner(String url, java.nio.file.Path target, Map<String, String> headers, DownloadProgress progress,
                                 java.util.function.BooleanSupplier cancelled) throws IOException, InterruptedException {
         java.nio.file.Path part = target.resolveSibling(target.getFileName() + ".part");
         java.nio.file.Files.createDirectories(target.toAbsolutePath().getParent());

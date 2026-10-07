@@ -240,7 +240,7 @@ public final class BlockMapClient {
     }
 
     /** Light grey haze over the region's ungenerated chunks inside the hard limit (outside it the map shades red). */
-    private static final int VEIL = 0x8CD4D8DC;
+    private static final int VEIL = 0x80F5A04A; // orange haze (grey until 4 Oct 2026, lost on the light street map)
 
     private static void veil(Minecraft mc, Mask m, int rx, int rz) {
         com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;

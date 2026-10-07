@@ -103,6 +103,47 @@ public final class HeightStore {
             return best;
         }
 
+        /**
+         * The tallest atlas building whose centre lies inside the outline (lat, lon rings), or NaN. For buildings too
+         * big for the 20 m centre match: a sports hall's centre can be 40 m from the atlas point of its own roof.
+         */
+        public double heightWithin(List<List<LatLon>> rings) {
+            double s = 90, w = 180, n = -90, e = -180;
+            for (List<LatLon> ring : rings) {
+                for (LatLon p : ring) {
+                    s = Math.min(s, p.lat());
+                    n = Math.max(n, p.lat());
+                    w = Math.min(w, p.lon());
+                    e = Math.max(e, p.lon());
+                }
+            }
+            if (s > n || (n - s) * (e - w) > 1e-4) return Double.NaN; // nothing, or larger than a few hundred metres
+            double best = Double.NaN;
+            for (int bz = (int) Math.floor(s / 0.0005); bz <= (int) Math.floor(n / 0.0005); bz++) {
+                for (int bx = (int) Math.floor(w / 0.0005); bx <= (int) Math.floor(e / 0.0005); bx++) {
+                    List<int[]> bucket = grid.get(bucketKey(bz, bx));
+                    if (bucket == null) continue;
+                    for (int[] ref : bucket) {
+                        double[] p = points.get(ref[0]);
+                        if (p[0] < s || p[0] > n || p[1] < w || p[1] > e || !inside(rings, p[0], p[1])) continue;
+                        if (Double.isNaN(best) || p[2] > best) best = p[2];
+                    }
+                }
+            }
+            return best;
+        }
+
+        private static boolean inside(List<List<LatLon>> rings, double lat, double lon) {
+            boolean in = false;
+            for (List<LatLon> ring : rings) {
+                for (int i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+                    LatLon a = ring.get(i), b = ring.get(j);
+                    if ((a.lat() > lat) != (b.lat() > lat) && lon < (b.lon() - a.lon()) * (lat - a.lat()) / (b.lat() - a.lat()) + a.lon()) in = !in;
+                }
+            }
+            return in;
+        }
+
         void add(long id, double lat, double lon, float h) {
             if (id != 0) byId.put(id, h);
             int index = points.size();

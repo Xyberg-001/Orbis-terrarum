@@ -109,10 +109,12 @@ public final class MapDataJob {
                     // Time left at the speed so far (Geofabrik can be slow from far away: 165 KB/s from India).
                     double secs = (System.currentTimeMillis() - started) / 1000.0;
                     double rate = secs > 3 ? (done - from[0]) / secs : 0;
-                    String left = total > 0 && rate > 0 ? ", " + duration((total - done) / rate) + " left" : "";
+                    // Short enough for the toast, whose title names the place already ("Downloading Nepal: 14 of
+                    // 395 MB, 46 min left" lost its last word).
+                    String left = total > 0 && rate > 0 ? " · " + duration((total - done) / rate) + " left" : "";
                     listener.progress(total > 0
-                            ? String.format(Locale.ROOT, "Downloading %s: %,d of %,d MB%s", place, done >> 20, total >> 20, left)
-                            : String.format(Locale.ROOT, "Downloading %s: %,d MB", place, done >> 20), f);
+                            ? String.format(Locale.ROOT, "%,d of %,d MB%s", done >> 20, total >> 20, left)
+                            : String.format(Locale.ROOT, "%,d MB downloaded", done >> 20), f);
                 }, () -> stop);
             }
             listener.progress("Keeping this world's area...", -1f);

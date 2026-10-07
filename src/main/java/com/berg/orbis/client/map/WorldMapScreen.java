@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * The world map (key N): the real world under the Minecraft world, as a street map, satellite photos with place
+ * The world map (key B by default): the real world under the Minecraft world, as a street map, satellite photos with place
  * names, or elevation in colour, lined up with the blocks through the world's own projection. Shows you (an arrow
  * facing where you look), other players in sight, the world spawn, your marks and a searched place; drag to
  * move, scroll to zoom, right-click to teleport, mark a place or copy its coordinates. Needs the server to run
@@ -36,6 +36,7 @@ public final class WorldMapScreen extends Screen {
     private static final int BG = 0xFF1E2227, TOP_BG = 0xE8101418;
     private static final int WHITE = 0xFFFFFFFF, GREY = 0xFFA0A8B0, YELLOW = 0xFFFACC15, RED = 0xFFF87171, CYAN = 0xFF67E8F9, GREEN = 0xFF4ADE80;
     private static MapTiles.Layer lastLayer = MapTiles.Layer.STREET;
+    private net.minecraft.client.gui.components.Button nightButton;
     private static double lastScale = -1;
     /** The Minecraft layer's opacity: 0 off, then 35%, 70%, 100%. */
     private static final int[] BLOCK_ALPHA = {0, 90, 180, 255};
@@ -129,11 +130,18 @@ public final class WorldMapScreen extends Screen {
             greyOut = !greyOut;
             b.setMessage(greyLabel());
         }).bounds(bx[bi++], 2, 72, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.grey.tip"))).build());
+        if (canvas.layer.isStreet()) canvas.layer = MapTiles.Layer.street(OrbisMod.config().streetMapDark);
         addRenderableWidget(Button.builder(Component.literal(canvas.layer.label), b -> {
             canvas.layer = canvas.layer.next();
             lastLayer = canvas.layer;
             b.setMessage(Component.literal(canvas.layer.label));
+            if (nightButton != null) nightButton.visible = canvas.layer.isStreet();
         }).bounds(bx[bi++], 2, 96, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.layer.tip"))).build());
+        // Night mode for the street map: on the map's right edge, under the credit line.
+        nightButton = addRenderableWidget(MapTiles.nightButton(() -> canvas.layer, l -> {
+            canvas.layer = l;
+            lastLayer = l;
+        }, width - 24, TOP_H + 14));
         addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.me"), b -> centreOnPlayer())
                 .bounds(bx[bi++], 2, 46, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.me.tip"))).build());
         if (select == null && mapper != null && MapSelectTool.allowed(minecraft)) {
@@ -149,7 +157,8 @@ public final class WorldMapScreen extends Screen {
             }
             canvas.clamp();
             viewSet = true;
-            status = Component.translatable("orbisterrarum.map.help").getString();
+            status = Component.translatable("orbisterrarum.map.help", com.berg.orbis.client.OrbisClient.MAP_KEY == null ? Component.literal("B")
+                    : com.berg.orbis.client.OrbisClient.MAP_KEY.getTranslatedKeyMessage()).getString();
             statusUntil = System.currentTimeMillis() + 5000;
         }
     }
@@ -324,8 +333,10 @@ public final class WorldMapScreen extends Screen {
         menuAt = canvas.latLonAt(x, y);
         menuMark = markNear(x, y);
         menuItems.clear();
-        // /tpll is for operators; the server only sends a player the commands they may run.
-        if (minecraft.player != null && minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null) {
+        // /tpll (Orbis on the server) or vanilla /tp (a server without it) is for operators; the server only sends a
+        // player the commands they may run.
+        if (minecraft.player != null && (minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null
+                || minecraft.player.connection.getCommands().getRoot().getChild("tp") != null)) {
             menuItems.add("teleport");
         }
         menuItems.add(menuMark == null ? "mark" : "unmark");
@@ -353,7 +364,12 @@ public final class WorldMapScreen extends Screen {
         int[] b = mapper.toBlock(lat, lon);
         switch (item) {
             case "teleport" -> {
-                minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tpll %.6f %.6f", lat, lon));
+                if (minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null) {
+                    minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tpll %.6f %.6f", lat, lon));
+                } else {
+                    // A server without Orbis (no /tpll): vanilla's teleport, keeping the height (operators only).
+                    minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tp @s %d ~ %d", b[0], b[1]));
+                }
                 onClose();
             }
             case "mark" -> {
@@ -418,8 +434,10 @@ public final class WorldMapScreen extends Screen {
             drawLimitLegend(g);
             if (select != null) select.drawPanel(g, font, width, height);
             if (canvas.contains(mouseX, mouseY) && menuItems.isEmpty()) drawReadout(g, mouseX, mouseY);
-            String credit = canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri" : "Map tiles © Esri";
-            g.text(font, credit, width - font.width(credit) - 4, TOP_H + 3, 0xC0000000, false);
+            String credit = canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri"
+                    : canvas.layer == com.berg.orbis.client.MapTiles.Layer.STREET || canvas.layer == com.berg.orbis.client.MapTiles.Layer.STREET_DARK
+                    ? com.berg.orbis.client.StreetTiles.CREDIT : "Map tiles © Esri";
+            com.berg.orbis.client.MapTiles.drawCredit(g, font, credit, width - 4, TOP_H + 3, width);
             // Bottom right, above the bottom line (the readout).
             if (canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION) {
                 com.berg.orbis.client.ElevationTiles.drawLegend(g, font, width - 4, select != null && select.generateShown() ? height - 62 : height - 19);
@@ -428,6 +446,7 @@ public final class WorldMapScreen extends Screen {
         g.fill(0, 0, width, TOP_H, TOP_BG);
         drawStatus(g);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
+        MapTiles.drawNightIcon(g, nightButton, canvas.layer);
         if (select != null) select.drawIcons(g);
         if (!menuItems.isEmpty()) drawMenu(g, mouseX, mouseY);
     }
@@ -493,7 +512,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     /** Outside the hard limit: a dark red tint (the not-generated haze is light grey, and never drawn there). */
-    private static final int LIMIT_SHADE = 0x9C3A0A12, LIMIT_EDGE = 0xFFF87171, VEIL_SWATCH = 0xFFD4D8DC;
+    private static final int LIMIT_SHADE = 0x9C3A0A12, LIMIT_EDGE = 0xFFF87171, VEIL_SWATCH = 0xFFF5A04A;
 
     /**
      * With the server's hard limit on: everything outside the allowed area darkened (it never generates), with a red

@@ -21,7 +21,7 @@ import java.util.List;
 public class OrbisConfig {
 
     /** Bumped when defaults change in a way that an old file should pick up (network settings, world height). */
-    public static final int CURRENT_CONFIG_VERSION = 17;
+    public static final int CURRENT_CONFIG_VERSION = 18;
     public int configVersion = CURRENT_CONFIG_VERSION;
 
     /** Fixed by data/minecraft/dimension_type/overworld.json: the engine maximum of Y -2032..2031. */
@@ -56,6 +56,15 @@ public class OrbisConfig {
      * mountains and 332 for the sea floor. Changing it needs a new world.
      */
     public int seaLevelY = DEFAULT_SEA_LEVEL_Y;
+
+    /**
+     * The sea's surface, Y: sea level, or in a high-altitude window world (sea level under the floor) a shallow sea
+     * on the floor, level with the low ground the window eases down there (see VerticalMapping). Every water surface
+     * and anything sea level decides above or below goes by this; the metres-to-Y mapping by seaLevelY.
+     */
+    public int waterLevelY() {
+        return Math.max(seaLevelY, minY + 8);
+    }
     public int minY = DIMENSION_MIN_Y;
     /**
      * Height of new worlds in blocks (a multiple of 16, 1024..4064), or 0 to fit it to the terrain around the
@@ -64,15 +73,32 @@ public class OrbisConfig {
      * level never move. Fixed once a world exists (see worldgen/WorldHeight).
      */
     public int worldHeight = 0;
+    /**
+     * New worlds whose area has no sea and lies high (mountains, plateaus) get the world's height range laid over the
+     * area's own ground instead of anchored to sea level, all 1:1 (see WorldHeight.window). Off for a mountain world
+     * meant to reach a coast far away: its sea level then stays inside the world.
+     */
+    public boolean highAltitudeWindow = true;
+    /**
+     * New worlds with every height scaled by one factor: just enough that the highest ground of the world's area fits
+     * under the ceiling (heightSquash), the same everywhere, so no region is lowered and no mountain is squeezed
+     * unless it is taller than the area's own. Off by default: a mountain area comes out flatter. Takes the place of
+     * the high-altitude window. Worked out when a world is created in singleplayer (see WorldHeight.uniform).
+     */
+    public boolean uniformHeights = false;
+    /** Real metres per block of height, over the scale's own: 1 except in a uniform-heights world (set when it is made). */
+    public double heightSquash = 1;
+
+    /** Real metres one block of height stands for: the scale, times a uniform-heights world's squash. */
+    public double verticalMetersPerBlock() {
+        return metersPerBlock * Math.max(1, heightSquash);
+    }
 
     // ---- vertical mapping (how real metres become block Y) ------------------
     /**
-     * "relative" (default): 1:1 up to reliefKneeMeters; above it the terrain is
-     * lowered by how far the regional (~25 km) average exceeds the knee, so
-     * high plateaus sink but peaks keep their full local relief, and the top
-     * of the range is squeezed smoothly instead of cut flat. "compress": only
-     * the smooth squeeze near the ceiling. "clamp": plain 1:1, cut off at the
-     * dimension limit (Everest becomes a 2031-high mesa).
+     * How a world turns metres into Y (see VerticalMapping). Not a choice any more: each new world gets it from
+     * VerticalMapping.modeForNewWorld (or the high-altitude window), and an existing world keeps the one it was
+     * made with. Here it only carries a world's value into its working config.
      */
     public String verticalMode = "relative";
     /** Elevation (m) below which the world is exactly 1:1 in relative mode. */
@@ -114,6 +140,44 @@ public class OrbisConfig {
      * lidar terrain models (Norway, Switzerland, Austria, Germany, Japan, USA, ...) over Copernicus GLO-30.
      */
     public String demTileUrl = com.berg.orbis.dem.DemTileProvider.MAPTERHORN_URL;
+    /**
+     * Where Mapterhorn has no national survey, the ground from GEDTM30 (Copernicus with trees and buildings taken out)
+     * instead of Copernicus itself, blended into the surveys at their edges (dem/BareEarthBlend). For new worlds: a
+     * world keeps what it was made with (WorldSettings), so its new chunks meet its old ones.
+     */
+    public boolean bareEarthTerrain = true;
+    /**
+     * How vanilla's underground is laid out (worldgen/UndergroundBand). 1: the band 100 blocks under the lowest
+     * ground everywhere, deepslate from a fixed Y, no cave biomes (worlds before 1.1.1). 2: the band 30 blocks under
+     * wild ground and 100 under towns, roads and tunnels; deepslate from the band's vanilla Y 0; Deep Dark (with
+     * Ancient Cities), Lush Caves and Dripstone Caves in the band; buried treasure under the beach sand. New worlds
+     * take this value; a world keeps the one it was made with (WorldSettings).
+     */
+    public int undergroundVersion = 2;
+    /**
+     * Mountain biomes by the shape of the ground: the upper slopes and tops of steep relief (300 m or more within
+     * half a kilometre) become Windswept Hills / Forest in cool climates, Snowy Slopes, Grove or Jagged Peaks where it
+     * is snowy all year, Windswept Savanna in dry ones. New worlds take this value; a world keeps its own.
+     */
+    public boolean reliefBiomes = true;
+    /**
+     * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
+     * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
+     * vanilla's per real square kilometre; 1 keeps vanilla's.
+     */
+    public double undergroundStructureShare = 0.33;
+    /**
+     * Distant Horizons draws areas nobody has generated yet from the world's data (elevation, climate, snow, map data
+     * already loaded), as the generator will paint them; off, only generated chunks show in its far view.
+     */
+    public boolean farViewFromData = true;
+    /**
+     * With Voxy installed (singleplayer for now): its far view of land not generated yet, painted from the world's data
+     * (compat/voxy/VoxyFarView), out to {@link #voxyFarViewChunks} chunks around the player. A prototype: off unless
+     * switched on (Mod Menu > Orbis Terrarum > Performance > Far view); applies at once.
+     */
+    public boolean voxyFarView = false;
+    public int voxyFarViewChunks = 512;
     /** Real sea floor from Open Waters Seascape (GEBCO + regional surveys) wherever the land data is at sea level. */
     public boolean useBathymetry = true;
     public String bathymetryTileUrl = com.berg.orbis.dem.DemTileProvider.SEASCAPE_URL;
@@ -197,6 +261,12 @@ public class OrbisConfig {
      * kept in dsm-cache, so it is only needed while generating new areas.
      */
     public boolean lidarSurfaceModel = false;
+    /**
+     * With the switch above off, use Kartverket's surface model anyway for new Norwegian worlds while it answers
+     * from this network (asked when first needed, then every ten minutes while it does not). It became reachable
+     * without a VPN from India on 4 Oct 2026; a network that cannot reach it just gets the other height sources.
+     */
+    public boolean kartverketWhenReachable = true;
     /** Terrain (bare earth) sources, tried in order before the global tiles. */
     public List<ElevationSource> elevationSources = defaultElevationSources();
     /**
@@ -481,6 +551,8 @@ public class OrbisConfig {
 
     /** Size of the markers on the world map (player arrows, spawn, pins and their labels): 0.5 to 3. */
     public double mapMarkerScale = 1.0;
+    /** The street map in its night colours (the moon button on the map). */
+    public boolean streetMapDark = false;
 
     // ---- the real sky and seasons: defaults for new worlds, and an off switch for every world this game or server runs ----
     /** The sun rises and sets when it really does at the world's origin, and the moon shows its real phase. */
@@ -658,15 +730,6 @@ public class OrbisConfig {
     public int regionPrefetchRadius = 2;
     /** Block chunk generation until the region's OSM data has been fetched. If false, chunks whose data is not yet available are generated as terrain only. */
     public boolean waitForOsm = true;
-    /**
-     * Chunks farther than this many blocks from every player generate at once
-     * from elevation alone (terrain and sea, no buildings or roads) instead of
-     * waiting for OpenStreetMap data. Meant for distant-horizon mods such as
-     * Voxy WorldGen that generate huge radii for LODs: those chunks are not
-     * saved, so they come back in full detail when you actually get there.
-     * 0 = off (every chunk waits for its data).
-     */
-    public int terrainOnlyBeyondBlocks = 0;
 
     // ---- feature toggles ----------------------------------------------------
     public boolean generateBuildings = true;
@@ -757,6 +820,13 @@ public class OrbisConfig {
     public double temperatureOffsetC = 0.0;
     public int maxBuildingHeightBlocks = 450;
     public int metersPerStorey = 3;
+    /**
+     * How building heights become blocks: "scale" (true to scale, like the terrain), "walkable" (one block a metre,
+     * three blocks a storey, at any scale) or "auto" (walkable at 1:2 and finer, true to scale coarser, where
+     * buildings are too small to enter and towers on shrunken footprints would look wrong). New worlds take this
+     * value; a world keeps the one it was made with (WorldSettings).
+     */
+    public String buildingHeights = "auto";
     public boolean debugLogging = false;
 
     // serializeSpecialFloatingPointValues: ElevationSource.noData defaults to NaN.
@@ -801,6 +871,22 @@ public class OrbisConfig {
         configVersion = CURRENT_CONFIG_VERSION;
         sanitize();
         configVersion = Math.max(v, CURRENT_CONFIG_VERSION);
+    }
+
+    /** Whether building heights are one block a metre (floors walkable) rather than true to scale. */
+    public boolean walkableBuildings() {
+        if ("walkable".equals(buildingHeights)) return true;
+        if ("scale".equals(buildingHeights)) return false;
+        return metersPerBlock <= 2.0;
+    }
+
+    /** Running as a dedicated server (false outside Fabric, as in the offline road tests, where asking would fail the load). */
+    private static boolean dedicatedServer() {
+        try {
+            return net.fabricmc.loader.api.FabricLoader.getInstance().getEnvironmentType() == net.fabricmc.api.EnvType.SERVER;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     private void sanitize() {
@@ -886,6 +972,16 @@ public class OrbisConfig {
                 for (LakeSurveySource s : lakeSurveySources) if (s != null && s.name.startsWith("fi-syke")) s.enabled = true;
             }
         }
+        if (configVersion < 18 && dedicatedServer()) {
+            // A server whose world was made without the Create screen takes its terrain from this file: it keeps the
+            // terrain, buildings and underground it was generated with. For a new world, set bareEarthTerrain to true,
+            // buildingHeights to "auto", undergroundVersion to 2 and reliefBiomes to true.
+            bareEarthTerrain = false;
+            buildingHeights = "scale";
+            undergroundVersion = 1;
+            reliefBiomes = false;
+            kartverketWhenReachable = false;
+        }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.
             elevationSources = new ArrayList<>(elevationSources);
@@ -907,13 +1003,13 @@ public class OrbisConfig {
         minY = DIMENSION_MIN_Y; // the floor is fixed by the sea level and the sea floor beneath it
         if (worldHeight < 0) worldHeight = 0;
         if (worldHeight > 0) worldHeight = com.berg.orbis.worldgen.WorldHeight.snap(worldHeight);
-        if (seaLevelY < minY + 64) seaLevelY = minY + 64;
+        // Under the floor is a high-altitude window world (WorldHeight.window): no sea in it to make room for.
+        if (seaLevelY < minY + 64 && seaLevelY >= minY) seaLevelY = minY + 64;
         if (seaLevelY > maxY() - 512) seaLevelY = maxY() - 512;
         if (verticalMode == null) verticalMode = "relative";
         if (reliefKneeMeters < 0) reliefKneeMeters = 0;
         if (reliefSmoothingKm < 2) reliefSmoothingKm = 2;
         if (softCeilingBlocks < 50) softCeilingBlocks = 50;
-        if (terrainOnlyBeyondBlocks < 0) terrainOnlyBeyondBlocks = 0;
         if (regionPrefetchRadius < 0) regionPrefetchRadius = 0;
         if (regionPrefetchRadius > 6) regionPrefetchRadius = 6;
         if (overpassConcurrentRequests > 8) overpassConcurrentRequests = 8;
@@ -942,7 +1038,10 @@ public class OrbisConfig {
         if (worldCoverUrl == null || worldCoverUrl.isBlank()) worldCoverUrl = com.berg.orbis.landcover.WorldCoverProvider.DEFAULT_URL;
         if (bathymetryTileUrl == null || bathymetryTileUrl.isBlank()) bathymetryTileUrl = com.berg.orbis.dem.DemTileProvider.SEASCAPE_URL;
         if (maxSeaDepthMeters < 10) maxSeaDepthMeters = 10;
-        if (maxSeaDepthMeters > (seaLevelY - minY - 12) * metersPerBlock) maxSeaDepthMeters = (seaLevelY - minY - 12) * metersPerBlock;
+        if (!(heightSquash >= 1)) heightSquash = 1;
+        if (heightSquash > 16) heightSquash = 16;
+        double seaRoom = (seaLevelY - minY - 12) * verticalMetersPerBlock(); // none in a window world: its sea is shallow anyway
+        if (seaRoom >= 10 && maxSeaDepthMeters > seaRoom) maxSeaDepthMeters = seaRoom;
         if (metersPerStorey < 2) metersPerStorey = 2;
         if (overpassConcurrentRequests < 1) overpassConcurrentRequests = 1;
         if (overpassUrls == null || overpassUrls.isEmpty()) {
@@ -965,6 +1064,10 @@ public class OrbisConfig {
         if (imageryZoom > 20) imageryZoom = 20;
         if (roadCenterLineColour == null) roadCenterLineColour = "white";
         if (climateOverride == null) climateOverride = "";
+        if (buildingHeights == null || !List.of("auto", "walkable", "scale").contains(buildingHeights)) buildingHeights = "auto";
+        if (undergroundVersion < 1 || undergroundVersion > 2) undergroundVersion = 2;
+        if (Double.isNaN(undergroundStructureShare)) undergroundStructureShare = 0.33;
+        undergroundStructureShare = Math.max(0.05, Math.min(1, undergroundStructureShare));
         if (projection == null || projection.isBlank()) projection = "equirectangular";
         if (dataFolder == null) dataFolder = "";
         if (!(mapMarkerScale >= 0.5)) mapMarkerScale = 1.0;

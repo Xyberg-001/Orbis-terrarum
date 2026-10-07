@@ -11,7 +11,6 @@ import com.berg.orbis.worldgen.WorldHeight;
 import com.berg.orbis.worldgen.WorldModel;
 import com.mojang.datafixers.util.Pair;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.AlertScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
@@ -42,6 +41,10 @@ public final class SpawnGate {
     private static int ticks;
     private static long startedAt;
     private static CompletableFuture<Integer> fit;
+    /** The high-altitude window the fit chose for the world being created, or null (see WorldHeight.window). */
+    private static volatile WorldHeight.Window window;
+    /** The uniform heights the fit chose for the world being created, or null (see WorldHeight.uniform). */
+    private static volatile WorldHeight.Uniform uniform;
     /** Non-zero while the creation context is reloading with the height pack; the value it must reach. */
     private static int awaitingHeight;
     private static long awaitingSince;
@@ -70,6 +73,20 @@ public final class SpawnGate {
             return stem == null ? OrbisConfig.DIMENSION_HEIGHT : stem.type().value().height();
         } catch (RuntimeException e) {
             return OrbisConfig.DIMENSION_HEIGHT;
+        }
+    }
+
+    /**
+     * True while the new world's structure pack (fewer mineshafts, trial chambers and Ancient Cities) is not yet in
+     * the creation context; it goes in with the height pack, in the same data pack reload.
+     */
+    private static boolean structuresPending(CreateWorldScreen screen) {
+        if (generatorForScreen(screen) == null || OrbisMod.config().undergroundStructureShare >= 1) return false;
+        try {
+            return !screen.getUiState().getSettings().dataConfiguration().dataPacks().getEnabled()
+                    .contains("file/" + com.berg.orbis.worldgen.StructureDensity.PACK_NAME);
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 
@@ -200,13 +217,40 @@ public final class SpawnGate {
             RealWorldChunkGenerator rw = generatorForScreen(screen);
             int requested = rw != null && rw.settings().isPresent() ? rw.settings().get().worldHeight : OrbisMod.config().worldHeight;
             WorldModel model = m;
-            fit = CompletableFuture.supplyAsync(() -> WorldHeight.resolve(requested, model));
+            window = null;
+            uniform = null;
+            fit = CompletableFuture.supplyAsync(() -> {
+                // Uniform heights: one factor for every height, as small as the area's highest ground allows.
+                WorldHeight.Uniform u = WorldHeight.uniform(model, requested);
+                uniform = u;
+                if (u != null) return requested > 0 ? WorldHeight.snap(requested) : WorldHeight.uniformHeight(model, u);
+                // A world of mountains with no sea gets its heights laid over its own range (worked out with the
+                // model as it is: the elevations, not the mapping, decide it).
+                WorldHeight.Window w = requested <= 0 ? WorldHeight.window(model) : null;
+                window = w;
+                return w != null ? WorldHeight.windowHeight(model, w) : WorldHeight.resolve(requested, model);
+            });
         }
         show();
     }
 
+    /**
+     * Shows the wait screen once; it asks {@link #waitText} for its text every second itself. It used to be replaced
+     * by a new screen every second to update the count, and each replacement flashed the background and the button.
+     */
     private static void show() {
         Minecraft mc = Minecraft.getInstance();
+        CreateWorldScreen back = pending;
+        shown = new WaitScreen(Component.translatable("orbisterrarum.spawnwait.title"), SpawnGate::waitText, () -> {
+            pending = null;
+            shown = null;
+            fit = null;
+            mc.gui.setScreen(back);
+        });
+        mc.gui.setScreen(shown);
+    }
+
+    private static Component waitText() {
         WorldModel m = modelForScreen(pending);
         OsmRegionManager regions = m == null ? null : m.regions();
         int ready = regions == null ? 0 : regions.spawnRegionsReady();
@@ -215,17 +259,64 @@ public final class SpawnGate {
         String place = m == null ? "" : m.cfg().customSpawn
                 ? String.format(java.util.Locale.ROOT, "%.4f, %.4f", m.cfg().spawnLat, m.cfg().spawnLon)
                 : String.format(java.util.Locale.ROOT, "%.4f, %.4f", m.cfg().originLat, m.cfg().originLon);
-        Component text = Component.translatable("orbisterrarum.spawnwait.text", place, ready, total, seconds)
+        return Component.translatable("orbisterrarum.spawnwait.text", place, ready, total, seconds)
                 .append("\n\n")
                 .append(Component.translatable(seconds > 90 ? "orbisterrarum.spawnwait.slow" : "orbisterrarum.spawnwait.hint"));
-        CreateWorldScreen back = pending;
-        shown = new AlertScreen(() -> {
-            pending = null;
-            shown = null;
-            fit = null;
-            mc.gui.setScreen(back);
-        }, Component.translatable("orbisterrarum.spawnwait.title"), text, Component.translatable("gui.back"), true);
-        mc.gui.setScreen(shown);
+    }
+
+    /** A title, a text that changes while it waits (asked once a second) and a Back button, laid out like AlertScreen. */
+    static final class WaitScreen extends Screen {
+        private final java.util.function.Supplier<Component> text;
+        private final Runnable back;
+        private List<net.minecraft.util.FormattedCharSequence> lines = List.of();
+        private long nextText;
+
+        WaitScreen(Component title, java.util.function.Supplier<Component> text, Runnable back) {
+            super(title);
+            this.text = text;
+            this.back = back;
+        }
+
+        private void refresh() {
+            lines = font.split(text.get(), width - 50);
+            nextText = System.currentTimeMillis() + 1000;
+        }
+
+        private int top() {
+            return Math.max(10, (height - (lines.size() * 9 + 20 + 32)) / 2);
+        }
+
+        @Override
+        protected void init() {
+            refresh();
+            addRenderableWidget(net.minecraft.client.gui.components.Button.builder(Component.translatable("gui.back"), b -> back.run())
+                    .bounds(width / 2 - 100, Math.min(height - 24, top() + 20 + lines.size() * 9 + 12), 200, 20).build());
+        }
+
+        @Override
+        public void tick() {
+            if (System.currentTimeMillis() < nextText) return;
+            int before = lines.size();
+            refresh();
+            if (lines.size() != before) rebuildWidgets(); // the button follows the text, only when its line count changes
+        }
+
+        @Override
+        public void extractRenderState(net.minecraft.client.gui.GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+            super.extractRenderState(g, mouseX, mouseY, partialTick);
+            int y = top();
+            g.centeredText(font, title, width / 2, y, 0xFFFFFFFF);
+            y += 20;
+            for (net.minecraft.util.FormattedCharSequence l : lines) {
+                g.centeredText(font, l, width / 2, y, 0xFFFFFFFF);
+                y += 9;
+            }
+        }
+
+        @Override
+        public boolean shouldCloseOnEsc() {
+            return false;
+        }
     }
 
     /** Called every client tick. */
@@ -236,7 +327,7 @@ public final class SpawnGate {
             // The creation context is reloading with the height pack. Once the create screen is back and the
             // context carries the height, put the world's settings back on the generator and create.
             boolean back = mc.gui.screen() == screen;
-            if (back && contextHeight(screen) == awaitingHeight) {
+            if (back && contextHeight(screen) == awaitingHeight && !structuresPending(screen)) {
                 int height = awaitingHeight;
                 awaitingHeight = 0;
                 pending = null;
@@ -265,14 +356,19 @@ public final class SpawnGate {
         boolean fitReady = !heightPending(screen) || (fit != null && fit.isDone());
         if (spawnReady && fitReady) {
             shown = null;
-            mc.gui.setScreen(screen);
-            if (heightPending(screen)) {
-                int height;
-                try {
-                    height = fit.join();
-                } catch (RuntimeException e) {
-                    System.err.println("[orbis] World height fit failed: " + e);
-                    height = OrbisConfig.DIMENSION_HEIGHT;
+            // With a height to apply, the wait screen stays up into the data pack reload (which shows its own screen
+            // and comes back to the create screen): switching to the create screen first flashed it for a frame.
+            boolean packs = heightPending(screen) || structuresPending(screen);
+            if (!packs) mc.gui.setScreen(screen);
+            if (packs) {
+                int height = contextHeight(screen);
+                if (heightPending(screen)) {
+                    try {
+                        height = fit.join();
+                    } catch (RuntimeException e) {
+                        System.err.println("[orbis] World height fit failed: " + e);
+                        height = OrbisConfig.DIMENSION_HEIGHT;
+                    }
                 }
                 applyHeight(screen, height);
                 return;
@@ -282,7 +378,7 @@ public final class SpawnGate {
             ((CreateWorldScreenInvoker) screen).orbis$invokeOnCreate();
             return;
         }
-        if (++ticks % 20 == 0) show();
+        ++ticks;
     }
 
     /** Stores the resolved height in the world's settings on the generator (they are saved with the world). */
@@ -291,6 +387,20 @@ public final class SpawnGate {
         WorldSettings s = rw != null && rw.settings().isPresent() ? rw.settings().get().copy() : OrbisMod.defaultWorldSettings();
         // A fitted world squeezes only above the mountains it was fitted to (see WorldHeight.FITTED_SOFT_CEILING).
         if (s.worldHeight <= 0 && height < OrbisConfig.DIMENSION_HEIGHT) s.softCeilingBlocks = WorldHeight.FITTED_SOFT_CEILING;
+        WorldHeight.Window w = window;
+        if (w != null && s.worldHeight <= 0) {
+            s.seaLevelY = w.seaLevelY();
+            s.verticalMode = "compress"; // 1:1 throughout: no regional lowering, only the squeezes at floor and ceiling
+            s.softCeilingBlocks = WorldHeight.WINDOW_SOFT_CEILING;
+        }
+        window = null;
+        WorldHeight.Uniform u = uniform;
+        if (u != null) {
+            s.heightSquash = u.squash();
+            s.verticalMode = "compress"; // no regional lowering: the one factor, and the short squeeze at the ceiling
+            s.softCeilingBlocks = WorldHeight.WINDOW_SOFT_CEILING;
+        }
+        uniform = null;
         s.worldHeight = height;
         screen.getUiState().updateDimensions((registries, dimensions) -> dimensions.replaceOverworldGenerator(registries,
                 new RealWorldChunkGenerator(dimensions.overworld().getBiomeSource(), Optional.of(s))));
@@ -299,10 +409,11 @@ public final class SpawnGate {
     /** Gives the world its height: the data pack into the new world's pack folder, then a context reload. */
     private static void applyHeight(CreateWorldScreen screen, int height) {
         CreateWorldScreenInvoker inv = (CreateWorldScreenInvoker) screen;
-        if (height == contextHeight(screen)) {
-            // Nothing to override (full height, or the pack is already in place): only the settings change.
+        if (height == contextHeight(screen) && !structuresPending(screen)) {
+            // Nothing to override (full height, or the packs are already in place): only the settings change.
             pending = null;
             fit = null;
+            Minecraft.getInstance().gui.setScreen(screen);
             applySettings(screen, height);
             inv.orbis$invokeOnCreate();
             return;
@@ -310,12 +421,16 @@ public final class SpawnGate {
         try {
             Path temp = inv.orbis$tempDataPackDir();
             WorldHeight.writePack(temp, height);
+            double share = OrbisMod.config().undergroundStructureShare;
+            com.berg.orbis.worldgen.StructureDensity.writePack(temp, share);
             Pair<Path, PackRepository> selection = inv.orbis$dataPackSelection(screen.getUiState().getSettings().dataConfiguration());
             PackRepository repository = selection.getSecond();
             repository.reload();
             List<String> ids = new ArrayList<>(repository.getSelectedIds());
             String id = "file/" + WorldHeight.PACK_NAME;
             if (!ids.contains(id)) ids.add(id);
+            String structures = "file/" + com.berg.orbis.worldgen.StructureDensity.PACK_NAME;
+            if (share < 1 && !ids.contains(structures)) ids.add(structures);
             repository.setSelected(ids);
             awaitingHeight = height;
             awaitingSince = System.currentTimeMillis();
@@ -326,6 +441,7 @@ public final class SpawnGate {
             awaitingHeight = 0;
             pending = null;
             fit = null;
+            Minecraft.getInstance().gui.setScreen(screen);
             applySettings(screen, OrbisConfig.DIMENSION_HEIGHT);
             inv.orbis$invokeOnCreate();
         }

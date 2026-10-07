@@ -8,19 +8,19 @@ Minecraft **26.2**, **Fabric**.
 
 ## What it does
 
-- **Real terrain** – true heights from laser-scanned (lidar) maps where a country has them (Norway, Switzerland, Germany, USA, Japan …) and satellite height data everywhere else, with a real sea floor.
-- **Buildings** – every building on OpenStreetMap, with its height (measured by laser scans in about ten countries and states, from national building registers in France, the Netherlands, Slovenia, Vienna and New York), roof shape and a colour taken from aerial photos (national survey photos in some 20 countries and states, satellite photos everywhere else).
+- **Real terrain** – true heights from laser-scanned (lidar) maps where a country has them (Norway, Switzerland, Germany, USA, Japan …) and everywhere else a satellite model of the bare ground, with forests and buildings taken out, so a forest floor isn't raised by its trees. Plus a real sea floor.
+- **Buildings** – every building on OpenStreetMap, with its height (measured by laser scans in about ten countries and states, from national building registers in France, the Netherlands, Slovenia, Vienna and New York), roof shape and a colour taken from aerial photos (national survey photos in some 20 countries and states, satellite photos everywhere else). At 1:1 and 1:2 every storey is three blocks, so you can walk the floors and buildings look right beside you; coarser worlds keep heights true to scale (Customize → Buildings → **Building heights**). Every building with a room has a wooden door with a clear way in and out, and buildings are made of everyday blocks, never iron, gold or copper blocks you could strip for free ingots.
 - **Roads, rails, bridges, tunnels** – at their real width, with lane markings, sidewalks, street lamps and street name signs at the junctions. Real widths and lane counts come from national road databases in Norway, France, Finland, the USA and British Columbia.
 - **Nature** – water, forests, farmland, parks and land cover; trees stand where real trees stand where canopy data is available.
 - **Real rock** – the stone in cliffs, caves and under the ground is the real bedrock: granite, gabbro, basalt, schist, limestone, sandstone and more. Detailed survey maps in Norway, a world geological map everywhere else.
 - **Real lake beds** – lakes deepen away from the shore instead of having a flat bottom; Norway's surveyed lakes get their measured bed, and rivers are as deep as their width. Surveyed lake beds come from depth surveys in Norway, Minnesota and Ontario.
 - **Real sky and seasons** – the sun rises and sets when it really does there, the moon shows its real phase, the weather follows the real forecast, grass and leaves change colour with the real season, and snow lies as deep as it really does today: green valleys, buried mountains.
-- **Your scale** – 1:1, or smaller (1:2, 1:4 … 1:32 for a whole country). The world height is fitted to the place automatically.
-- **Normal survival still works** – ores, caves, animals and vanilla structures, placed around the real map.
+- **Your scale** – 1:1, or smaller (1:2, 1:4 … 1:32 for a whole country). The world height is fitted to the place automatically, and a mountain area with no sea gets the world's heights laid over its own ground: around Everest everything from Base Camp to the summit is true 1:1. Prefer every mountain in true proportion to every other? **Uniform heights** scales all heights by one amount, only as much as your area needs (Bergen stays 1:1, the Alps 1.3 times flatter, Everest 2.4).
+- **Normal survival still works** – ores, caves, animals and vanilla structures, placed around the real map. Underground you find Lush Caves, Dripstone Caves and the Deep Dark with its Ancient Cities, and buried treasure lies under the beach sand.
 - **Area preview** – before creating a world, see the area on a map with its size in blocks, chunks, disk space and how long it takes to generate.
 - **Pick the spawn on a map** – right-click where players should appear; the world is centred there.
 - **Pre-generation** – generate a whole area in advance so exploring (and servers) run smoothly.
-- **World map (key N)** – a real street / satellite / elevation map lined up with your world, with search, teleport and a view of the Minecraft blocks from above.
+- **World map (key B)** – a real street / satellite / elevation map lined up with your world, with search, teleport and a view of the Minecraft blocks from above. The street map is drawn from OpenStreetMap like Google Maps shows it: street names, buildings, and shops, restaurants, hotels, stops and other places with symbols showing what they are, plus house numbers as you zoom in. The sun / moon button at the map's right edge switches the street map between day and night colours, and an orange haze shows the chunks not generated yet.
 - **Friends don't need the mod** – anyone can join an Orbis server with plain Minecraft.
 
 ---
@@ -54,7 +54,7 @@ Everything about a new world is set here, and only here. Customize remembers you
 | **Features** | What gets generated, in groups: **Cities** (buildings, roads, interiors, name and street signs, street furniture, lights, landmarks), **Life** (villager residents, street life, transit), **Nature** (water, land cover, trees), **Minecraft gameplay** (ores, caves, structures, animals, bedrock, landmark advancements, tunnel loot) and **Fine-tuning** (folded). |
 | **Look & Climate** | **Real sky** first (real daylight, weather, seasons and snow depth, villager clock hours), then, folded: how buildings and roads look, and climate and tree tuning. |
 | **Data Sources** | Where the real-world data comes from (all groups folded; the defaults are right for most worlds). Which sources a world uses is automatic: a country's own services (sharper aerial photos, rock map, road widths, lake surveys) wherever they cover, worldwide data everywhere else. Switches for **downloaded automatically** (satellite photo colours, sea floor, land cover, rock types, lake depths), **needs a one-time import** (building height atlas, canopy trees, extra places) and how the **photos** are used. Each option names its source. |
-| **Advanced** | How the terrain becomes blocks: the **world height** (leave it at 0 and it is fitted to the place, which makes generation and pre-generation much faster than the full 4,064 blocks), sea level, projection, terrain detail and how high mountains are handled. Also **Lidar building heights**: measured heights and roof shapes from national laser scans are used by themselves in Switzerland, the Netherlands, France, North Rhine-Westphalia, Estonia, Czechia, Canada (where it has been scanned), Oregon, Kentucky and Washington DC (at 1:4 or finer); Norway's Kartverket has a switch here, off by default because it needs a VPN outside Norway and is slow. |
+| **Advanced** | How the terrain becomes blocks: the **world height** (leave it at 0 and it is fitted to the place, which makes generation and pre-generation much faster than the full 4,064 blocks), sea level, projection, terrain detail and how high mountains are handled. Also **Lidar building heights**: measured heights and roof shapes from national laser scans are used by themselves in Switzerland, the Netherlands, France, North Rhine-Westphalia, Estonia, Czechia, Canada (where it has been scanned), Oregon, Kentucky and Washington DC (at 1:4 or finer); in Norway, Kartverket's is used by itself whenever it answers from your network (its switch here forces it on, for networks where a VPN to Norway is needed). |
 
 The settings are saved inside the world, so it keeps generating the same way later.
 
@@ -96,7 +96,7 @@ Open the **World generator map** to choose where the world is and what it genera
 | Teleport | Right-click → **Teleport here** (operators only) |
 | Mark a place | Right-click → **Mark this place** (yellow pin, saved per world) |
 | Copy coordinates | Right-click → **Copy coordinates** |
-| Map style | **Map:** street / satellite / elevation (heights in colour, with the height under the cursor) |
+| Map style | **Map:** street / satellite / elevation (heights in colour, with the height under the cursor); the sun / moon button beside the street map switches day and night colours |
 | See Minecraft blocks | **Blocks** – shows the world from above over the real map (off / 35 % / 70 % / 100 %), handy for finding villages and structures |
 | See what's generated | **Grey** – a light grey haze over areas that aren't generated yet; with a hard limit, the area that never generates is tinted red |
 
@@ -133,7 +133,7 @@ You are the white arrow, other players are cyan arrows, the world spawn is a gre
 Generating the real world is much slower than vanilla because map data has to be downloaded and built. For smooth play, generate your area first:
 
 1. Open the world, stand anywhere, and run for example `/orbis pregen area Bergen` or `/orbis pregen 5`.
-2. Leave the game running. You can switch to other windows: the game doesn't pause while a pre-generation runs. Progress shows in chat every 30 s.
+2. Leave the game running. You can switch to other windows: the game doesn't pause while a pre-generation runs. A bar at the top of the screen shows how far it is and what it's doing right now: generating (with chunks per second and time left), or which data it's downloading first (map data, terrain, building heights, photos …), so you can tell it's working even before the first chunks are done. Everyone on the server sees it. A summary also shows in chat every 2 minutes.
 3. When it's done, optionally run `/orbis map render` so the **Blocks** layer of the map is complete.
 
 **What makes it fast** (all on by default, in **Mod Menu → Orbis Terrarum → Configure → Performance & Network → Streaming**):
@@ -176,8 +176,8 @@ python tools/lod2_heights.py --bbox SOUTH WEST NORTH EAST --out <instance>/confi
 
 Run `/orbis export aternos` in your world. It saves the world and makes an upload in `orbis-exports/` in your game folder, with a coverage picture and **HOW-TO-UPLOAD.txt** telling you exactly what to do:
 
-- A world that fits becomes one zip (Aternos takes uploads up to 1 GB). A bigger one becomes a small base zip plus folders of region files of about 200 MB, which you add through Aternos' **Files** page; up to about 3.4 GB so it fits Aternos' 4 GB of storage. If there is too much, the chunks nearest the spawn go in first.
-- By default it is made for a **plain Minecraft server**, so your friends' server doesn't need Orbis: everything outside the upload becomes open sea, the world border goes round it, and museum and shop display frames are locked.
+- A world that fits becomes one zip (Aternos takes uploads up to 1 GB). A bigger one becomes a small base zip plus folders of region files of about 200 MB, which you add through Aternos' **Files** page; up to about 3.4 GB so it fits Aternos' 4 GB of storage. The terrain goes without its lighting, which the server works out on the first visit to each area: about a fifth smaller, so 566 km² of Bergen at 1:2 fits whole. If there is too much, the chunks nearest the spawn go in first.
+- By default it is made for a **plain Minecraft server**, so your friends' server doesn't need Orbis: everything outside the upload becomes open sea, the world border goes round it, and museum and shop display frames are locked. Players who have Orbis installed still get the world map (street, satellite and elevation; the Blocks layer and teleporting by place name need Orbis on the server, and teleporting from the map uses `/tp`, for operators).
 - `/orbis export aternos orbis` keeps the Orbis generator, for a server that runs Orbis Terrarum. Add `zip` to always get a single zip (trimmed to fit).
 
 ## Playing with friends / servers

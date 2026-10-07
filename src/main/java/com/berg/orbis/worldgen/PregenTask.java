@@ -164,6 +164,7 @@ public final class PregenTask {
     private int done, failed;
     private final long startedAt = System.currentTimeMillis();
     private long lastReport = System.currentTimeMillis();
+    private long lastChat = System.currentTimeMillis();
     /** For the rate over the last report interval, which is what a player wants to see (the run average hides a stall). */
     private long rateWindowAt = System.currentTimeMillis();
     private int rateWindowDone;
@@ -1089,7 +1090,11 @@ public final class PregenTask {
     public static void tick(MinecraftServer server) {
         syncWorldPause(server);
         PregenTask t = active;
-        if (t == null) return;
+        if (t == null) {
+            hideBar();
+            return;
+        }
+        if (++barTicks % 20 == 0) showBar(server, t);
         if (t.step()) {
             active = null;
             lastFinished = t;
@@ -1101,8 +1106,8 @@ public final class PregenTask {
             System.out.println("[Orbis Terrarum] Pre-generation finished: " + t.label + "\n" + t.progress());
             server.getPlayerList().broadcastSystemMessage(t.chatProgress(true, false), false);
         } else if (System.currentTimeMillis() - t.lastReport > 30_000) {
-            // In chat (not the one-line action bar, which gets cut off), every 30 s: four short lines for the
-            // player; the full picture goes to the log for later diagnosis.
+            // The full picture to the log every 30 s for later diagnosis; in chat every 2 minutes, four short lines
+            // (the bar at the top of the screen shows the live state).
             t.lastReport = System.currentTimeMillis();
             t.updateRateNow();
             if (System.currentTimeMillis() - t.lastMap > 600_000) {
@@ -1110,8 +1115,129 @@ public final class PregenTask {
                 PregenMap.writeInBackground(t.level);
             }
             System.out.println("[Orbis Terrarum] " + t.label + "\n" + t.progress());
-            server.getPlayerList().broadcastSystemMessage(t.chatProgress(false, false), false);
+            if (System.currentTimeMillis() - t.lastChat > 120_000) {
+                t.lastChat = System.currentTimeMillis();
+                server.getPlayerList().broadcastSystemMessage(t.chatProgress(false, false), false);
+            }
         }
+    }
+
+    // ------------------------------------------------------------------ the bar
+
+    /**
+     * A bar at the top of every player's screen while a sweep runs, updated every second: how far it is and what it
+     * is doing right now (generating, or which data it is downloading: map data, terrain, building heights...). The
+     * chat line every 30 s showed "0 chunks/s" for minutes while a fresh area's data downloaded, and players could
+     * not tell a sweep at work from a stuck one. A vanilla boss bar: friends on vanilla clients see it too.
+     */
+    private static net.minecraft.server.level.ServerBossEvent bar;
+    private static int barTicks;
+    private int barDone = -1;
+    private long barAt;
+    private double barRate;
+
+    private static void showBar(MinecraftServer server, PregenTask t) {
+        if (bar == null) {
+            bar = new net.minecraft.server.level.ServerBossEvent(java.util.UUID.randomUUID(), Component.literal("Pre-generation"),
+                    net.minecraft.world.BossEvent.BossBarColor.BLUE, net.minecraft.world.BossEvent.BossBarOverlay.PROGRESS);
+        }
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) if (!bar.getPlayers().contains(p)) bar.addPlayer(p);
+        // Chunks per second over the last few seconds.
+        long now = System.currentTimeMillis();
+        int finished = t.done + t.failed;
+        if (t.barDone < 0) {
+            t.barDone = finished;
+            t.barAt = now;
+        } else if (now - t.barAt >= 3000) {
+            double r = (finished - t.barDone) * 1000.0 / (now - t.barAt);
+            t.barRate = finished == t.barDone ? 0 : t.barRate <= 0 ? r : 0.5 * t.barRate + 0.5 * r;
+            t.barDone = finished;
+            t.barAt = now;
+        }
+        float fraction = t.fraction();
+        boolean generating = t.barRate >= 0.5;
+        String text = String.format(Locale.ROOT, "Pre-generating %s - %.0f%% - %s", t.shortLabel(), 100 * fraction, t.barActivity());
+        bar.setName(Component.literal(text));
+        bar.setProgress(Math.max(0f, Math.min(1f, fraction)));
+        bar.setColor(generating ? net.minecraft.world.BossEvent.BossBarColor.GREEN : net.minecraft.world.BossEvent.BossBarColor.YELLOW);
+    }
+
+    private static void hideBar() {
+        if (bar != null) {
+            bar.removeAllPlayers();
+            bar = null;
+        }
+    }
+
+    /** How far the sweep is, 0..1 (rows for an area sweep, chunks otherwise). */
+    private float fraction() {
+        if (sweep == null) {
+            long sea = skippedSea.get() + skippedExisting.get();
+            return (float) ((done + failed + sea) / (double) Math.max(1, chunks.length));
+        }
+        return (float) (Math.max(0, completedRow - sweep.firstRow() + 1) / (double) Math.max(1, sweep.rowCount()));
+    }
+
+    /** What the sweep is doing right now, in a few words. */
+    private String barActivity() {
+        String downloads = downloadsNow();
+        if (barRate >= 0.5) {
+            String s = String.format(Locale.ROOT, "%.1f chunks/s", barRate);
+            if (sweep != null) {
+                int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1), rowsFromStart = Math.max(0, completedRow - startRow + 1);
+                long elapsed = Math.max(1, (System.currentTimeMillis() - startedAt) / 1000);
+                if (rowsFromStart > 0) s += " - " + eta((long) (elapsed * (double) (sweep.rowCount() - rowsDone) / rowsFromStart)) + " left";
+            }
+            return downloads.isEmpty() ? s : s + " - downloading " + downloads;
+        }
+        if (!downloads.isEmpty()) return "downloading " + downloads;
+        WorldModel m = OrbisMod.model();
+        int preparing = m != null && m.regions() != null ? m.regions().preparing() : 0;
+        if (preparing > 0) return "preparing map data (" + preparing + (preparing == 1 ? " region)" : " regions)");
+        String why = waiting;
+        if (why == null) return done + failed == 0 ? "starting" : "generating";
+        return switch (why) {
+            case "building terrain ahead" -> {
+                FastPregen f = fast;
+                yield f == null ? "building terrain" : String.format(Locale.ROOT, "building terrain (%,d chunks ready)", f.builtAhead());
+            }
+            case "waiting for the disk" -> "writing chunks to disk";
+            case "waiting for unloads" -> "unloading finished chunks";
+            case "waiting for memory" -> "freeing memory";
+            default -> why;
+        };
+    }
+
+    /** The data being downloaded right now, by kind: "map data (3), building heights (12)". */
+    private static String downloadsNow() {
+        java.util.Map<String, Integer> byKind = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<String, Integer> e : com.berg.orbis.net.OrbisHttp.activeRequests().entrySet()) {
+            String kind = dataKind(e.getKey());
+            if (kind != null) byKind.merge(kind, e.getValue(), Integer::sum);
+        }
+        StringBuilder sb = new StringBuilder();
+        byKind.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue()).forEach(e -> {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(e.getKey()).append(" (").append(e.getValue()).append(')');
+        });
+        return sb.toString();
+    }
+
+    /** What a host's data is, for the bar; null for requests that are not generation (weather, time zone). */
+    private static String dataKind(String host) {
+        String h = host.toLowerCase(Locale.ROOT);
+        if (h.contains("met.no") || h.contains("open-meteo")) return null;
+        if (h.contains("mapterhorn")) return "terrain";
+        if (h.contains("opengeohub")) return "bare-earth terrain";
+        if (h.contains("openwaters")) return "sea floor";
+        if (h.contains("overpass") || h.contains("kumi.systems") || h.contains("private.coffee")) return "map data";
+        if (h.contains("geofabrik")) return "map file";
+        if (h.contains("vegvesen")) return "road widths";
+        if (h.contains("worldcover")) return "land cover";
+        if (h.contains("macrostrat") || h.contains("ngu.no")) return "rock types";
+        if (h.contains("geonorge") || h.contains("ahn") || h.contains("dsm") || h.contains("lidar") || h.contains("hoyde")) return "building heights";
+        if (h.contains("arcgis") || h.contains("imagery") || h.contains("orto") || h.contains("photo") || h.contains("wms")) return "aerial photos";
+        return "other data";
     }
 
     /** Collects finished chunks (server thread, never blocking). @return true when finished */

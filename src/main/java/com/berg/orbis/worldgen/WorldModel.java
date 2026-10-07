@@ -185,13 +185,35 @@ public final class WorldModel {
         this.snow = snow;
     }
 
-    /** The climate with today's snow depth, for painting a column (waits a few seconds for the snow cells). */
+    /**
+     * The climate with today's snow depth, for painting a column (waits a few seconds for the snow cells). The depth is
+     * for the height the server's snow settler works out again from the column's block Y ({@link #snowLayersIfKnown}),
+     * not the real elevation: from the real one generation laid 18-19 layers at Everest where the settler wanted
+     * 16-17 (the heights there are squeezed to fit the world), and the settler took them off one column at a time,
+     * some 20 minutes per chunk, every chunk saved again and again (and Distant Horizons redoing it each time).
+     */
     public BiomeClassifier.Climate climateWithSnow(int x, int z, double elevationMeters) {
         BiomeClassifier.Climate c = climate(x, z, elevationMeters);
         SnowCover s = snow;
         if (s == null || !cfg.realSnow) return c;
         double[] ll = mapper.toLatLon(x, z);
-        return c.withSnowDepth(s.depthM(ll[0], ll[1], Double.isNaN(elevationMeters) ? 0.0 : elevationMeters));
+        double snowElevation = Double.isNaN(elevationMeters) ? 0.0 : snowElevationM(x, blockY(elevationMeters, x, z), z, true);
+        return c.withSnowDepth(s.depthM(ll[0], ll[1], snowElevation));
+    }
+
+    /**
+     * Metres above sea level the snow is worked out for at a column whose ground is at block Y: the Y back through the
+     * vertical mapping (the squeeze near the ceiling aside). NaN when {@code wait} is false and the relief shift of
+     * the column's 256-block cell is not known yet (the first ask starts the lookup).
+     */
+    private double snowElevationM(int x, int y, int z, boolean wait) {
+        long key = ((long) (x >> 8) << 32) ^ ((z >> 8) & 0xffffffffL);
+        CompletableFuture<Double> f = shifts.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> vertical.shiftBlocks(x, z)));
+        Double shift = wait ? f.join() : f.getNow(null);
+        if (shift == null) return Double.NaN;
+        double e = y - cfg.seaLevelY;
+        if (e + shift > cfg.reliefKneeMeters / cfg.verticalMetersPerBlock()) e += shift;
+        return e * cfg.verticalMetersPerBlock();
     }
 
     /**
@@ -202,30 +224,21 @@ public final class WorldModel {
     public int snowLayersIfKnown(int x, int y, int z) {
         SnowCover s = snow;
         if (s == null || !cfg.realSnow) return -1;
-        long key = ((long) (x >> 8) << 32) ^ ((z >> 8) & 0xffffffffL);
-        CompletableFuture<Double> f = shifts.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> vertical.shiftBlocks(x, z)));
-        Double shift = f.getNow(null);
-        if (shift == null) return -1;
-        double e = y - cfg.seaLevelY;
-        if (e + shift > cfg.reliefKneeMeters / cfg.metersPerBlock) e += shift;
+        double e = snowElevationM(x, y, z, false);
+        if (Double.isNaN(e)) return -1;
         double[] ll = mapper.toLatLon(x, z);
-        double d = s.depthIfKnownM(ll[0], ll[1], e * cfg.metersPerBlock);
-        return Double.isNaN(d) ? -1 : ColumnPainter.snowLayers(d, cfg.metersPerBlock);
-    }
-
-    /**
-     * True when terrainOnlyBeyondBlocks is set and this column is farther than
-     * that from every player: such chunks skip the OSM wait and generate from
-     * elevation alone (for distant-horizon mods generating LOD radii).
-     */
-    public boolean farFromPlayers(int x, int z) {
-        return cfg.terrainOnlyBeyondBlocks > 0 && regions != null
-                && regions.nearestPlayerDistance(x, z) > cfg.terrainOnlyBeyondBlocks;
+        double d = s.depthIfKnownM(ll[0], ll[1], e);
+        if (Double.isNaN(d)) return -1;
+        int layers = ColumnPainter.snowLayers(d, cfg.metersPerBlock);
+        // As generation lays it: never bare on the ice cap.
+        return climate(x, z, e).zone() == BiomeClassifier.Zone.ICE_CAP ? Math.max(1, layers) : layers;
     }
 
     /** Block Y of the cloud layer: about 800 m above the ground at the origin, so clouds are neither in the streets nor out of sight. */
     public int cloudHeightY() {
-        double e = elevation(0, 0);
+        // The rough height is enough, and it is asked on the render thread when a model is built: the full-detail
+        // terrain there can be a download (a bare-earth block took 73 s at Kathmandu and froze the screen).
+        double e = coarseElevation(0, 0);
         if (Double.isNaN(e)) e = 0;
         // 800 m up at 1:1; at coarse scales that would be a few blocks, so never closer than 128 blocks above the ground.
         double ground = vertical.toY(Math.max(e, 0), 0, 0);
@@ -241,6 +254,55 @@ public final class WorldModel {
     /** OSM raster for the region containing this column; null if OSM is disabled/unavailable and waiting is off. May block -- not for worldgen threads. */
     public RegionRaster rasterForBlock(int x, int z) {
         return regions == null ? null : regions.getForBlock(x, z);
+    }
+
+    private volatile com.berg.orbis.landcover.WorldCoverProvider worldCover;
+
+    /** The worldwide land cover (ESA WorldCover), for the far view where there is no map data; null when it is off. */
+    public void setWorldCover(com.berg.orbis.landcover.WorldCoverProvider worldCover) {
+        this.worldCover = worldCover;
+    }
+
+    /**
+     * The land cover at a block from ESA WorldCover alone (as the rasteriser fills gaps with it), or null when it is off,
+     * says water, or cannot be read. Blocks while a tile downloads (a few hundred kB per 10 km square).
+     */
+    public com.berg.orbis.feature.LandCover worldCoverAt(int x, int z) {
+        return worldCoverLand(worldCoverCodeAt(x, z), x, z);
+    }
+
+    /** The ESA WorldCover class at a block (WorldCoverProvider.TREE_COVER ...), or -1 when it is off or cannot be read. */
+    public int worldCoverCodeAt(int x, int z) {
+        com.berg.orbis.landcover.WorldCoverProvider w = worldCover;
+        if (w == null) return -1;
+        try {
+            double[] ll = mapper.toLatLon(x, z);
+            return w.classAt(ll[0], ll[1]);
+        } catch (RuntimeException e) {
+            return -1;
+        }
+    }
+
+    /** The land cover for an ESA WorldCover class at a block, or null for water and unknown classes. */
+    public com.berg.orbis.feature.LandCover worldCoverLand(int code, int x, int z) {
+        if (code < 0) return null;
+        try {
+            double[] ll = code == com.berg.orbis.landcover.WorldCoverProvider.BARE ? mapper.toLatLon(x, z) : new double[]{90, 0};
+            return switch (code) {
+                case com.berg.orbis.landcover.WorldCoverProvider.TREE_COVER -> com.berg.orbis.feature.LandCover.FOREST;
+                case com.berg.orbis.landcover.WorldCoverProvider.SHRUBLAND -> com.berg.orbis.feature.LandCover.SCRUB;
+                case com.berg.orbis.landcover.WorldCoverProvider.GRASSLAND -> com.berg.orbis.feature.LandCover.MEADOW;
+                case com.berg.orbis.landcover.WorldCoverProvider.CROPLAND -> com.berg.orbis.feature.LandCover.FARMLAND;
+                case com.berg.orbis.landcover.WorldCoverProvider.BUILT_UP -> com.berg.orbis.feature.LandCover.RESIDENTIAL;
+                case com.berg.orbis.landcover.WorldCoverProvider.BARE -> Math.abs(ll[0]) < 35 ? com.berg.orbis.feature.LandCover.SAND : com.berg.orbis.feature.LandCover.BARE_ROCK;
+                case com.berg.orbis.landcover.WorldCoverProvider.SNOW_ICE -> com.berg.orbis.feature.LandCover.GLACIER;
+                case com.berg.orbis.landcover.WorldCoverProvider.WETLAND, com.berg.orbis.landcover.WorldCoverProvider.MANGROVES -> com.berg.orbis.feature.LandCover.WETLAND;
+                case com.berg.orbis.landcover.WorldCoverProvider.MOSS_LICHEN -> com.berg.orbis.feature.LandCover.HEATH;
+                default -> null;
+            };
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** OSM raster if it is already decoded, else null. Never blocks. */
