@@ -40,6 +40,11 @@ public final class BlockMapService {
 
     private BlockMapService() {}
 
+    /** The overworld's map while a world with one runs, else null. */
+    public static BlockMapStore store() {
+        return store;
+    }
+
     public static void register() {
         PayloadTypeRegistry.serverboundPlay().register(MapTilePayloads.Request.TYPE, MapTilePayloads.Request.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(MapTilePayloads.Data.TYPE, MapTilePayloads.Data.CODEC);
@@ -72,14 +77,15 @@ public final class BlockMapService {
             RENDERING.set(false);
             if (s != null) s.flush();
         });
+        // (In a cubic world the chunks hold no blocks: the cubes are drawn instead, see versions/26.3 cubic.CubeMapDrawer.)
         ServerChunkEvents.CHUNK_LOAD.register((level, chunk, generated) -> {
             BlockMapStore s = store;
-            if (s != null && level.dimension() == Level.OVERWORLD) s.draw(chunk);
+            if (s != null && level.dimension() == Level.OVERWORLD && !com.berg.orbis.OrbisMod.cubicWorld()) s.draw(chunk);
         });
         // Unloading chunks carry whatever players built since they loaded.
         ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> {
             BlockMapStore s = store;
-            if (s != null && level.dimension() == Level.OVERWORLD) s.draw(chunk);
+            if (s != null && level.dimension() == Level.OVERWORLD && !com.berg.orbis.OrbisMod.cubicWorld()) s.draw(chunk);
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (++ticks % 1200 != 0) return;

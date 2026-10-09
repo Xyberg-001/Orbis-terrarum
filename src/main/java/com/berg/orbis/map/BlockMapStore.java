@@ -178,7 +178,7 @@ public final class BlockMapStore {
     // ------------------------------------------------------------------ drawing chunks in
 
     /** Access to one chunk's blocks by local x, absolute y, local z. */
-    private interface Column {
+    public interface Column {
         BlockState at(int x, int y, int z);
 
         /** Y of the top non-air block of the column, or below the world. */
@@ -186,6 +186,12 @@ public final class BlockMapStore {
 
         /** The biome at a block (local x, absolute y, local z), or null when unknown. */
         Holder<Biome> biome(int x, int y, int z);
+    }
+
+    /** A chunk's columns from elsewhere than a chunk (a cubic world's cubes; main thread). */
+    public void draw(int chunkX, int chunkZ, Column column) {
+        if (com.berg.orbis.worldgen.HardLimit.emptied(chunkX, chunkZ)) return;
+        drawColumns(chunkX, chunkZ, column);
     }
 
     /** A loaded chunk (main thread). */
