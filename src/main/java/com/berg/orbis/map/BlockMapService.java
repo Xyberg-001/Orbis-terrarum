@@ -154,12 +154,23 @@ public final class BlockMapService {
         ExecutorService w = bulk;
         if (s == null || w == null) return Component.translatable("orbisterrarum.mapcmd.noworld");
         if (!RENDERING.compareAndSet(false, true)) return status();
-        Path dir = com.berg.orbis.worldgen.PregenMap.regionDir(server.overworld());
+        // A cubic world keeps its cubes in region3d beside the region folder, 16 x 16 x 16 cubes of 32 blocks a file: one map region across.
+        boolean cubic = com.berg.orbis.OrbisMod.cubicWorld();
+        Path dir = cubic
+                ? server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("dimensions/minecraft/overworld/region3d")
+                : com.berg.orbis.worldgen.PregenMap.regionDir(server.overworld());
         List<int[]> regions = new ArrayList<>();
+        java.util.Set<Long> seen = new java.util.HashSet<>();
         try (Stream<Path> files = Files.list(dir)) {
             files.forEach(f -> {
                 String[] p = f.getFileName().toString().split("\\.");
-                if (p.length == 4 && p[0].equals("r") && p[3].equals("mca")) {
+                if (cubic && p.length == 4 && p[3].equals("3dr")) {
+                    try {
+                        int x = Integer.parseInt(p[0]), z = Integer.parseInt(p[2]);
+                        if (seen.add(((long) x << 32) | (z & 0xFFFFFFFFL))) regions.add(new int[]{x, z});
+                    } catch (NumberFormatException ignored) {
+                    }
+                } else if (!cubic && p.length == 4 && p[0].equals("r") && p[3].equals("mca")) {
                     try {
                         regions.add(new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])});
                     } catch (NumberFormatException ignored) {

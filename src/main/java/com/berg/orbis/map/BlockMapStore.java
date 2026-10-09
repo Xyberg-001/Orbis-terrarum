@@ -317,12 +317,41 @@ public final class BlockMapStore {
 
     // ------------------------------------------------------------------ serving
 
+    /** Fills a region of a cubic world from its saved cubes (set by versions/26.3 cubic.CubeMapDrawer; null elsewhere). */
+    public interface RegionFiller {
+        void fill(BlockMapStore store, int rx, int rz);
+    }
+
+    public static volatile RegionFiller cubicFiller;
+
     /**
      * The region with every saved, fully generated chunk drawn in: a region pre-generated before the map existed
      * is drawn from its region file here (about a thousand chunks; seconds), once. Background threads only.
      */
     public Region complete(int rx, int rz) {
         Region r = get(rx, rz);
+        RegionFiller filler = cubicFiller;
+        if (filler != null && com.berg.orbis.OrbisMod.cubicWorld()) {
+            // A cubic world has no region files: the region is drawn from its saved cubes, once (a marker beside the map file; regions
+            // marked complete before cubic worlds were drawn get it too).
+            Path marker = dir.resolve("r." + rx + "." + rz + ".cubic");
+            if (!Files.exists(marker)) {
+                try {
+                    filler.fill(this, rx, rz);
+                    Files.createDirectories(dir);
+                    Files.writeString(marker, "");
+                } catch (IOException | RuntimeException e) {
+                    System.err.println("[orbis] Map region " + rx + "," + rz + " (cubic): " + e);
+                }
+                synchronized (r) {
+                    r.complete = true;
+                    r.dirty = true;
+                    r.version++;
+                }
+                save(r);
+            }
+            return r;
+        }
         if (r.complete) return r;
         Path file = regionDir.resolve("r." + rx + "." + rz + ".mca");
         try {
