@@ -104,7 +104,8 @@ public final class OrbisCubeGenerator implements CubeGenerator {
             }
         }
         return CompletableFuture.allOf(around).thenRunAsync(() -> {
-            for (CompletableFuture<ChunkDecoration> decoration : around) decoration.join().applyTo(cube);
+            for (CompletableFuture<ChunkDecoration> decoration : around) decoration.join().applyBlocks(cube);
+            for (CompletableFuture<ChunkDecoration> decoration : around) decoration.join().applyRest(cube);
         }, Util.backgroundExecutor());
     }
 

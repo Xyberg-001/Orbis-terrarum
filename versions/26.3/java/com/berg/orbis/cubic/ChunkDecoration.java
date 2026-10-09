@@ -81,8 +81,11 @@ final class ChunkDecoration {
         return this.blocks;
     }
 
-    /** Puts what falls in the cube into it (the cube ignores the rest of its layer). */
-    void applyTo(CubeTerrain cube) {
+    /**
+     * Puts the blocks that fall in the cube into it (the cube ignores the rest of its layer). The decorations around a cube can write the
+     * same block, so every decoration's blocks go in first ({@link #applyBlocks}) and the rest after ({@link #applyRest}).
+     */
+    void applyBlocks(CubeTerrain cube) {
         Part part = this.parts.get(Math.floorDiv(cube.minY(), CubeTerrain.SIZE));
         if (part == null) return;
         for (int i = 0; i < part.positions.size(); i++) {
@@ -90,8 +93,21 @@ final class ChunkDecoration {
             int x = BlockPos.getX(pos), z = BlockPos.getZ(pos);
             if (inside(cube, x, z)) cube.setBlock(x, BlockPos.getY(pos), z, part.states.get(i));
         }
+    }
+
+    /**
+     * The block entities, entities, post-processing marks and ticks that fall in the cube, once every decoration's blocks are in: a block
+     * entity only where the block it was made for is still there (another chunk's decoration may have written over it, which made the game
+     * drop the block entity with a warning as the cube loaded).
+     */
+    void applyRest(CubeTerrain cube) {
+        Part part = this.parts.get(Math.floorDiv(cube.minY(), CubeTerrain.SIZE));
+        if (part == null) return;
         for (BlockEntity blockEntity : part.blockEntities) {
-            if (inside(cube, blockEntity.getBlockPos().getX(), blockEntity.getBlockPos().getZ())) cube.setBlockEntity(blockEntity);
+            BlockPos at = blockEntity.getBlockPos();
+            if (inside(cube, at.getX(), at.getZ()) && blockEntity.getType().isValid(cube.getBlock(at.getX(), at.getY(), at.getZ()))) {
+                cube.setBlockEntity(blockEntity);
+            }
         }
         for (Entity entity : part.entities) {
             if (inside(cube, entity.getBlockX(), entity.getBlockZ())) cube.addEntity(entity);
