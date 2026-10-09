@@ -1,12 +1,14 @@
 package com.berg.orbis.client;
 
-import dev.isxander.yacl3.api.NameableEnum;
 import net.minecraft.network.chat.Component;
 
 import java.util.Locale;
 
-/** Well-known places offered in the location picker; CUSTOM leaves the coordinates as typed. */
-public enum LocationPreset implements NameableEnum {
+/**
+ * Well-known places offered in the location picker; CUSTOM leaves the coordinates as typed. Plain data, with nothing of YetAnotherConfigLib:
+ * the world generator map starts at one of these, and it must open without that library installed.
+ */
+public enum LocationPreset {
     CUSTOM(Double.NaN, Double.NaN),
     BERGEN(60.39299, 5.32415),
     OSLO(59.91390, 10.75220),
@@ -45,7 +47,6 @@ public enum LocationPreset implements NameableEnum {
         this.lon = lon;
     }
 
-    @Override
     public Component getDisplayName() {
         return Component.translatable("orbisterrarum.preset." + name().toLowerCase(Locale.ROOT));
     }
