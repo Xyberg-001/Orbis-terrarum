@@ -377,6 +377,7 @@ public class OrbisMod implements ModInitializer {
         config = OrbisConfig.load(configDir.resolve("orbisterrarum.json"));
 
         RealWorldChunkGenerator.register();
+        com.berg.orbis.worldgen.BackgroundLocate.register();
         // The world map's data: where this world sits on Earth, for players who have the mod (vanilla players
         // never get it, so they still join with plain Minecraft).
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
