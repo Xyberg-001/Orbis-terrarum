@@ -41,7 +41,12 @@ public final class CaveCarver {
     private static final int CAVE_BOUND = 15;               // vanilla getCaveBound()
     private static final int LAVA_LEVEL = -56;              // vanilla: above_bottom 8
     private static final int ORIGIN_MIN_Y = -56;            // vanilla: above_bottom 8
-    private static final int ORIGIN_MAX_Y = 40;             // vanilla: 180 (cave) / 47 (extra); cut so caves stay in the band
+    private static final int ORIGIN_MAX_Y = 40;
+    /**
+     * How far below its band top a tunnel or room can carve: from the lowest origin, a tunnel sinks at most a block a step for its whole
+     * length (branches continue the same count), plus its widest radius.
+     */
+    private static final int DEEPEST_BELOW_TOP = UndergroundBand.VANILLA_SURFACE - ORIGIN_MIN_Y + TUNNEL_REACH + 32;             // vanilla: 180 (cave) / 47 (extra); cut so caves stay in the band
     /** Vanilla: 0.15 for "cave" spread over 236 blocks of Y, 0.07 for "cave_extra_underground" over 103. */
     private static final float[] PROBABILITY = {0.10f, 0.07f};
 
@@ -61,8 +66,29 @@ public final class CaveCarver {
      * @param grid      block access
      */
     public static void carve(long seed, int floorY, int chunkX, int chunkZ, IntBinaryOperator bandTop, int[] ceiling, Grid grid) {
+        carve(seed, floorY, chunkX, chunkZ, bandTop, ceiling, grid, Integer.MIN_VALUE, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Carves only the blocks of chunk (chunkX, chunkZ) from clipMinY to clipMaxY (a cubic world's cube): the same blocks as carving the
+     * whole chunk, since a tunnel reads only the blocks it carves.
+     */
+    public static void carve(long seed, int floorY, int chunkX, int chunkZ, IntBinaryOperator bandTop, int[] ceiling, Grid grid,
+                             int clipMinY, int clipMaxY) {
         int top = bandTop.applyAsInt(chunkX, chunkZ);
-        Chunk chunk = new Chunk(grid, chunkX, chunkZ, floorY, top, ceiling, LAVA_LEVEL + (top - UndergroundBand.VANILLA_SURFACE));
+        if (clipMaxY < floorY || clipMinY > top) return;
+        if (clipMaxY < top - DEEPEST_BELOW_TOP) {
+            // Deep under this chunk's band: only a tunnel from a chunk whose band lies deeper could reach here.
+            int lowestTop = top;
+            for (int ox = chunkX - ORIGIN_RANGE_CHUNKS; ox <= chunkX + ORIGIN_RANGE_CHUNKS; ox++) {
+                for (int oz = chunkZ - ORIGIN_RANGE_CHUNKS; oz <= chunkZ + ORIGIN_RANGE_CHUNKS; oz++) {
+                    lowestTop = Math.min(lowestTop, bandTop.applyAsInt(ox, oz));
+                }
+            }
+            if (clipMaxY < lowestTop - DEEPEST_BELOW_TOP) return;
+        }
+        Chunk chunk = new Chunk(grid, chunkX, chunkZ, floorY, top, ceiling, LAVA_LEVEL + (top - UndergroundBand.VANILLA_SURFACE),
+                clipMinY, clipMaxY);
         WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(RandomSupport.generateUniqueSeed()));
         for (int ox = chunkX - ORIGIN_RANGE_CHUNKS; ox <= chunkX + ORIGIN_RANGE_CHUNKS; ox++) {
             for (int oz = chunkZ - ORIGIN_RANGE_CHUNKS; oz <= chunkZ + ORIGIN_RANGE_CHUNKS; oz++) {
@@ -168,7 +194,9 @@ public final class CaveCarver {
         int minLx = Math.max(Mth.floor(x - hRadius) - chunk.minX - 1, 0);
         int maxLx = Math.min(Mth.floor(x + hRadius) - chunk.minX, 15);
         int minY = Math.max(Mth.floor(y - vRadius) - 1, chunk.floorY);
-        int maxY = Math.min(Mth.floor(y + vRadius) + 1, chunk.top);
+        int maxY = Math.min(Mth.floor(y + vRadius) + 1, chunk.clipMaxY);
+        int lowest = Math.max(minY + 1, chunk.clipMinY);
+        if (lowest > maxY) return;
         int minLz = Math.max(Mth.floor(z - hRadius) - chunk.minZ - 1, 0);
         int maxLz = Math.min(Mth.floor(z + hRadius) - chunk.minZ, 15);
         for (int lx = minLx; lx <= maxLx; lx++) {
@@ -179,7 +207,7 @@ public final class CaveCarver {
                 double nz = (bz + 0.5 - z) / hRadius;
                 if (nx * nx + nz * nz >= 1.0) continue;
                 int columnCeiling = Math.min(maxY, chunk.ceiling[lx * 16 + lz]);
-                for (int by = columnCeiling; by > minY; by--) {
+                for (int by = columnCeiling; by >= lowest; by--) {
                     double ny = (by - 0.5 - y) / vRadius;
                     if (ny <= floorLevel || nx * nx + ny * ny + nz * nz >= 1.0) continue;
                     chunk.carve(lx, by, lz, bx, bz);
@@ -205,12 +233,12 @@ public final class CaveCarver {
 
     private static final class Chunk {
         final Grid grid;
-        final int minX, minZ, midX, midZ, floorY, top, lavaY;
+        final int minX, minZ, midX, midZ, floorY, top, lavaY, clipMinY, clipMaxY;
         final int[] ceiling;
         final int height;
         final BitSet mask;
 
-        Chunk(Grid grid, int chunkX, int chunkZ, int floorY, int top, int[] ceiling, int lavaY) {
+        Chunk(Grid grid, int chunkX, int chunkZ, int floorY, int top, int[] ceiling, int lavaY, int clipMinY, int clipMaxY) {
             this.grid = grid;
             this.minX = chunkX << 4;
             this.minZ = chunkZ << 4;
@@ -220,13 +248,16 @@ public final class CaveCarver {
             this.top = top;
             this.ceiling = ceiling;
             this.lavaY = lavaY;
-            this.height = Math.max(1, top - floorY + 1);
+            // the blocks that may be carved: the band from the floor to its top, within the clip
+            this.clipMinY = Math.max(floorY, clipMinY);
+            this.clipMaxY = Math.min(top, clipMaxY);
+            this.height = Math.max(1, this.clipMaxY - this.clipMinY + 1);
             this.mask = new BitSet(256 * height);
         }
 
         void carve(int lx, int y, int lz, int bx, int bz) {
-            if (y < floorY || y > top) return;
-            int bit = (lx * 16 + lz) * height + (y - floorY);
+            if (y < clipMinY || y > clipMaxY) return;
+            int bit = (lx * 16 + lz) * height + (y - clipMinY);
             if (mask.get(bit)) return;
             mask.set(bit);
             BlockState state = grid.get(bx, y, bz);

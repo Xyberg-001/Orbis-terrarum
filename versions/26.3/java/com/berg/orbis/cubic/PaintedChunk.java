@@ -5,6 +5,7 @@ import java.util.TreeMap;
 
 import com.berg.orbis.feature.RegionRaster;
 import com.berg.orbis.render.ColumnPainter;
+import com.berg.orbis.worldgen.CaveCarver;
 import com.berg.orbis.worldgen.WorldModel;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -25,8 +26,8 @@ final class PaintedChunk {
         this.minZ = minZ;
     }
 
-    /** Paints the chunk from minX, minZ as a cube's terrain is painted (see {@link OrbisCubeGenerator#paintColumns}). */
-    static PaintedChunk paint(WorldModel model, int minX, int minZ, RegionRaster raster) {
+    /** Makes the chunk from minX, minZ as the cubes' terrain is made: painted, with ores and caves (see OrbisCubeGenerator#buildColumns). */
+    static PaintedChunk paint(WorldModel model, long seed, int minX, int minZ, RegionRaster raster) {
         PaintedChunk chunk = new PaintedChunk(minX, minZ);
         Builder[] builders = new Builder[256];
         ColumnPainter.Sink sink = new ColumnPainter.Sink() {
@@ -44,7 +45,21 @@ final class PaintedChunk {
                 b.put(y0, y1, state);
             }
         };
-        OrbisCubeGenerator.paintColumns(model, minX, minZ, raster, sink);
+        CaveCarver.Grid grid = new CaveCarver.Grid() {
+            @Override
+            public BlockState get(int x, int y, int z) {
+                int lx = x - minX, lz = z - minZ;
+                if (lx < 0 || lx > 15 || lz < 0 || lz > 15) return AIR;
+                Builder b = builders[lx * 16 + lz];
+                return b == null ? AIR : b.get(y);
+            }
+
+            @Override
+            public void set(int x, int y, int z, BlockState state) {
+                sink.set(x, y, z, state);
+            }
+        };
+        OrbisCubeGenerator.buildColumns(model, seed, minX, minZ, raster, sink, grid, Integer.MIN_VALUE, Integer.MAX_VALUE);
         for (int i = 0; i < 256; i++) chunk.columns[i] = builders[i] == null ? Column.EMPTY : builders[i].build();
         return chunk;
     }
@@ -133,6 +148,11 @@ final class PaintedChunk {
                 if (r.to > y1) this.runs.put(y1 + 1, new Run(y1 + 1, r.to, r.state));
             }
             if (!state.isAir()) this.runs.put(y0, new Run(y0, y1, state));
+        }
+
+        BlockState get(int y) {
+            Map.Entry<Integer, Run> run = this.runs.floorEntry(y);
+            return run != null && run.getValue().to >= y ? run.getValue().state : AIR;
         }
 
         Column build() {

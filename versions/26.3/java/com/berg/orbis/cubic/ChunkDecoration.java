@@ -10,12 +10,15 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.ticks.ScheduledTick;
 
 /**
  * One chunk's decoration in a cubic world, made once ({@link DecorationLevel}) and shared out: each cube it reaches takes the blocks, block
- * entities and entities that fall in it. Kept by cube Y, so a cube finds its share without looking at the rest.
+ * entities, entities and scheduled ticks that fall in it. Kept by cube Y, so a cube finds its share without looking at the rest.
  */
 final class ChunkDecoration {
     static final ChunkDecoration NONE = new ChunkDecoration();
@@ -30,6 +33,8 @@ final class ChunkDecoration {
         final List<BlockEntity> blockEntities = new ArrayList<>();
         final List<Entity> entities = new ArrayList<>();
         final LongArrayList postProcessing = new LongArrayList();
+        final List<ScheduledTick<Block>> blockTicks = new ArrayList<>();
+        final List<ScheduledTick<Fluid>> fluidTicks = new ArrayList<>();
     }
 
     private ChunkDecoration() {}
@@ -58,6 +63,12 @@ final class ChunkDecoration {
         }
         for (BlockPos pos : level.postProcessing()) {
             decoration.part(pos.getY()).postProcessing.add(pos.asLong());
+        }
+        for (ScheduledTick<Block> tick : level.blockTicks()) {
+            decoration.part(tick.pos().getY()).blockTicks.add(tick);
+        }
+        for (ScheduledTick<Fluid> tick : level.fluidTicks()) {
+            decoration.part(tick.pos().getY()).fluidTicks.add(tick);
         }
         return decoration;
     }
@@ -88,6 +99,12 @@ final class ChunkDecoration {
         for (int i = 0; i < part.postProcessing.size(); i++) {
             long pos = part.postProcessing.getLong(i);
             cube.markForPostProcessing(BlockPos.getX(pos), BlockPos.getY(pos), BlockPos.getZ(pos));
+        }
+        for (ScheduledTick<Block> tick : part.blockTicks) {
+            cube.scheduleBlockTick(tick.pos().getX(), tick.pos().getY(), tick.pos().getZ(), tick.type());
+        }
+        for (ScheduledTick<Fluid> tick : part.fluidTicks) {
+            cube.scheduleFluidTick(tick.pos().getX(), tick.pos().getY(), tick.pos().getZ(), tick.type());
         }
     }
 

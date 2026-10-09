@@ -8,7 +8,9 @@ import com.berg.orbis.biome.BiomeClassifier;
 import com.berg.orbis.config.OrbisConfig;
 import com.berg.orbis.feature.RegionRaster;
 import com.berg.orbis.render.ColumnPainter;
+import com.berg.orbis.worldgen.CaveCarver;
 import com.berg.orbis.worldgen.HardLimit;
+import com.berg.orbis.worldgen.OreGenerator;
 import com.berg.orbis.worldgen.RealWorldChunkGenerator;
 import com.berg.orbis.worldgen.WorldModel;
 import io.github.opencubicchunks.cubicchunks.api.CubeGenerator;
@@ -27,10 +29,13 @@ import net.minecraft.world.level.block.state.BlockState;
  * A cube spans 2 x 2 chunks; each chunk's columns are worked out as for a chunk (the same elevation smoothing over its 16 x 16 columns), so
  * a column is the same in every cube it passes through, and the cube waits for those chunks' map regions as a chunk would. The decoration
  * (trees, interiors, signs, street life) is made per chunk over the painted columns and shared out to the cubes ({@link CubeDecorations}).
- * Ores, caves, the underground features and vanilla structures are not made in cubes yet.
+ * Ores and caves are made as in a chunk, each cube keeping its part; the underground features come with the decoration. Vanilla structures
+ * are not made in cubes yet.
  */
 public final class OrbisCubeGenerator implements CubeGenerator {
     private static final BlockState STONE = Blocks.STONE.defaultBlockState();
+    /** Deepest an ore vein reaches under the ground (OreGenerator's deepest vein, and its spread). */
+    private static final int ORE_DEPTH = 330;
 
     private final ServerLevel level;
     private final RealWorldChunkGenerator generator;
@@ -69,7 +74,7 @@ public final class OrbisCubeGenerator implements CubeGenerator {
                 .thenRunAsync(() -> {
                     for (int i = 0; i < chunks; i++) {
                         for (int j = 0; j < chunks; j++) {
-                            paintChunk(model, cube, cube.minX() + i * 16, cube.minZ() + j * 16, rasters[i * chunks + j].join());
+                            buildChunk(model, this.level.getSeed(), cube, cube.minX() + i * 16, cube.minZ() + j * 16, rasters[i * chunks + j].join());
                         }
                     }
                     this.fillBiomes(cube);
@@ -139,9 +144,9 @@ public final class OrbisCubeGenerator implements CubeGenerator {
                 .thenCompose(v -> terrainReady(model, minX, minZ, size, since));
     }
 
-    /** One chunk's 16 x 16 columns of the cube, as the chunk generator paints a chunk's. */
-    private static void paintChunk(WorldModel model, CubeTerrain cube, int minX, int minZ, RegionRaster raster) {
-        paintColumns(model, minX, minZ, raster, new ColumnPainter.Sink() {
+    /** One chunk's 16 x 16 columns of the cube, as the chunk generator makes a chunk's (painted, then ores and caves). */
+    private static void buildChunk(WorldModel model, long seed, CubeTerrain cube, int minX, int minZ, RegionRaster raster) {
+        buildColumns(model, seed, minX, minZ, raster, new ColumnPainter.Sink() {
             @Override
             public void set(int x, int y, int z, BlockState state) {
                 cube.setBlock(x, y, z, state);
@@ -159,15 +164,67 @@ public final class OrbisCubeGenerator implements CubeGenerator {
                     cube.fill(x, from, to, z, state);
                 }
             }
-        });
+        }, new CaveCarver.Grid() {
+            @Override
+            public BlockState get(int x, int y, int z) {
+                return cube.getBlock(x, y, z); // air outside the cube, which ores and caves leave alone
+            }
+
+            @Override
+            public void set(int x, int y, int z, BlockState state) {
+                cube.setBlock(x, y, z, state);
+            }
+        }, cube.minY(), cube.maxY());
+    }
+
+    /**
+     * A chunk's columns from minX, minZ: painted whole into the sink, then the ores and caves the chunk generator adds, through the grid
+     * (which reads what the sink wrote) between clipMinY and clipMaxY. Ores and caves read only blocks they write, so any part of the
+     * columns comes out as in the whole chunk.
+     */
+    static void buildColumns(WorldModel model, long seed, int minX, int minZ, RegionRaster raster, ColumnPainter.Sink sink,
+                             CaveCarver.Grid grid, int clipMinY, int clipMaxY) {
+        int[][] terrain = paintColumns(model, minX, minZ, raster, sink);
+        if (terrain == null) return;
+        OrbisConfig cfg = model.cfg();
+        if (cfg.generateOres) {
+            int lowest = Integer.MAX_VALUE, highest = Integer.MIN_VALUE;
+            for (int[] column : terrain) {
+                for (int t : column) {
+                    lowest = Math.min(lowest, t);
+                    highest = Math.max(highest, t);
+                }
+            }
+            // veins lie 5 to 320 blocks under the ground (and spread 3 blocks)
+            if (clipMaxY >= lowest - ORE_DEPTH && clipMinY <= highest) {
+                long oreSeed = Double.doubleToLongBits(cfg.originLat) * 31 + Double.doubleToLongBits(cfg.originLon);
+                int deepslateTop = cfg.undergroundVersion >= 2 ? Integer.MIN_VALUE : cfg.seaLevelY - 60;
+                OreGenerator.place(grid, minX, minZ, terrain, deepslateTop, cfg.minY, oreSeed);
+            }
+        }
+        if (cfg.vanillaCaves) {
+            int chunkX = minX >> 4, chunkZ = minZ >> 4;
+            int top = model.band().top(chunkX, chunkZ);
+            int[] ceiling = new int[256];
+            for (int lx = 0; lx < 16; lx++) {
+                for (int lz = 0; lz < 16; lz++) {
+                    ceiling[lx * 16 + lz] = Math.min(top, model.terrainHeight(minX + lx, minZ + lz) - 10);
+                }
+            }
+            try {
+                CaveCarver.carve(seed, cfg.minY + 5, chunkX, chunkZ, (cx, cz) -> model.band().top(cx, cz), ceiling, grid, clipMinY, clipMaxY);
+            } catch (RuntimeException e) {
+                System.err.println("[orbis] Cave carving failed for chunk " + chunkX + "," + chunkZ + " (cubic): " + e);
+            }
+        }
     }
 
     /**
      * Paints a chunk's 16 x 16 columns whole into the sink (the elevation smoothed over the chunk, the painter, the landmarks): the same
      * for the cubes ({@link #paintChunk}, which keep what falls in them) and for the decoration ({@link PaintedChunk}).
      */
-    static void paintColumns(WorldModel model, int minX, int minZ, RegionRaster raster, ColumnPainter.Sink sink) {
-        if (HardLimit.blocks(minX >> 4, minZ >> 4)) return; // outside the allowed area: left empty
+    static int[][] paintColumns(WorldModel model, int minX, int minZ, RegionRaster raster, ColumnPainter.Sink sink) {
+        if (HardLimit.blocks(minX >> 4, minZ >> 4)) return null; // outside the allowed area: left empty
         OrbisConfig cfg = model.cfg();
         double[][] raw = new double[16][16];
         boolean[][] ok = new boolean[16][16];
@@ -182,10 +239,12 @@ public final class OrbisCubeGenerator implements CubeGenerator {
         boolean layout2 = cfg.undergroundVersion >= 2;
         int deepslateBase = layout2 ? model.band().deepslateTop(minX >> 4, minZ >> 4) : cfg.seaLevelY - 60;
         int[][] deepslateLine = layout2 ? model.band().deepslateLine(minX >> 4, minZ >> 4) : null;
+        int[][] terrains = new int[16][16];
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int x = minX + lx, z = minZ + lz;
                 int terrain = model.blockY(RealWorldChunkGenerator.smoothed(raw, ok, lx, lz, cfg.elevationOutlierMeters, 0.0), x, z);
+                terrains[lx][lz] = terrain;
                 int idx = raster == null ? -1 : raster.index(x, z);
                 BiomeClassifier.Climate climate = model.climateWithSnow(x, z, ok[lx][lz] ? raw[lx][lz] : Double.NaN);
                 try {
@@ -198,6 +257,7 @@ public final class OrbisCubeGenerator implements CubeGenerator {
             }
         }
         if (cfg.generateSchematics && model.landmarks() != null) RealWorldChunkGenerator.pasteLandmarks(model, minX, minZ, sink);
+        return terrains;
     }
 
     /**

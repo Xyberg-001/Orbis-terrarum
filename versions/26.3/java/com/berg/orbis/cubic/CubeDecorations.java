@@ -8,13 +8,15 @@ import com.berg.orbis.feature.RegionRaster;
 import com.berg.orbis.worldgen.HardLimit;
 import com.berg.orbis.worldgen.RealWorldChunkGenerator;
 import com.berg.orbis.worldgen.SeaVegetation;
+import com.berg.orbis.worldgen.UndergroundBiomes;
+import com.berg.orbis.worldgen.UndergroundFeatures;
 import com.berg.orbis.worldgen.WorldModel;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Util;
 import net.minecraft.world.level.ChunkPos;
 
 /**
- * The decoration of a cubic world: trees, street furniture, interiors, signs, street life and sea plants, made chunk by chunk as in a
+ * The decoration of a cubic world (over the painted columns with their ores and caves): the underground features, trees, street furniture, interiors, signs, street life and sea plants, made chunk by chunk as in a
  * normal world, but in a {@link DecorationLevel} over the painted columns, and shared out to the cubes ({@link ChunkDecoration}). A cube
  * takes its share of the chunks it spans and of the chunks around them (a decoration reaches a chunk beyond its own). The decorations
  * and painted columns are kept for a while, since every cube of a column uses the same ones.
@@ -70,9 +72,18 @@ final class CubeDecorations {
                 .thenApplyAsync(v -> this.decorate(model, chunkX, chunkZ), Util.backgroundExecutor());
     }
 
-    /** What the chunk generator's decoration does (vanilla structures and the underground features aside: they need caves first). */
+    /** What the chunk generator's decoration does, in the same order (vanilla structures aside). */
     private ChunkDecoration decorate(WorldModel model, int chunkX, int chunkZ) {
         DecorationLevel region = new DecorationLevel(this.level, chunkX, chunkZ, this::painted);
+        if (model.cfg().vanillaCaves) {
+            try {
+                // Dungeons, geodes, fossils, springs, lichen; then the cave biomes' moss, dripstone and sculk.
+                UndergroundFeatures.place(model, region, this.generator, new ChunkPos(chunkX, chunkZ));
+                if (model.cfg().undergroundVersion >= 2) UndergroundBiomes.place(model, region, this.generator, new ChunkPos(chunkX, chunkZ));
+            } catch (RuntimeException e) {
+                System.err.println("[orbis] Underground features failed for chunk " + chunkX + "," + chunkZ + " (cubic): " + e);
+            }
+        }
         try {
             model.decorator().decorateChunk(region, chunkX << 4, chunkZ << 4);
         } catch (RuntimeException e) {
@@ -95,7 +106,7 @@ final class CubeDecorations {
             if (chunk != null) return chunk;
         }
         WorldModel model = this.generator.model();
-        PaintedChunk chunk = PaintedChunk.paint(model, chunkX << 4, chunkZ << 4, model.rasterIfLoaded(chunkX << 4, chunkZ << 4));
+        PaintedChunk chunk = PaintedChunk.paint(model, this.level.getSeed(), chunkX << 4, chunkZ << 4, model.rasterIfLoaded(chunkX << 4, chunkZ << 4));
         synchronized (this.painted) {
             this.painted.putIfAbsent(key, chunk);
         }

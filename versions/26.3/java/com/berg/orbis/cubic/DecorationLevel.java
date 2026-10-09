@@ -32,8 +32,8 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
-import net.minecraft.world.ticks.BlackholeTickAccess;
 import net.minecraft.world.ticks.LevelTickAccess;
+import net.minecraft.world.ticks.ScheduledTick;
 
 /**
  * The level a chunk's decoration is made in for a cubic world: it reads the painted columns ({@link PaintedChunk}) with the decoration's
@@ -52,7 +52,7 @@ final class DecorationLevel extends WorldGenRegion {
     private final Columns columns;
     private final int chunkX;
     private final int chunkZ;
-    private final ChunkAccess placeholder;
+    private final Placeholder placeholder;
     private final int minY;
     private final int height;
     private final Long2ObjectOpenHashMap<PaintedChunk> painted = new Long2ObjectOpenHashMap<>();
@@ -61,12 +61,16 @@ final class DecorationLevel extends WorldGenRegion {
     private final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
     private final List<Entity> entities = new ArrayList<>();
     private final Set<BlockPos> postProcessing = new HashSet<>();
+    private final List<ScheduledTick<Block>> blockTicks = new ArrayList<>();
+    private final List<ScheduledTick<Fluid>> fluidTicks = new ArrayList<>();
+    private final LevelTickAccess<Block> blockTickAccess = recorder(this.blockTicks);
+    private final LevelTickAccess<Fluid> fluidTickAccess = recorder(this.fluidTicks);
 
     DecorationLevel(ServerLevel level, int chunkX, int chunkZ, Columns columns) {
         this(level, chunkX, chunkZ, columns, placeholder(level, chunkX, chunkZ));
     }
 
-    private DecorationLevel(ServerLevel level, int chunkX, int chunkZ, Columns columns, ChunkAccess placeholder) {
+    private DecorationLevel(ServerLevel level, int chunkX, int chunkZ, Columns columns, Placeholder placeholder) {
         // the empty step has no dependencies, so the region never looks into its cache
         super(level, StaticCache2D.create(chunkX, chunkZ, 0, (x, z) -> null), ChunkPyramid.GENERATION_PYRAMID.getStepTo(ChunkStatus.EMPTY),
                 placeholder);
@@ -75,14 +79,47 @@ final class DecorationLevel extends WorldGenRegion {
         this.chunkX = chunkX;
         this.chunkZ = chunkZ;
         this.placeholder = placeholder;
+        placeholder.level = this;
         this.minY = CubicApi.minY(level);
         this.height = CubicApi.maxY(level) - this.minY + 1;
     }
 
-    /** A one-section chunk standing in for the region's centre (only its position is used). */
-    private static ChunkAccess placeholder(ServerLevel level, int chunkX, int chunkZ) {
-        return new ProtoChunk(new ChunkPos(chunkX, chunkZ), UpgradeData.EMPTY, LevelHeightAccessor.create(0, 16), level.palettedContainerFactory(),
-                null);
+    private static Placeholder placeholder(ServerLevel level, int chunkX, int chunkZ) {
+        return new Placeholder(new ChunkPos(chunkX, chunkZ), level);
+    }
+
+    /**
+     * A one-section chunk standing in for the region's centre, and for any chunk a feature asks the region for (vanilla's vines and sculk
+     * mark blocks for post-processing through their chunk): its blocks and marks are the region's.
+     */
+    private static final class Placeholder extends ProtoChunk {
+        DecorationLevel level;
+
+        Placeholder(ChunkPos pos, ServerLevel serverLevel) {
+            super(pos, UpgradeData.EMPTY, LevelHeightAccessor.create(0, 16), serverLevel.palettedContainerFactory(), null);
+        }
+
+        @Override
+        public BlockState getBlockState(BlockPos pos) {
+            return this.level == null ? super.getBlockState(pos) : this.level.getBlockState(pos);
+        }
+
+        @Override
+        public FluidState getFluidState(BlockPos pos) {
+            return this.level == null ? super.getFluidState(pos) : this.level.getFluidState(pos);
+        }
+
+        @Override
+        public BlockState setBlockState(BlockPos pos, BlockState state, @Block.UpdateFlags int flags) {
+            BlockState old = this.getBlockState(pos);
+            if (this.level != null) this.level.setBlock(pos, state, flags);
+            return old;
+        }
+
+        @Override
+        public void markPosForPostProcessing(BlockPos pos) {
+            if (this.level != null) this.level.postProcessing.add(pos.immutable());
+        }
     }
 
     int chunkX() {
@@ -107,6 +144,42 @@ final class DecorationLevel extends WorldGenRegion {
 
     Set<BlockPos> postProcessing() {
         return this.postProcessing;
+    }
+
+    List<ScheduledTick<Block>> blockTicks() {
+        return this.blockTicks;
+    }
+
+    List<ScheduledTick<Fluid>> fluidTicks() {
+        return this.fluidTicks;
+    }
+
+    /** Keeps the ticks scheduled (springs, falling blocks) for the cubes they fall in. */
+    private static <T> LevelTickAccess<T> recorder(List<ScheduledTick<T>> ticks) {
+        return new LevelTickAccess<>() {
+            @Override
+            public boolean willTickThisTick(BlockPos pos, T type) {
+                return false;
+            }
+
+            @Override
+            public void schedule(ScheduledTick<T> tick) {
+                ticks.add(tick);
+            }
+
+            @Override
+            public boolean hasScheduledTick(BlockPos pos, T type) {
+                for (ScheduledTick<T> tick : ticks) {
+                    if (tick.type() == type && tick.pos().equals(pos)) return true;
+                }
+                return false;
+            }
+
+            @Override
+            public int count() {
+                return ticks.size();
+            }
+        };
     }
 
     PaintedChunk.Column paintedColumn(int x, int z) {
@@ -192,13 +265,18 @@ final class DecorationLevel extends WorldGenRegion {
     }
 
     @Override
+    public net.minecraft.world.level.blockscan.BlockMatcher findBlocksIn(BlockPos from, BlockPos to) {
+        return new ScanMatcher(this, from, to);
+    }
+
+    @Override
     public Holder<Biome> getNoiseBiome(int quartX, int quartY, int quartZ) {
         return this.getUncachedNoiseBiome(quartX, quartY, quartZ);
     }
 
     @Override
     public ChunkAccess getChunk(int chunkX, int chunkZ, ChunkStatus status, boolean loadOrGenerate) {
-        // there are no chunks; a caller that insists gets the empty stand-in
+        // there are no chunks; a caller that insists gets the stand-in, which passes blocks on to this region
         return loadOrGenerate ? this.placeholder : null;
     }
 
@@ -249,12 +327,12 @@ final class DecorationLevel extends WorldGenRegion {
 
     @Override
     public LevelTickAccess<Block> getBlockTicks() {
-        return BlackholeTickAccess.emptyLevelList();
+        return this.blockTickAccess;
     }
 
     @Override
     public LevelTickAccess<Fluid> getFluidTicks() {
-        return BlackholeTickAccess.emptyLevelList();
+        return this.fluidTickAccess;
     }
 
     ServerLevel serverLevel() {
