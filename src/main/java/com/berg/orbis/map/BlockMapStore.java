@@ -324,6 +324,9 @@ public final class BlockMapStore {
 
     public static volatile RegionFiller cubicFiller;
 
+    /** Raised when the filler draws more than before, so regions it drew are drawn again. */
+    private static final String CUBIC_FILL_VERSION = "2";
+
     /**
      * The region with every saved, fully generated chunk drawn in: a region pre-generated before the map existed
      * is drawn from its region file here (about a thousand chunks; seconds), once. Background threads only.
@@ -333,13 +336,19 @@ public final class BlockMapStore {
         RegionFiller filler = cubicFiller;
         if (filler != null && com.berg.orbis.OrbisMod.cubicWorld()) {
             // A cubic world has no region files: the region is drawn from its saved cubes, once (a marker beside the map file; regions
-            // marked complete before cubic worlds were drawn get it too).
+            // marked complete before cubic worlds were drawn get it too, and so do regions drawn by an older filler: its version is in it).
             Path marker = dir.resolve("r." + rx + "." + rz + ".cubic");
-            if (!Files.exists(marker)) {
+            String done;
+            try {
+                done = Files.exists(marker) ? Files.readString(marker).trim() : "";
+            } catch (IOException e) {
+                done = "";
+            }
+            if (!done.equals(CUBIC_FILL_VERSION)) {
                 try {
                     filler.fill(this, rx, rz);
                     Files.createDirectories(dir);
-                    Files.writeString(marker, "");
+                    Files.writeString(marker, CUBIC_FILL_VERSION);
                 } catch (IOException | RuntimeException e) {
                     System.err.println("[orbis] Map region " + rx + "," + rz + " (cubic): " + e);
                 }

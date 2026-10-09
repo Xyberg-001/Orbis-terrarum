@@ -93,6 +93,15 @@ public final class CubeMapDrawer implements CubicApi.CubeListener {
         if (level == null || !CubicApi.isCubic(level)) return;
         int size = CubeTerrain.SIZE, perRegion = 512 / size;
         int minCube = Math.floorDiv(CubicApi.minY(level), size), maxCube = Math.floorDiv(CubicApi.maxY(level), size);
+        // Nothing saved there (Cubic Chunks keeps 16 x 16 x 16 cubes a file, one map region across): skip it without asking the
+        // generator for ground heights (which could fetch elevation data for places no one went).
+        java.nio.file.Path files = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                .resolve("dimensions/minecraft/overworld/region3d");
+        boolean any = false;
+        for (int ry = Math.floorDiv(minCube, 16); ry <= Math.floorDiv(maxCube, 16) && !any; ry++) {
+            any = java.nio.file.Files.exists(files.resolve(rx + "." + ry + "." + rz + ".3dr"));
+        }
+        if (!any) return;
         for (int i = 0; i < perRegion; i++) {
             for (int j = 0; j < perRegion; j++) {
                 fillCubeColumn(store, level, rx * perRegion + i, rz * perRegion + j, minCube, maxCube);
@@ -103,23 +112,7 @@ public final class CubeMapDrawer implements CubicApi.CubeListener {
     private static void fillCubeColumn(BlockMapStore store, ServerLevel level, int cubeX, int cubeZ, int minCube, int maxCube) {
         int size = CubeTerrain.SIZE;
         java.util.Map<Integer, CubicApi.CubeBlocks> cubes = new java.util.HashMap<>();
-        boolean emptyAbove = false; // the cube just above was generated empty
-        int surfaceCube = Integer.MIN_VALUE;
-        for (int cy = maxCube; cy >= minCube; cy--) {
-            var blocks = CubicApi.readCube(level, cubeX, cy, cubeZ);
-            if (blocks.isEmpty()) { // never generated (sky cubes generated higher up, where someone flew, leave such gaps)
-                emptyAbove = false;
-                continue;
-            }
-            if (blocks.get().isEmpty()) {
-                emptyAbove = true;
-                continue;
-            }
-            if (!emptyAbove) return; // what lies just over it was never generated
-            surfaceCube = cy;
-            cubes.put(cy, blocks.get());
-            break;
-        }
+        int surfaceCube = surfaceCube(level, cubes, cubeX, cubeZ, minCube, maxCube);
         if (surfaceCube == Integer.MIN_VALUE) return;
         int chunks = size / 16;
         for (int i = 0; i < chunks; i++) {
@@ -174,6 +167,57 @@ public final class CubeMapDrawer implements CubicApi.CubeListener {
                 });
             }
         }
+    }
+
+    /**
+     * The cube holding a cube column's top blocks: the highest that holds anything, with the cube over it generated empty (higher up, sky
+     * cubes generated where someone flew leave never-generated gaps: they do not matter); MIN_VALUE when not known. The search starts at the
+     * cube of the generator's ground height, so a column takes a few cube reads rather than one for every cube up to the sky.
+     */
+    private static int surfaceCube(ServerLevel level, java.util.Map<Integer, CubicApi.CubeBlocks> cubes, int cubeX, int cubeZ, int minCube, int maxCube) {
+        int size = CubeTerrain.SIZE;
+        var generator = CubicApi.cubeGenerator(level);
+        var ground = generator == null ? null : generator.surface(cubeX * size + size / 2, cubeZ * size + size / 2);
+        if (ground == null) {
+            boolean emptyAbove = false;
+            for (int cy = maxCube; cy >= minCube; cy--) {
+                var blocks = read(level, cubes, cubeX, cy, cubeZ);
+                if (blocks == null) {
+                    emptyAbove = false;
+                } else if (blocks.isEmpty()) {
+                    emptyAbove = true;
+                } else {
+                    return emptyAbove ? cy : Integer.MIN_VALUE;
+                }
+            }
+            return Integer.MIN_VALUE;
+        }
+        int start = Math.max(minCube, Math.min(maxCube, Math.floorDiv(ground.surfaceY(), size)));
+        var first = read(level, cubes, cubeX, start, cubeZ);
+        if (first == null) return Integer.MIN_VALUE;
+        if (first.isEmpty()) { // down to the ground
+            for (int cy = start - 1; cy >= minCube; cy--) {
+                var blocks = read(level, cubes, cubeX, cy, cubeZ);
+                if (blocks == null) return Integer.MIN_VALUE;
+                if (!blocks.isEmpty()) return cy;
+            }
+            return Integer.MIN_VALUE;
+        }
+        for (int cy = start + 1; cy <= maxCube; cy++) { // up through what stands on the ground
+            var blocks = read(level, cubes, cubeX, cy, cubeZ);
+            if (blocks == null) return Integer.MIN_VALUE;
+            if (blocks.isEmpty()) return cy - 1;
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    private static CubicApi.CubeBlocks read(ServerLevel level, java.util.Map<Integer, CubicApi.CubeBlocks> cubes, int cubeX, int cy, int cubeZ) {
+        CubicApi.CubeBlocks cube = cubes.get(cy);
+        if (cube == null) {
+            cube = CubicApi.readCube(level, cubeX, cy, cubeZ).orElse(null);
+            if (cube != null) cubes.put(cy, cube);
+        }
+        return cube;
     }
 
     /** Draws the chunks of a cube column whose top blocks the loaded cubes show. */
