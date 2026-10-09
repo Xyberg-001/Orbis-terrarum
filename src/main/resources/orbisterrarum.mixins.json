@@ -23,7 +23,9 @@
     "CompoundTagMixin",
     "RegionFileStorageMixin",
     "RegionFileAccessor",
-    "JigsawPlacementMixin"
+    "JigsawPlacementMixin",
+    "LocateCommandMixin",
+    "ChunkGeneratorLocateMixin"
   ],
   "client": [
     "client.ClientLevelDataMixin",
