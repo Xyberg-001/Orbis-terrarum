@@ -45,6 +45,9 @@ public class OrbisMod implements ModInitializer {
     private static volatile OrbisConfig config;
     private static volatile WorldModel model;
     private static volatile WorldSettings modelSettings;
+    /** [lowest Y, highest Y] of the running world when it is a cubic one (Cubic Chunks), else null; see {@link #useCubicHeights}. */
+    private static volatile int[] cubicHeights;
+    private static volatile int[] modelCubicHeights;
     /** True while the server shuts down: nothing may wait for downloads then. */
     private static volatile boolean stopping;
 
@@ -251,15 +254,25 @@ public class OrbisMod implements ModInitializer {
     public static synchronized WorldModel modelFor(WorldSettings settings) {
         if (settings == null) settings = defaultWorldSettings();
         WorldModel current = model;
-        int height = effectiveHeight(settings);
-        if (current != null && settings.equals(modelSettings) && height == modelHeight) return current;
+        int[] cubic = cubicHeights;
+        int height = cubic != null ? cubic[1] - cubic[0] + 1 : effectiveHeight(settings);
+        if (current != null && settings.equals(modelSettings) && height == modelHeight && cubic == modelCubicHeights) return current;
         System.out.println("[orbis] Building world model: " + settings.describe() + " (world height " + height + ")");
         OrbisConfig effective = settings.effective(config);
         effective.worldHeight = height;
+        if (cubic != null) {
+            // A cubic world (Cubic Chunks): it holds the real heights, so a block is a metre up and down from sea level at
+            // Y 0, with nothing squeezed.
+            effective.minY = cubic[0];
+            effective.seaLevelY = 0;
+            effective.verticalMode = "clamp";
+            System.out.println("[orbis] Cubic world: Y " + cubic[0] + ".." + cubic[1] + ", sea level Y 0, 1 block = 1 m up and down");
+        }
         WorldModel built = buildModel(effective, configDir);
         model = built;
         modelSettings = settings.copy();
         modelHeight = height;
+        modelCubicHeights = cubic;
         cloudHeight = (float) built.cloudHeightY();
         System.out.println("[orbis] Cloud layer at Y " + cloudHeight);
         if (current != null) current.shutdown();
@@ -274,6 +287,21 @@ public class OrbisMod implements ModInitializer {
             spawnPrefetch.start();
         }
         return built;
+    }
+
+    /**
+     * Switches the model to a cubic world's (Cubic Chunks; called as the world's cube generator is made): its own lowest and
+     * highest Y instead of the dimension's, sea level at Y 0 and a block a metre up and down. Until the server stops.
+     */
+    public static synchronized WorldModel useCubicHeights(WorldSettings settings, int minY, int maxY) {
+        int[] current = cubicHeights;
+        if (current == null || current[0] != minY || current[1] != maxY) cubicHeights = new int[]{minY, maxY};
+        return modelFor(settings);
+    }
+
+    /** True while the running world is a cubic one (Cubic Chunks). */
+    public static boolean cubicWorld() {
+        return cubicHeights != null;
     }
 
     /**
@@ -357,6 +385,7 @@ public class OrbisMod implements ModInitializer {
                 .register(com.berg.orbis.net.AllowedAreaPayload.TYPE, com.berg.orbis.net.AllowedAreaPayload.CODEC);
         com.berg.orbis.map.BlockMapService.register();
         com.berg.orbis.compat.dh.DhCompat.init(); // optional: only acts when Distant Horizons is installed
+        com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Chunks is installed (26.3)
         net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             WorldModel m = model;
             if (m == null || !(server.overworld().getChunkSource().getGenerator() instanceof RealWorldChunkGenerator)) return;
@@ -417,7 +446,7 @@ public class OrbisMod implements ModInitializer {
                     .getOrThrow(net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD).value().height();
             levelHeight = actual;
             WorldModel m = model;
-            if (m != null && m.cfg().worldHeight != actual) {
+            if (m != null && m.cfg().worldHeight != actual && !cubicWorld()) {
                 System.out.println("[orbis] Level height is " + actual + " (model had " + m.cfg().worldHeight + "); rebuilding the model");
                 m = modelFor(modelSettings);
             }
@@ -426,7 +455,10 @@ public class OrbisMod implements ModInitializer {
                 System.out.println("[orbis] Server starting; " + m.regions().stats());
             }
         });
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> levelHeight = 0);
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            levelHeight = 0;
+            cubicHeights = null;
+        });
         ServerLifecycleEvents.SERVER_STARTING.register(server -> stopping = false);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             stopping = true;

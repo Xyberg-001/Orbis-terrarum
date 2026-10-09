@@ -717,13 +717,19 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         }
     }
 
-    private static boolean needsPostProcessing(BlockState state) {
+    /** Whether a block must be fitted to its neighbours once they exist (stairs, walls, fences, rails, doors). */
+    public static boolean needsPostProcessing(BlockState state) {
         Block b = state.getBlock();
         return b instanceof CrossCollisionBlock || b instanceof WallBlock || b instanceof BaseRailBlock
                 || b instanceof StairBlock || b instanceof DoorBlock;
     }
 
     private static void pasteLandmarks(WorldModel model, ChunkAccess chunk, int minX, int minZ, ColumnPainter.Sink sink) {
+        pasteLandmarks(model, minX, minZ, sink);
+    }
+
+    /** The landmark schematics over the 16 x 16 columns from minX, minZ, through the sink. */
+    public static void pasteLandmarks(WorldModel model, int minX, int minZ, ColumnPainter.Sink sink) {
         for (LandmarkRegistry.Placement pl : model.landmarks().placements()) {
             if (!pl.intersectsChunk(minX, minZ)) continue;
             int base = pl.baseY(model::terrainHeight);
@@ -742,7 +748,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
     }
 
     /** Replaces a reading that differs wildly from its neighbours' median (bad DEM pixel) with that median. */
-    private static double smoothed(double[][] raw, boolean[][] ok, int lx, int lz, double threshold, double fallback) {
+    public static double smoothed(double[][] raw, boolean[][] ok, int lx, int lz, double threshold, double fallback) {
         double[] neighbours = new double[8];
         int n = 0;
         for (int dx = -1; dx <= 1; dx++) {
