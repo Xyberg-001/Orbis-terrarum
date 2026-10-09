@@ -38,8 +38,17 @@ public final class Decorator {
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int maxY = cfg.maxY();
 
+        final RegionRaster buildings = r;
         TreeBuilder.Sink treeSink = (x, y, z, state, onlyIfAirOrLeaves) -> {
             if (y <= cfg.minY || y >= maxY) return false;
+            // Over a building only above its roof: a crown next to a house filled its rooms with leaves through the wall (the
+            // rooms are air when the tree is placed).
+            if (buildings != null) {
+                int bi = buildings.index(x, z);
+                if (bi >= 0 && buildings.buildingAt(bi) != null && y < level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z)) {
+                    return false;
+                }
+            }
             pos.set(x, y, z);
             if (onlyIfAirOrLeaves) {
                 BlockState existing = level.getBlockState(pos);
