@@ -9,6 +9,7 @@ out/
 
 # Third-party jars used only to compile (YACL, Mod Menu, Fabric key mapping API)
 libs/*.jar
+libs/**/*.jar
 
 
 # IDE

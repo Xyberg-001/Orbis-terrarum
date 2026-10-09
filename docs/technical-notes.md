@@ -20,10 +20,17 @@ the whole known world. The mod was called TellusPlus until 0.3.0; an existing
 `config/tellusplus` folder (with its caches) is migrated automatically and
 worlds created under the old name still load.
 
-Put `orbisterrarum-<version>.jar` in `mods/` together with Fabric API. Two
-optional mods make the settings screens available: **YetAnotherConfigLib**
-(`yet_another_config_lib_v3`) and **Mod Menu**. Without them the mod still
-works and everything can be edited in `config/orbisterrarum/orbisterrarum.json`.
+Put `orbisterrarum-<version>.jar` in `mods/` together with Fabric API. The
+settings screens are built with **YetAnotherConfigLib** (`yet_another_config_lib_v3`),
+which comes inside the mod jar since 1.1.1 (a nested jar, `META-INF/jars/`; the
+port kit puts in the build for each Minecraft version from `libs/yacl/<mc>/`).
+It is LGPL-3.0-or-later and included unmodified: `META-INF/licenses/YetAnotherConfigLib/`
+holds its notice (version, source) and the LGPL and GPL texts, and a newer copy
+in `mods/` replaces it (Fabric loads the newest). Before 1.1.1 it was optional
+and creating a world without it failed (the location presets were a YACL type,
+read by the world generator map). **Mod Menu** stays optional: without it the
+Mod Menu settings are reached only through `config/orbisterrarum/orbisterrarum.json`
+(or `/orbis settings` on a server).
 
 ## Choosing a place: the world settings screen
 

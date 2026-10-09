@@ -29,7 +29,7 @@ Minecraft **26.2**, **Fabric**.
 
 1. Install **Fabric Loader** for Minecraft 26.2 and put **Fabric API** in `mods/`.
 2. Put `orbisterrarum-<version>.jar` in `mods/`.
-3. Recommended: **YetAnotherConfigLib (v3)** (needed for the settings screens) and **Mod Menu**.
+3. Recommended: **Mod Menu**, to open the mod's settings. YetAnotherConfigLib, which the settings screens need, comes inside Orbis Terrarum.
 
 An internet connection is needed while new areas generate. Everything downloaded is cached in `config/orbisterrarum/`, so each place is only downloaded once.
 
