@@ -29,8 +29,8 @@ import net.minecraft.world.level.block.state.BlockState;
  * A cube spans 2 x 2 chunks; each chunk's columns are worked out as for a chunk (the same elevation smoothing over its 16 x 16 columns), so
  * a column is the same in every cube it passes through, and the cube waits for those chunks' map regions as a chunk would. The decoration
  * (trees, interiors, signs, street life) is made per chunk over the painted columns and shared out to the cubes ({@link CubeDecorations}).
- * Ores and caves are made as in a chunk, each cube keeping its part; the underground features come with the decoration. Vanilla structures
- * are not made in cubes yet.
+ * Ores and caves are made as in a chunk, each cube keeping its part; the underground features and vanilla structures come with the
+ * decoration (the structures' starts and references are worked out in the level's columns, as vanilla does in its chunks).
  */
 public final class OrbisCubeGenerator implements CubeGenerator {
     private static final BlockState STONE = Blocks.STONE.defaultBlockState();
@@ -55,6 +55,12 @@ public final class OrbisCubeGenerator implements CubeGenerator {
             OrbisMod.useCubicHeights(generator.settings().orElse(null), CubicApi.minY(level), CubicApi.maxY(level));
             return new OrbisCubeGenerator(level, generator);
         });
+    }
+
+    /** Vanilla structures when the world has them: the columns hold their starts, the decoration places them ({@link CubeDecorations}). */
+    @Override
+    public boolean usesStructures() {
+        return this.generator.model().cfg().vanillaStructures;
     }
 
     @Override

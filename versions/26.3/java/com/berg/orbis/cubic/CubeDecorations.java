@@ -16,7 +16,7 @@ import net.minecraft.util.Util;
 import net.minecraft.world.level.ChunkPos;
 
 /**
- * The decoration of a cubic world (over the painted columns with their ores and caves): the underground features, trees, street furniture, interiors, signs, street life and sea plants, made chunk by chunk as in a
+ * The decoration of a cubic world (over the painted columns with their ores and caves): vanilla structures, the underground features, trees, street furniture, interiors, signs, street life and sea plants, made chunk by chunk as in a
  * normal world, but in a {@link DecorationLevel} over the painted columns, and shared out to the cubes ({@link ChunkDecoration}). A cube
  * takes its share of the chunks it spans and of the chunks around them (a decoration reaches a chunk beyond its own). The decorations
  * and painted columns are kept for a while, since every cube of a column uses the same ones.
@@ -72,9 +72,17 @@ final class CubeDecorations {
                 .thenApplyAsync(v -> this.decorate(model, chunkX, chunkZ), Util.backgroundExecutor());
     }
 
-    /** What the chunk generator's decoration does, in the same order (vanilla structures aside). */
+    /** What the chunk generator's decoration does, in the same order. */
     private ChunkDecoration decorate(WorldModel model, int chunkX, int chunkZ) {
         DecorationLevel region = new DecorationLevel(this.level, chunkX, chunkZ, this::painted);
+        if (model.cfg().vanillaStructures) {
+            try {
+                // Villages, temples, mineshafts, strongholds...: their starts are in the columns (see DecorationLevel.getChunk).
+                this.generator.placeStructures(region, new ChunkPos(chunkX, chunkZ), this.level.structureManager().forWorldGenRegion(region));
+            } catch (RuntimeException e) {
+                System.err.println("[orbis] Structures failed for chunk " + chunkX + "," + chunkZ + " (cubic): " + e);
+            }
+        }
         if (model.cfg().vanillaCaves) {
             try {
                 // Dungeons, geodes, fossils, springs, lichen; then the cave biomes' moss, dripstone and sculk.

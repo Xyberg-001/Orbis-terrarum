@@ -276,9 +276,21 @@ final class DecorationLevel extends WorldGenRegion {
 
     @Override
     public ChunkAccess getChunk(int chunkX, int chunkZ, ChunkStatus status, boolean loadOrGenerate) {
+        if (status == ChunkStatus.STRUCTURE_STARTS || status == ChunkStatus.STRUCTURE_REFERENCES) {
+            // structure starts and references: the level's columns hold them (only read here)
+            ChunkAccess column = CubicApi.column(this.serverLevel, chunkX, chunkZ, status);
+            if (column != null) return column;
+            if (!missingColumnWarned) {
+                missingColumnWarned = true;
+                System.err.println("[orbis] Column " + chunkX + "," + chunkZ + " has no structure data yet while decorating chunk " + this.chunkX
+                        + "," + this.chunkZ + " (cubic); its structures are left out there");
+            }
+        }
         // there are no chunks; a caller that insists gets the stand-in, which passes blocks on to this region
         return loadOrGenerate ? this.placeholder : null;
     }
+
+    private static volatile boolean missingColumnWarned;
 
     @Override
     public boolean hasChunk(int chunkX, int chunkZ) {

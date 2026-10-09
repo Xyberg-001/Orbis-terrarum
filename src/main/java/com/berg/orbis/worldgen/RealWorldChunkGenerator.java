@@ -398,8 +398,12 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
      * here; the mod does its own).
      */
     private void placeStructures(WorldGenLevel level, ChunkAccess chunk, StructureManager structureManager) {
+        placeStructures(level, chunk.getPos(), structureManager);
+    }
+
+    /** The same for the chunk at chunkPos, through any level (a cubic world's decoration, see versions/26.3 cubic). */
+    public void placeStructures(WorldGenLevel level, ChunkPos chunkPos, StructureManager structureManager) {
         if (!structureManager.shouldGenerateStructures()) return;
-        ChunkPos chunkPos = chunk.getPos();
         SectionPos sectionPos = SectionPos.of(chunkPos, level.getMinSectionY());
         BlockPos origin = sectionPos.origin();
         Registry<Structure> registry = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
