@@ -24,9 +24,13 @@ public final class WorldSettingsScreens {
         return FabricLoader.getInstance().isModLoaded("yet_another_config_lib_v3");
     }
 
+    /** The world creation screen's choices while its Customize is open (whether the world will be cubic, see AreaPreviewScreen). */
+    static volatile net.minecraft.client.gui.screens.worldselection.WorldCreationUiState creating;
+
     /** Create New World → Customize: choose the world's settings, store them in its generator. */
     public static Screen newWorldScreen(CreateWorldScreen parent) {
         if (!yaclPresent()) return missingLibraryScreen(parent);
+        creating = parent.getUiState();
         return YaclScreens.worldSettings(parent, settings -> {
             // Defaults for the next world too, and the active model switches to it
             // so the spawn area starts downloading while the player finishes the form.

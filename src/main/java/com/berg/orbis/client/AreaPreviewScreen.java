@@ -546,6 +546,7 @@ public final class AreaPreviewScreen extends Screen {
         select.draw(g, font, mouseX, mouseY);
         if (onMap(mouseX, mouseY)) drawHoveredChunk(g, mouseX, mouseY);
         g.enableScissor(0, TOP_H, mapRight(), height);
+        drawBeyondReach(g);
         drawSpawn(g);
         g.disableScissor();
 
@@ -557,6 +558,7 @@ public final class AreaPreviewScreen extends Screen {
         // Bottom right of the map; the cursor readout keeps clear of it.
         if (layer == MapTiles.Layer.ELEVATION) com.berg.orbis.client.ElevationTiles.drawLegend(g, font, mapRight() - 4, height - 4);
         drawStatus(g);
+        drawReachNote(g);
         if (onMap(mouseX, mouseY)) drawCursorReadout(g, mouseX, mouseY);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         MapTiles.drawNightIcon(g, nightButton, layer);
@@ -595,6 +597,59 @@ public final class AreaPreviewScreen extends Screen {
                 }
                 if (!drawn && base) g.fill(sx0, sy0, sx1, sy1, 0xFF2A3038);
             }
+        }
+    }
+
+    /**
+     * How far from the spawn the world reaches on x and z if it will be cubic (Cubic Chunks packs block positions with more bits for height,
+     * so its border is much nearer than vanilla's), in blocks; 0 when it will not be cubic or the reach is vanilla's.
+     */
+    private int cubicReach() {
+        var state = WorldSettingsScreens.creating;
+        if (state == null || !com.berg.orbis.mc.McClient.newWorldCubic(state)) return 0;
+        int reach = com.berg.orbis.mc.McClient.cubicReach();
+        return reach == Integer.MAX_VALUE ? 0 : reach;
+    }
+
+    /** In a cubic world, the land beyond its border, shaded (on a grid of the screen, so that it follows either projection). */
+    private void drawBeyondReach(GuiGraphicsExtractor g) {
+        int reach = cubicReach();
+        if (reach == 0) return;
+        int cell = 4;
+        for (int y = TOP_H; y < height; y += cell) {
+            int runStart = -1;
+            for (int x = 0; x <= mapRight(); x += cell) {
+                boolean beyond = false;
+                if (x < mapRight()) {
+                    double[] ll = latLonAt(x + cell / 2.0, y + cell / 2.0);
+                    double[] b = mapper.toBlockExact(ll[0], ll[1]);
+                    beyond = Math.abs(b[0]) > reach || Math.abs(b[1]) > reach;
+                }
+                if (beyond && runStart < 0) runStart = x;
+                if (!beyond && runStart >= 0) {
+                    g.fill(runStart, y, x, Math.min(height, y + cell), 0x9C3A0A12);
+                    runStart = -1;
+                }
+            }
+        }
+    }
+
+    /** In a cubic world, how far it reaches: a smaller scale (more metres a block) holds more of the Earth. */
+    private void drawReachNote(GuiGraphicsExtractor g) {
+        int reach = cubicReach();
+        if (reach == 0) return;
+        String s = Component.translatable("orbisterrarum.preview.cubicReach",
+                String.format(Locale.ROOT, "%,.0f", reach * mpb / 1000.0)).getString();
+        int left = select != null ? select.textLeft(0, height, 4 + MapSelectTool.STRIP_W + 8) : 4 + MapSelectTool.STRIP_W + 8;
+        int maxW = Math.min(mapRight() - left - 24, 360);
+        List<FormattedCharSequence> lines = font.split(Component.literal(s), maxW);
+        int w = 0;
+        for (FormattedCharSequence l : lines) w = Math.max(w, font.width(l));
+        int x = left + (mapRight() - left - w) / 2, y = height - 22 - lines.size() * 10;
+        g.fill(x - 6, y - 4, x + w + 6, y + lines.size() * 10 + 2, 0xD0000000);
+        for (FormattedCharSequence l : lines) {
+            g.text(font, l, x, y, 0xFFF87171);
+            y += 10;
         }
     }
 
