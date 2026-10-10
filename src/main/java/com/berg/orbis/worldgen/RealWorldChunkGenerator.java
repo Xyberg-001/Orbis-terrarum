@@ -434,7 +434,10 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                         toPlace.apply(start).placeInChunk(level, structureManager, this, random, writable, chunkPos);
                     }
                 } catch (RuntimeException e) {
-                    System.err.println("[orbis] Structure " + registry.getKey(structure) + " failed in chunk " + chunkPos + ": " + e);
+                    StringBuilder at = new StringBuilder();
+                    StackTraceElement[] trace = e.getStackTrace();
+                    for (int i = 0; i < Math.min(8, trace.length); i++) at.append(System.lineSeparator()).append("    at ").append(trace[i]);
+                    System.err.println("[orbis] Structure " + registry.getKey(structure) + " failed in chunk " + chunkPos + ": " + e + at);
                 }
             }
         }
