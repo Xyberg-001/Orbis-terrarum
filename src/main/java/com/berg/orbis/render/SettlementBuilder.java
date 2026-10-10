@@ -100,6 +100,7 @@ public final class SettlementBuilder {
                     v.addTag(RESIDENT_TAG);
                 }
                 v.setPersistenceRequired();
+                SpawnIds.assign(level, v);
                 level.addFreshEntityWithPassengers(v);
             }
         };

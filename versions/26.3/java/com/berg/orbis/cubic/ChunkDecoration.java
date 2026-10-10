@@ -100,7 +100,7 @@ final class ChunkDecoration {
      * entity only where the block it was made for is still there (another chunk's decoration may have written over it, which made the game
      * drop the block entity with a warning as the cube loaded).
      */
-    void applyRest(CubeTerrain cube) {
+    void applyRest(CubeTerrain cube, java.util.Set<java.util.UUID> entityIds) {
         Part part = this.parts.get(Math.floorDiv(cube.minY(), CubeTerrain.SIZE));
         if (part == null) return;
         for (BlockEntity blockEntity : part.blockEntities) {
@@ -110,7 +110,8 @@ final class ChunkDecoration {
             }
         }
         for (Entity entity : part.entities) {
-            if (inside(cube, entity.getBlockX(), entity.getBlockZ())) cube.addEntity(entity);
+            // neighbouring chunks' decorations can place the same entity (a minecart on a rail both reach): its id says so (SpawnIds)
+            if (inside(cube, entity.getBlockX(), entity.getBlockZ()) && entityIds.add(entity.getUUID())) cube.addEntity(entity);
         }
         for (int i = 0; i < part.postProcessing.size(); i++) {
             long pos = part.postProcessing.getLong(i);

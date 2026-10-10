@@ -400,6 +400,7 @@ public final class Interiors {
             // A display, like the frames in vanilla's structures: it cannot be emptied, turned or broken in survival
             // (otherwise every museum hands out nether stars and every jeweller diamonds).
             ((com.berg.orbis.mixin.ItemFrameAccessor) frame).orbis$setFixed(true);
+            SpawnIds.assign(level, frame);
             level.addFreshEntity(frame);
         }
 

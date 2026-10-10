@@ -427,6 +427,7 @@ public final class Transit {
                 Entity cart = EntityTypes.MINECART.create(level.getLevel(), EntitySpawnReason.STRUCTURE);
                 if (cart != null) {
                     cart.snapTo(rail[0] + 0.5, railYFound, rail[1] + 0.5, 0f, 0f);
+                    SpawnIds.assign(level, cart);
                     level.addFreshEntity(cart);
                 }
             }
