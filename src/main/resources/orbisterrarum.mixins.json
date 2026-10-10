@@ -8,6 +8,8 @@
     "DimensionTypeMixin",
     "StructureStartAccessor",
     "StructurePaletteMixin",
+    "ServerLevelStructureSearchMixin",
+    "EnderEyeSearchMixin",
     "ItemFrameAccessor",
     "BiomeMixin",
     "VillagerMixin",

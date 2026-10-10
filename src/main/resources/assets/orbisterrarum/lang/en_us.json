@@ -69,6 +69,7 @@
   "orbisterrarum.preview.working": "Working it out...",
   "orbisterrarum.preview.none": "Nothing selected yet",
   "orbisterrarum.preview.spawn": "Spawn (0, 0)",
+  "orbisterrarum.enderEye.searching": "The eye of ender is still looking for a stronghold: use it again in a moment",
   "orbisterrarum.preview.cubicReach": "Cubic world: it reaches %s km from the spawn each way, and the shaded land lies beyond its border. A smaller scale (more metres a block) reaches farther.",
   "orbisterrarum.preview.in": "will be generated",
   "orbisterrarum.preview.out": "not generated",

@@ -469,6 +469,7 @@ public class OrbisMod implements ModInitializer {
             }
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            com.berg.orbis.worldgen.StructureSearches.clear();
             levelHeight = 0;
             cubicHeights = null;
         });
