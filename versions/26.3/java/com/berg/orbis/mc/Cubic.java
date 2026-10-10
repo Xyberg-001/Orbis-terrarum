@@ -15,6 +15,7 @@ public final class Cubic {
         if (FabricLoader.getInstance().isModLoaded("cubicchunks")) {
             com.berg.orbis.cubic.OrbisCubeGenerator.register();
             com.berg.orbis.cubic.CubeMapDrawer.register();
+            com.berg.orbis.cubic.CubicPregen.register();
         }
     }
 }

@@ -55,6 +55,12 @@ public final class OrbisCubeGenerator implements CubeGenerator {
             OrbisMod.useCubicHeights(generator.settings().orElse(null), CubicApi.minY(level), CubicApi.maxY(level));
             return new OrbisCubeGenerator(level, generator);
         });
+        // made as the level loads rather than for its first cube: the model's cubic heights (sea level at Y 0...) and everything that asks
+        // whether the world is cubic are right from the start (a pre-generation started just after the server came up took the column
+        // sweep, which makes nothing in a cubic world)
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents.LOAD.register((server, level) -> {
+            if (CubicApi.isCubic(level)) CubicApi.cubeGenerator(level);
+        });
     }
 
     /** Vanilla structures when the world has them: the columns hold their starts, the decoration places them ({@link CubeDecorations}). */
@@ -105,7 +111,8 @@ public final class OrbisCubeGenerator implements CubeGenerator {
         }
         return CompletableFuture.allOf(around).thenRunAsync(() -> {
             for (CompletableFuture<ChunkDecoration> decoration : around) decoration.join().applyBlocks(cube);
-            for (CompletableFuture<ChunkDecoration> decoration : around) decoration.join().applyRest(cube);
+            java.util.Set<java.util.UUID> entityIds = new java.util.HashSet<>();
+            for (CompletableFuture<ChunkDecoration> decoration : around) decoration.join().applyRest(cube, entityIds);
         }, Util.backgroundExecutor());
     }
 

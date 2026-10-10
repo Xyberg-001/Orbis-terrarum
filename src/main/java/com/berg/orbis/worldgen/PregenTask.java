@@ -120,7 +120,33 @@ public final class PregenTask {
      * Bergen once "generated" 1.9 million chunks that way and left 47 000 stubs.) This ticket does not expire
      * and is not persisted; step() removes it once the chunk is done, and the chunk then unloads and is saved.
      */
-    private static final TicketType PREGEN_TICKET = new TicketType(TicketType.NO_TIMEOUT, TicketType.FLAG_LOADING);
+    public static final TicketType PREGEN_TICKET = new TicketType(TicketType.NO_TIMEOUT, TicketType.FLAG_LOADING);
+
+    /**
+     * Pre-generation of a cubic world (versions/26.3 cubic.CubicPregen; null elsewhere): its chunks hold no blocks, so the sweeps here hand
+     * their area to it instead (the commands, map selections and automatic sweeps stay the same).
+     */
+    public interface CubicSweeper {
+        /** Starts (or resumes, by {@code key}) a sweep over the area's cube columns; a message for the player. */
+        Component start(ServerLevel level, String label, AreaSweep area, boolean skipSea, String key);
+
+        Component stop();
+
+        Component status();
+
+        boolean running();
+
+        /** Whether the level is a cubic one (asked of Cubic Chunks, so it is known before the first cube is made). */
+        boolean cubic(ServerLevel level);
+    }
+
+    public static volatile CubicSweeper cubicSweeper;
+
+    /** The cubic sweeper when the level is cubic, else null. */
+    private static CubicSweeper cubic(ServerLevel level) {
+        CubicSweeper c = cubicSweeper;
+        return c != null && c.cubic(level) ? c : null;
+    }
 
     private final ServerLevel level;
     private final String label;
@@ -227,6 +253,22 @@ public final class PregenTask {
     /** Starts a radius task; returns a message for the player. */
     public static synchronized Component start(ServerLevel level, int centerX, int centerZ, int radiusBlocks) {
         if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); /orbis pregen stop first.\n" + active.progress());
+        CubicSweeper cubic = cubic(level);
+        if (cubic != null) {
+            if (cubic.running()) return Component.literal("A pre-generation is already running; /orbis pregen stop first.\n" + cubic.status().getString());
+            int ccx = centerX >> 4, ccz = centerZ >> 4, cr = (radiusBlocks >> 4) + 1;
+            ChunkSelection disc = new ChunkSelection();
+            for (int dz = -cr; dz <= cr; dz++) {
+                int w = (int) Math.floor(Math.sqrt((double) cr * cr - (double) dz * dz));
+                disc.addRow(ccz + dz, new int[]{ccx - w, ccx + w});
+            }
+            HardLimit.extend(level.getServer(), disc);
+            WorldModel m = OrbisMod.model();
+            double mpb = m == null ? 1.0 : m.cfg().metersPerBlock;
+            return cubic.start(level, String.format(Locale.ROOT, "%.1f km around %d, %d", radiusBlocks * mpb / 1000.0, centerX, centerZ),
+                    new AreaSweep(disc, new ArrayList<>()), m != null && m.cfg().pregenSkipOpenSea,
+                    "cubic-radius-" + centerX + "_" + centerZ + "_" + radiusBlocks + ".json");
+        }
         int cx = centerX >> 4, cz = centerZ >> 4, r = (radiusBlocks >> 4) + 1;
         List<long[]> list = new ArrayList<>();
         for (int dz = -r; dz <= r; dz++) {
@@ -327,6 +369,11 @@ public final class PregenTask {
         // its first 126 rows that way). The file used to live in the config folder; the first world to run a
         // sweep with this version adopts it.
         String fileName = slug + (mainlandOnly ? "" : "-all") + ".json";
+        CubicSweeper cubic = cubic(level);
+        if (cubic != null) {
+            if (cubic.running()) return Component.literal("A pre-generation is already running; /orbis pregen stop first.\n" + cubic.status().getString());
+            return cubic.start(level, outline.name(), sweep, model.cfg().pregenSkipOpenSea, "cubic-" + fileName);
+        }
         Path file = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-pregen").resolve(fileName);
         Path legacy = OrbisMod.configDir().resolve("pregen").resolve(fileName);
         if (!Files.exists(file) && Files.exists(legacy)) {
@@ -418,6 +465,11 @@ public final class PregenTask {
         lastSweep = sweep;
         HardLimit.extend(level.getServer(), selection);
         String id = selection.fingerprint();
+        CubicSweeper cubic = cubic(level);
+        if (cubic != null) {
+            if (cubic.running()) return Component.literal("A pre-generation is already running; /orbis pregen stop first.\n" + cubic.status().getString());
+            return cubic.start(level, "the selection", sweep, skipSea != null ? skipSea : model.cfg().pregenSkipOpenSea, "cubic-selection-" + id + ".json");
+        }
         Path file = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-pregen").resolve("selection-" + id + ".json");
         int startRow = sweep.firstRow();
         String resumed = "";
@@ -767,7 +819,8 @@ public final class PregenTask {
         return model != null && model.cfg().pregenSkipOpenSea;
     }
 
-    private static boolean isOpenSea(WorldModel model, int cx, int cz) {
+    /** Whether the chunk is deep sea all over (the sweeps' Skip open sea leaves it out). */
+    public static boolean isOpenSea(WorldModel model, int cx, int cz) {
         int x0 = cx << 4, z0 = cz << 4;
         int[][] samples = {{x0 + 8, z0 + 8}, {x0 + 1, z0 + 1}, {x0 + 14, z0 + 1}, {x0 + 1, z0 + 14}, {x0 + 14, z0 + 14}};
         for (int[] s : samples) {
@@ -832,6 +885,8 @@ public final class PregenTask {
 
     public static synchronized Component stop() {
         PregenTask t = active;
+        CubicSweeper cubic = cubicSweeper;
+        if (t == null && cubic != null && cubic.running()) return cubic.stop();
         if (t == null) return Component.literal("No pre-generation is running.");
         t.stopRequested = true;
         t.stopFast();
@@ -974,7 +1029,8 @@ public final class PregenTask {
 
     /** True while a sweep is running (the client then refuses to pause the game, see MinecraftPauseMixin). */
     public static boolean isRunning() {
-        return active != null;
+        CubicSweeper cubic = cubicSweeper;
+        return active != null || (cubic != null && cubic.running());
     }
 
     /**
@@ -1014,6 +1070,8 @@ public final class PregenTask {
 
     public static Component status() {
         PregenTask t = active;
+        CubicSweeper cubic = cubicSweeper;
+        if (t == null && cubic != null && cubic.running()) return cubic.status();
         if (t == null) return Component.literal("No pre-generation is running.");
         t.updateRateNow();
         return t.chatProgress(false, true);
