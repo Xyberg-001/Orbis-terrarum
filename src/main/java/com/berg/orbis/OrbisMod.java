@@ -271,6 +271,7 @@ public class OrbisMod implements ModInitializer {
         if (current != null && settings.equals(modelSettings) && height == modelHeight && cubic == modelCubicHeights) return current;
         System.out.println("[orbis] Building world model: " + settings.describe() + " (world height " + height + ")");
         OrbisConfig effective = settings.effective(config);
+        com.berg.orbis.sky.SkySwitches.applyTo(effective); // the running world's sky switched by command (none outside a world)
         effective.worldHeight = height;
         if (cubic != null) {
             // A cubic world (Cubic Chunks): it holds the real heights, so a block is a metre up and down from sea level at
@@ -411,6 +412,7 @@ public class OrbisMod implements ModInitializer {
         });
         RealWorldBiomeSource.register();
         TeleportCommands.register();
+        com.berg.orbis.sky.SkySwitches.register();
         com.berg.orbis.sky.RealSky.register();
 
         // The defaults' model: on a dedicated server it is the world's, so its spawn area is fetched now; a client does

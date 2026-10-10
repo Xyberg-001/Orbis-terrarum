@@ -71,7 +71,7 @@ Nothing here changes a world; it is about the mod on this computer.
 
 **Short of space?** The mod's downloads (terrain, photos, map data, country extracts, lidar) can take many gigabytes. Set **Storage → Data folder** to another drive with **Choose folder…** (or type a path such as `D:/OrbisData`), then press **Move downloads**: everything already downloaded moves there (from the main menu, not while a world is open) and the new folder is used from then on. The field always shows the folder in use, and **Open** shows it in your file manager. Point the import tools' `--out` at the new folder too.
 
-**Real daylight, weather, seasons and snow depth** (Look & Climate → Real sky) are on by default and saved with each world. With real daylight, villagers keep the town's real clock hours (at work 08:00–16:00, in bed at 22:00) unless you switch **Villagers keep clock hours** off, when they follow the sun instead. With real daylight, sleeping does not skip the night. The season changes the next time a world is opened. **Real snow depth** lays today's snow on new ground (deeper the higher you go, and faster in snowy climates such as Japan's or the Cascades' than in dry ones like Colorado's) and lets the snow already there settle or melt a layer at a time as the real snow does; it is checked every six hours.
+**Real daylight, weather, seasons and snow depth** (Look & Climate → Real sky) are on by default and saved with each world. With real daylight, villagers keep the town's real clock hours (at work 08:00–16:00, in bed at 22:00) unless you switch **Villagers keep clock hours** off, when they follow the sun instead. With real daylight, sleeping does not skip the night. The season changes the next time a world is opened. To change them in a world that already exists, use `/orbis daylight off` (or `weather`, `seasons`, `snow`, `clockhours`, with `on` or `off`): it takes effect at once and stays with the world. **Real snow depth** lays today's snow on new ground (deeper the higher you go, and faster in snowy climates such as Japan's or the Cascades' than in dry ones like Colorado's) and lets the snow already there settle or melt a layer at a time as the real snow does; it is checked every six hours.
 
 ### World generator map (World tab)
 
@@ -124,6 +124,8 @@ You are the white arrow, other players are cyan arrows, the world spawn is a gre
 | `/orbis import <file.osm.pbf>` | Imports a downloaded OpenStreetMap file so generation doesn't need the online map servers (op) |
 | `/orbis extracts` | Lists imported map files |
 | `/orbis landmarks` | Rebuilds the landmark advancements |
+| `/orbis sky` | Shows which of the real sky features are on in this world (op) |
+| `/orbis daylight` / `weather` / `seasons` / `snow` / `clockhours` `on`/`off` | Switches real daylight, real weather, real seasons, real snow depth or the villagers' clock hours on or off in this world, at once and for good (op) |
 | `/orbis settings` [`<name>` [`<value>`]] | Lists, shows or changes the mod's performance and network settings, e.g. `/orbis settings regionCacheSize 24` (op; for servers, which have no settings screen) |
 
 ---

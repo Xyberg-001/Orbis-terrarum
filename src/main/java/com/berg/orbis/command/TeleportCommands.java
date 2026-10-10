@@ -28,6 +28,7 @@ import java.util.Locale;
  * /orbis info           generator status (origin, caches, climate here)
  * /orbis here           what OSM/DEM know about the column you stand on
  * /orbis prefetch <r>   pre-download OSM regions within r regions of you
+ * /orbis sky            the real sky switches of this world; /orbis daylight|weather|seasons|snow|clockhours on|off switches one
  */
 public class TeleportCommands {
 
@@ -41,7 +42,17 @@ public class TeleportCommands {
                             .executes(TeleportCommands::teleportToTarget)));
             dispatcher.register(Commands.literal("wherell").executes(TeleportCommands::reportLatLon));
 
-            dispatcher.register(Commands.literal("orbis")
+            var orbis = Commands.literal("orbis");
+            // The world's real sky, switched while it runs (kept with the world, see SkySwitches); for operators.
+            orbis.then(Commands.literal("sky").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                    .executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.status())));
+            for (com.berg.orbis.sky.SkySwitches.Switch s : com.berg.orbis.sky.SkySwitches.Switch.values()) {
+                orbis.then(Commands.literal(s.word).requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.status()))
+                        .then(Commands.literal("on").executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.set(ctx.getSource().getServer(), s, true))))
+                        .then(Commands.literal("off").executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.set(ctx.getSource().getServer(), s, false)))));
+            }
+            dispatcher.register(orbis
                     // The mod's performance and network settings, for a server's operators (no settings screen there).
                     .then(Commands.literal("settings")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))

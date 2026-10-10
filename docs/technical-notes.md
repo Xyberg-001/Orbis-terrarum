@@ -969,7 +969,12 @@ an andesite. Generic world-map units ("sedimentary rocks") stay plain stone.
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
-the installation (Mod Menu, or a server's config file) has it off. Run by the
+the installation (Mod Menu, or a server's config file) has it off. A running
+world's own value can be switched by `/orbis daylight|weather|seasons|snow|clockhours
+on|off` (`SkySwitches`): kept in `orbis-sky.json` in the world folder, put over the
+world's settings whenever its model is made, and set on the live model's config
+at once (snow on also attaches the snow-cover source; seasons only take effect at
+the next opening, as the season pack is written then). Run by the
 server, so players need nothing:
 - **Daylight** (`realDaylight`, `SolarClock`, `RealSky`): the overworld's
   26.x world clock is set every 10 s to the real sun at the origin: sunrise
