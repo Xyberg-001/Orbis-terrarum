@@ -335,8 +335,10 @@ public final class WorldMapScreen extends Screen {
         menuItems.clear();
         // /tpll (Orbis on the server) or vanilla /tp (a server without it) is for operators; the server only sends a
         // player the commands they may run.
+        int[] at = mapper == null ? null : mapper.toBlock(menuAt[0], menuAt[1]);
         if (minecraft.player != null && (minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null
-                || minecraft.player.connection.getCommands().getRoot().getChild("tp") != null)) {
+                || minecraft.player.connection.getCommands().getRoot().getChild("tp") != null)
+                && (at == null || minecraft.level == null || minecraft.level.getWorldBorder().isWithinBounds(at[0], at[1]))) {
             menuItems.add("teleport");
         }
         menuItems.add(menuMark == null ? "mark" : "unmark");
@@ -423,6 +425,7 @@ public final class WorldMapScreen extends Screen {
             canvas.draw(g, minecraft);
             drawMinecraftLayer(g);
             drawOutsideLimit(g);
+            drawOutsideBorder(g);
             if (select != null && select.active) select.draw(g, font, mouseX, mouseY);
             g.enableScissor(canvas.left(), canvas.top(), canvas.right(), canvas.bottom());
             drawSpawn(g);
@@ -567,6 +570,38 @@ public final class WorldMapScreen extends Screen {
                     }
                 }
             }
+        }
+        canvas.endOverlay(g);
+    }
+
+    /**
+     * Beyond the world border, shaded as outside the allowed area: in a cubic world it is much nearer than vanilla's (Cubic Chunks packs
+     * positions with more bits for height), and the far side of the Earth can lie beyond it.
+     */
+    private void drawOutsideBorder(GuiGraphicsExtractor g) {
+        if (minecraft.level == null || mapper == null) return;
+        net.minecraft.world.level.border.WorldBorder border = minecraft.level.getWorldBorder();
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (double[] c : new double[][]{{canvas.left(), canvas.top()}, {canvas.right(), canvas.top()}, {canvas.left(), canvas.bottom()}, {canvas.right(), canvas.bottom()}}) {
+            double[] ll = canvas.latLonAt(c[0], c[1]);
+            double[] b = mapper.toBlockExact(ll[0], ll[1]);
+            minX = Math.min(minX, b[0]);
+            maxX = Math.max(maxX, b[0]);
+            minZ = Math.min(minZ, b[1]);
+            maxZ = Math.max(maxZ, b[1]);
+        }
+        if (minX >= border.getMinX() && maxX <= border.getMaxX() && minZ >= border.getMinZ() && maxZ <= border.getMaxZ()) return;
+        int cx0 = (int) Math.floor(minX / 16) - 1, cx1 = (int) Math.floor(maxX / 16) + 1;
+        int cz0 = (int) Math.floor(minZ / 16) - 1, cz1 = (int) Math.floor(maxZ / 16) + 1;
+        int bx0 = (int) Math.floor(border.getMinX() / 16), bx1 = (int) Math.ceil(border.getMaxX() / 16) - 1;
+        int bz0 = (int) Math.floor(border.getMinZ() / 16), bz1 = (int) Math.ceil(border.getMaxZ() / 16) - 1;
+        canvas.beginOverlay(g);
+        if (cz0 < bz0) shadeBlocks(g, cx0, cz0, cx1, Math.min(cz1, bz0 - 1), LIMIT_SHADE);
+        if (cz1 > bz1) shadeBlocks(g, cx0, Math.max(cz0, bz1 + 1), cx1, cz1, LIMIT_SHADE);
+        int rowFrom = Math.max(cz0, bz0), rowTo = Math.min(cz1, bz1);
+        if (rowFrom <= rowTo) {
+            if (cx0 < bx0) shadeBlocks(g, cx0, rowFrom, Math.min(cx1, bx0 - 1), rowTo, LIMIT_SHADE);
+            if (cx1 > bx1) shadeBlocks(g, Math.max(cx0, bx1 + 1), rowFrom, cx1, rowTo, LIMIT_SHADE);
         }
         canvas.endOverlay(g);
     }

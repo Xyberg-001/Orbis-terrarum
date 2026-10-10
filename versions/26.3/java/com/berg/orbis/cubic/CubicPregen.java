@@ -297,8 +297,13 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
             }
         }
 
-        /** The cube-Y band of a column, or null to leave it out (beyond the world's limit, or open sea when that is skipped). */
+        /** The cube-Y band of a column, or null to leave it out (beyond the world border or limit, or open sea when that is skipped). */
         int[] band(int cubeX, int cubeZ) {
+            int size = CubeTerrain.SIZE;
+            net.minecraft.world.level.border.WorldBorder border = this.level.getWorldBorder();
+            if (!border.isWithinBounds(cubeX * size, cubeZ * size) || !border.isWithinBounds(cubeX * size + size - 1, cubeZ * size + size - 1)) {
+                return null; // beyond the world border (in a cubic world, nearer than vanilla's)
+            }
             if (this.skipSea && this.model != null) {
                 boolean sea = true;
                 for (int i = 0; i < 2 && sea; i++) {
@@ -307,7 +312,6 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
                 if (sea) return null;
             }
             int low = Integer.MAX_VALUE, high = Integer.MIN_VALUE;
-            int size = CubeTerrain.SIZE;
             for (int i = 0; i < 3; i++) {
                 for (int j = 0; j < 3; j++) {
                     int x = cubeX * size + 1 + i * (size - 2) / 2, z = cubeZ * size + 1 + j * (size - 2) / 2;

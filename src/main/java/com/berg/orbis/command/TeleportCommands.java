@@ -458,6 +458,17 @@ public class TeleportCommands {
     private static void teleport(CommandSourceStack source, ServerPlayer player, WorldModel model, Geocoder.Result target) {
         int[] block = model.mapper().toBlock(target.lat(), target.lon());
         int blockX = block[0], blockZ = block[1];
+        net.minecraft.world.level.border.WorldBorder border = source.getLevel().getWorldBorder();
+        if (!border.isWithinBounds(blockX, blockZ)) {
+            // a cubic world's border is nearer than vanilla's (Cubic Chunks packs positions with more bits for height), so far places
+            // can lie beyond it; a smaller scale (more metres a block) brings more of the Earth inside
+            source.sendFailure(Component.literal(String.format(Locale.ROOT,
+                    "%s (block %d, %d) is beyond the world border (x %.0f..%.0f, z %.0f..%.0f).%s", target.name(), blockX, blockZ,
+                    border.getMinX(), border.getMaxX(), border.getMinZ(), border.getMaxZ(), OrbisMod.cubicWorld()
+                            ? " A cubic world reaches less far than a normal one; a world made at a smaller scale (more metres a block) holds more of the Earth."
+                            : "")));
+            return;
+        }
         int surfaceY = source.getLevel().getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
         if (surfaceY <= model.cfg().minY + 1) {
             // Chunk not generated yet: use the real elevation so we don't fall into the void.
