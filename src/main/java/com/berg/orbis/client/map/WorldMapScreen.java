@@ -37,6 +37,8 @@ public final class WorldMapScreen extends Screen {
     private static final int WHITE = 0xFFFFFFFF, GREY = 0xFFA0A8B0, YELLOW = 0xFFFACC15, RED = 0xFFF87171, CYAN = 0xFF67E8F9, GREEN = 0xFF4ADE80;
     private static MapTiles.Layer lastLayer = MapTiles.Layer.STREET;
     private net.minecraft.client.gui.components.Button nightButton;
+    /** The pre-generation's Stop and Resume (in its panel) and the hard limit's switch (above Generate): operators only. */
+    private Button pregenStop, pregenResume, limitButton;
     private static double lastScale = -1;
     /** The Minecraft layer's opacity: 0 off, then 35%, 70%, 100%. */
     private static final int[] BLOCK_ALPHA = {0, 90, 180, 255};
@@ -148,6 +150,20 @@ public final class WorldMapScreen extends Screen {
             select = new MapSelectTool(minecraft, canvas, mapper, info.metersPerBlock(), worldKey, true, s -> say(s, false, 8000));
         }
         if (select != null) select.addWidgets(this::addRenderableWidget, 4, markersInBar ? TOP_H + 4 : TOP_H + 28, width, height);
+        int[] panel = pregenPanelBounds();
+        pregenStop = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.stop"),
+                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.STOP))
+                .bounds(panel[2] - 58, panel[1] + 12, 52, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.stop.tip"))).build());
+        pregenResume = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.resume"),
+                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.RESUME))
+                .bounds(panel[2] - 58, panel[1] + 12, 52, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.resume.tip"))).build());
+        limitButton = addRenderableWidget(Button.builder(limitLabel(), b -> {
+                    com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
+                    control(limit != null && limit.on() ? com.berg.orbis.net.PregenControlPayload.Action.LIMIT_OFF
+                            : com.berg.orbis.net.PregenControlPayload.Action.LIMIT_ON);
+                })
+                .bounds(width - 104, height - 82, 100, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.limit.tip"))).build());
+        refreshPregenControls();
         if (!viewSet && mapper != null) {
             centreOnPlayer();
             if (lastScale > 0) canvas.scale = lastScale;
@@ -160,6 +176,72 @@ public final class WorldMapScreen extends Screen {
             status = Component.translatable("orbisterrarum.map.help", com.berg.orbis.client.OrbisClient.MAP_KEY == null ? Component.literal("B")
                     : com.berg.orbis.client.OrbisClient.MAP_KEY.getTranslatedKeyMessage()).getString();
             statusUntil = System.currentTimeMillis() + 5000;
+        }
+    }
+
+    // ------------------------------------------------------------------ pre-generation (stage 1 of moving the commands onto the map)
+
+    /** Operators of a server running Orbis can run its pre-generation from the map (the server checks again). */
+    private boolean canControlPregen() {
+        return mapper != null && MapSelectTool.allowed(minecraft)
+                && net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(com.berg.orbis.net.PregenControlPayload.TYPE);
+    }
+
+    private void control(com.berg.orbis.net.PregenControlPayload.Action action) {
+        if (!canControlPregen()) return;
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new com.berg.orbis.net.PregenControlPayload(action));
+    }
+
+    private Component limitLabel() {
+        com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
+        return Component.translatable("orbisterrarum.map.limit", Component.translatable(limit != null && limit.on()
+                ? "orbisterrarum.map.limit.on" : "orbisterrarum.map.limit.off"));
+    }
+
+    /** The pre-generation panel, bottom centre above the readout: left, top, right, bottom. */
+    private int[] pregenPanelBounds() {
+        int w = Math.max(200, Math.min(320, width - 240));
+        int left = (width - w) / 2;
+        return new int[]{left, height - 64, left + w, height - 20};
+    }
+
+    /** Shows the buttons that fit what the server's pre-generation is doing now. */
+    private void refreshPregenControls() {
+        if (pregenStop == null) return;
+        com.berg.orbis.net.PregenStatusPayload st = com.berg.orbis.client.OrbisClient.pregenStatus;
+        boolean ops = canControlPregen() && (minecraft.level == null || minecraft.level.dimension() == Level.OVERWORLD);
+        pregenStop.visible = ops && st.running();
+        pregenResume.visible = ops && !st.running() && !st.resumable().isEmpty();
+        limitButton.visible = ops;
+        limitButton.setMessage(limitLabel());
+    }
+
+    /** What the server's pre-generation is doing: its name, a bar, and how far it has got; or that a stopped one can be resumed. */
+    private void drawPregenPanel(GuiGraphicsExtractor g) {
+        com.berg.orbis.net.PregenStatusPayload st = com.berg.orbis.client.OrbisClient.pregenStatus;
+        if (!st.running() && st.resumable().isEmpty()) return;
+        int[] p = pregenPanelBounds();
+        boolean button = pregenStop.visible || pregenResume.visible;
+        int textRight = button ? p[2] - 64 : p[2] - 6;
+        int textW = textRight - p[0] - 6;
+        g.fill(p[0], p[1], p[2], p[3], 0xD0000000);
+        if (st.running()) {
+            String title = Component.translatable("orbisterrarum.map.pregen.running", st.label()).getString()
+                    + (st.waiting().isEmpty() ? "" : " (" + st.waiting() + ")");
+            g.text(font, font.plainSubstrByWidth(title, textW), p[0] + 6, p[1] + 5, WHITE);
+            int barTop = p[1] + 18, barW = textW;
+            g.fill(p[0] + 6, barTop, p[0] + 6 + barW, barTop + 7, 0xFF404850);
+            g.fill(p[0] + 6, barTop, p[0] + 6 + Math.round(barW * Math.max(0f, Math.min(1f, st.fraction()))), barTop + 7, 0xFF4ADE80);
+            String pct = Math.round(st.fraction() * 100) + "%";
+            g.text(font, pct, p[0] + 6 + (barW - font.width(pct)) / 2, barTop - 1, WHITE);
+            g.text(font, font.plainSubstrByWidth(st.detail(), textW), p[0] + 6, p[1] + 30, 0xFFB0B8C0);
+        } else {
+            List<FormattedCharSequence> lines = font.split(Component.translatable("orbisterrarum.map.pregen.stopped", st.resumable()), textW);
+            int y = p[1] + (p[3] - p[1] - lines.size() * 10) / 2 + 1;
+            for (FormattedCharSequence l : lines) {
+                g.text(font, l, p[0] + 6, y, WHITE);
+                y += 10;
+            }
         }
     }
 
@@ -443,11 +525,14 @@ public final class WorldMapScreen extends Screen {
             com.berg.orbis.client.MapTiles.drawCredit(g, font, credit, width - 4, TOP_H + 3, width);
             // Bottom right, above the bottom line (the readout).
             if (canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION) {
-                com.berg.orbis.client.ElevationTiles.drawLegend(g, font, width - 4, select != null && select.generateShown() ? height - 62 : height - 19);
+                com.berg.orbis.client.ElevationTiles.drawLegend(g, font, width - 4, limitButton != null && limitButton.visible ? height - 86
+                        : select != null && select.generateShown() ? height - 62 : height - 19);
             }
         }
         g.fill(0, 0, width, TOP_H, TOP_BG);
         drawStatus(g);
+        refreshPregenControls();
+        if (mapper != null && (minecraft.level == null || minecraft.level.dimension() == Level.OVERWORLD)) drawPregenPanel(g);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         MapTiles.drawNightIcon(g, nightButton, canvas.layer);
         if (select != null) select.drawIcons(g);

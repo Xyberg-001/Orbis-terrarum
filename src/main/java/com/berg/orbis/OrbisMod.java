@@ -482,6 +482,7 @@ public class OrbisMod implements ModInitializer {
         });
         com.berg.orbis.worldgen.AutoPregen.register();
         com.berg.orbis.worldgen.HardLimit.register();
+        com.berg.orbis.worldgen.PregenStatus.register(); // the pre-generation's progress and controls on the world map
         // A selection drawn on the world map (operators only, like /orbis pregen).
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.serverboundPlay()
                 .register(com.berg.orbis.net.PregenSelectionPayload.TYPE, com.berg.orbis.net.PregenSelectionPayload.CODEC);

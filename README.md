@@ -99,6 +99,8 @@ Open the **World generator map** to choose where the world is and what it genera
 | Map style | **Map:** street / satellite / elevation (heights in colour, with the height under the cursor); the sun / moon button beside the street map switches day and night colours |
 | See Minecraft blocks | **Blocks** – shows the world from above over the real map (off / 35 % / 70 % / 100 %), handy for finding villages and structures |
 | See what's generated | **Grey** – a light grey haze over areas that aren't generated yet; with a hard limit, the area that never generates is tinted red |
+| Follow a pre-generation | A bar at the bottom shows what is being pre-generated and how far it has got; operators get **Stop** there, and **Resume** after a stop |
+| Hard limit | **Hard limit: on / off** above **Generate** (operators only) |
 
 You are the white arrow, other players are cyan arrows, the world spawn is a green square. The key can be changed in **Controls → Orbis Terrarum**.
 

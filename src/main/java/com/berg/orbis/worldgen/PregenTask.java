@@ -136,11 +136,52 @@ public final class PregenTask {
 
         boolean running();
 
+        /** Where the running sweep has got, for the world map; null when none runs. */
+        Snapshot snapshot();
+
         /** Whether the level is a cubic one (asked of Cubic Chunks, so it is known before the first cube is made). */
         boolean cubic(ServerLevel level);
     }
 
     public static volatile CubicSweeper cubicSweeper;
+
+    /** Where a running sweep has got, for the world map's progress bar: what it is, how far (0 to 1), a line of detail, and why it waits. */
+    public record Snapshot(String label, float fraction, String detail, String waiting) {
+    }
+
+    /** How to start the last sweep again (areas and selections resume from their saved progress), and its name; set as each starts. */
+    private static volatile java.util.function.Function<ServerLevel, Component> restart;
+    private static volatile String restartLabel;
+    /** The last sweep was stopped by an operator (not finished): the map offers to resume it. */
+    private static volatile boolean stoppedByHand;
+
+    private static void startedBy(String label, java.util.function.Function<ServerLevel, Component> again) {
+        restart = again;
+        restartLabel = label;
+        stoppedByHand = false;
+    }
+
+    /** The running sweep's progress, or null when none runs. */
+    public static Snapshot snapshot() {
+        PregenTask t = active;
+        if (t != null) return t.snap();
+        CubicSweeper c = cubicSweeper;
+        return c != null && c.running() ? c.snapshot() : null;
+    }
+
+    /** The name of the sweep an operator stopped and can resume, or null. */
+    public static String resumable() {
+        return stoppedByHand && restart != null && !isRunning() ? restartLabel : null;
+    }
+
+    /** Starts the stopped sweep again (an area or selection carries on from its saved progress). */
+    public static Component resume(ServerLevel level) {
+        java.util.function.Function<ServerLevel, Component> again = restart;
+        if (!stoppedByHand || again == null) return Component.literal("No stopped pre-generation to resume.");
+        if (isRunning()) return Component.literal("A pre-generation is already running.");
+        stoppedByHand = false;
+        return again.apply(level);
+    }
 
     /** The cubic sweeper when the level is cubic, else null. */
     private static CubicSweeper cubic(ServerLevel level) {
@@ -252,6 +293,9 @@ public final class PregenTask {
 
     /** Starts a radius task; returns a message for the player. */
     public static synchronized Component start(ServerLevel level, int centerX, int centerZ, int radiusBlocks) {
+        if (active == null && (cubicSweeper == null || !cubicSweeper.running())) {
+            startedBy(String.format(Locale.ROOT, "%d blocks around %d, %d", radiusBlocks, centerX, centerZ), l -> start(l, centerX, centerZ, radiusBlocks));
+        }
         if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); /orbis pregen stop first.\n" + active.progress());
         CubicSweeper cubic = cubic(level);
         if (cubic != null) {
@@ -358,6 +402,9 @@ public final class PregenTask {
 
     /** Starts (or resumes) an area sweep; returns a message for the player. */
     public static synchronized Component startArea(ServerLevel level, AreaOutline outline, boolean mainlandOnly) {
+        if (active == null && (cubicSweeper == null || !cubicSweeper.running())) {
+            startedBy(outline.name(), l -> startArea(l, outline, mainlandOnly));
+        }
         if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); /orbis pregen stop first.\n" + active.progress());
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
@@ -453,6 +500,9 @@ public final class PregenTask {
 
     /** A drawn area, with its own Skip open sea choice (null: the world's setting). */
     public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea) {
+        if (active == null && (cubicSweeper == null || !cubicSweeper.running())) {
+            startedBy("the selection drawn on the map", l -> startSelection(l, selection, skipSea));
+        }
         if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); /orbis pregen stop first.\n" + active.progress());
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
@@ -886,8 +936,12 @@ public final class PregenTask {
     public static synchronized Component stop() {
         PregenTask t = active;
         CubicSweeper cubic = cubicSweeper;
-        if (t == null && cubic != null && cubic.running()) return cubic.stop();
+        if (t == null && cubic != null && cubic.running()) {
+            stoppedByHand = true;
+            return cubic.stop();
+        }
         if (t == null) return Component.literal("No pre-generation is running.");
+        stoppedByHand = true;
         t.stopRequested = true;
         t.stopFast();
         if (t.producer != null) t.producer.interrupt();
@@ -1395,6 +1449,28 @@ public final class PregenTask {
         return String.format(Locale.ROOT, "  row %,d / %,d generated (%.0f%%), on disk up to row %,d, ETA %s\n  %,d chunks generated%s, %,d open-sea skipped, %.1f chunks/s\n%s",
                 rowsDone, sweep.rowCount(), 100.0 * rowsDone / Math.max(1, sweep.rowCount()), rowsOnDisk, eta(remaining),
                 finished, failedNote, skippedSea.get(), rate, load);
+    }
+
+    /** For the world map's progress bar (see {@link #snapshot()}). */
+    private Snapshot snap() {
+        long elapsed = Math.max(1, (System.currentTimeMillis() - startedAt) / 1000);
+        int finished = done + failed;
+        double rate = rateNow > 0 ? rateNow : finished / (double) elapsed;
+        String failedNote = failed > 0 ? String.format(Locale.ROOT, ", %,d failed", failed) : "";
+        if (sweep == null) {
+            long sea = skippedSea.get() + skippedExisting.get();
+            long remaining = rate > 0 ? (long) ((chunks.length - finished - sea) / rate) : -1;
+            return new Snapshot(label, (float) ((finished + sea) / (double) Math.max(1, chunks.length)),
+                    String.format(Locale.ROOT, "%,d of %,d chunks%s, %.0f chunks/s, %s left", finished + sea, chunks.length, failedNote, rate, eta(remaining)),
+                    waiting);
+        }
+        int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1);
+        int rowsFromStart = Math.max(0, completedRow - startRow + 1);
+        int rowsLeft = sweep.rowCount() - rowsDone;
+        long remaining = rowsFromStart > 0 ? (long) (elapsed * (double) rowsLeft / rowsFromStart) : -1;
+        return new Snapshot(label, rowsDone / (float) Math.max(1, sweep.rowCount()),
+                String.format(Locale.ROOT, "row %,d of %,d, %,d chunks%s, %.0f chunks/s, %s left", rowsDone, sweep.rowCount(), finished, failedNote, rate, eta(remaining)),
+                waiting);
     }
 
     private void updateRateNow() {

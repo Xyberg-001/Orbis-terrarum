@@ -63,6 +63,12 @@ public final class AutoPregen {
         }
     }
 
+    /** Whether the world's own automatic pre-generation was stopped by hand and waits to be resumed. */
+    public static boolean paused(MinecraftServer server) {
+        OrbisConfig cfg = cfg();
+        return cfg != null && cfg.pregenOnCreate && "paused".equals(readState(server)) && !PregenTask.isRunning();
+    }
+
     /** /orbis pregen resume: carry on with the world's own area after a stop. */
     public static Component resume(MinecraftServer server) {
         OrbisConfig cfg = cfg();

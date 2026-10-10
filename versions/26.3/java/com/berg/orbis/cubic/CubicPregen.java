@@ -115,6 +115,15 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
     }
 
     @Override
+    public PregenTask.Snapshot snapshot() {
+        Run r = this.run;
+        if (r == null) return null;
+        return new PregenTask.Snapshot(r.label, r.total == 0 ? 1f : Math.min(1f, (float) r.donePrefix / r.total),
+                String.format(Locale.ROOT, "%,d of %,d cube columns, %,d cubes, %.0f cubes/s", r.donePrefix, r.total, r.cubesDone.get(), r.rate),
+                r.waiting);
+    }
+
+    @Override
     public Component status() {
         Run r = this.run;
         return Component.literal(r == null ? "No pre-generation is running." : r.progress());

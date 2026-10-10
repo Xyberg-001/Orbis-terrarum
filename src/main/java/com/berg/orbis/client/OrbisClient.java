@@ -10,12 +10,14 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
  * spawn-data gate ({@link SpawnGate}) needs a tick to poll download progress.
  */
 public class OrbisClient implements ClientModInitializer {
-    /** The world map key (N by default; Controls > Orbis Terrarum). */
+    /** The world map key (B by default; Controls > Orbis Terrarum). */
     public static net.minecraft.client.KeyMapping MAP_KEY;
     /** Where the current world sits on Earth, from the server (null when it does not run Orbis Terrarum). */
     public static volatile com.berg.orbis.net.WorldInfoPayload worldInfo;
     /** The hard limit of the server, for shading the world map (null: none, or the server has no Orbis). */
     public static volatile com.berg.orbis.net.AllowedAreaPayload allowedArea;
+    /** The server's pre-generation, for the world map's progress bar (idle when none runs or the server has no Orbis). */
+    public static volatile com.berg.orbis.net.PregenStatusPayload pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
 
     @Override
     public void onInitializeClient() {
@@ -35,6 +37,8 @@ public class OrbisClient implements ClientModInitializer {
                 (payload, context) -> worldInfo = payload);
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.AllowedAreaPayload.TYPE,
                 (payload, context) -> allowedArea = payload);
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PregenStatusPayload.TYPE,
+                (payload, context) -> pregenStatus = payload);
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.MapTilePayloads.Data.TYPE,
                 (payload, context) -> context.client().execute(() -> com.berg.orbis.client.map.BlockMapClient.receive(context.client(), payload)));
         // A server without Orbis (an Aternos upload for a plain server) sends no world info; its data pack's chat
@@ -68,6 +72,7 @@ public class OrbisClient implements ClientModInitializer {
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
             worldInfo = null;
             allowedArea = null;
+            pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
             mc.execute(() -> com.berg.orbis.client.map.BlockMapClient.clear(mc));
         });
         System.out.println("[orbis] Client ready: world settings via Create New World > Customize"
