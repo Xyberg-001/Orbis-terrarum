@@ -403,6 +403,16 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
 
     /** The same for the chunk at chunkPos, through any level (a cubic world's decoration, see versions/26.3 cubic). */
     public void placeStructures(WorldGenLevel level, ChunkPos chunkPos, StructureManager structureManager) {
+        placeStructures(level, chunkPos, structureManager, java.util.function.UnaryOperator.identity());
+    }
+
+    /**
+     * As {@link #placeStructures(WorldGenLevel, ChunkPos, StructureManager)}, each start placed as {@code toPlace} gives it: a cubic world's
+     * decoration places copies (a chunk's decoration can be worked out more than once there, and placing changes a start's pieces: a
+     * mineshaft corridor remembers it placed its spawner, so a second time came out differently).
+     */
+    public void placeStructures(WorldGenLevel level, ChunkPos chunkPos, StructureManager structureManager,
+                                java.util.function.UnaryOperator<StructureStart> toPlace) {
         if (!structureManager.shouldGenerateStructures()) return;
         SectionPos sectionPos = SectionPos.of(chunkPos, level.getMinSectionY());
         BlockPos origin = sectionPos.origin();
@@ -421,7 +431,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                 random.setFeatureSeed(seed, index++, step);
                 try {
                     for (StructureStart start : Mc.startsForStructure(structureManager, sectionPos.x(), sectionPos.z(), structure)) {
-                        start.placeInChunk(level, structureManager, this, random, writable, chunkPos);
+                        toPlace.apply(start).placeInChunk(level, structureManager, this, random, writable, chunkPos);
                     }
                 } catch (RuntimeException e) {
                     System.err.println("[orbis] Structure " + registry.getKey(structure) + " failed in chunk " + chunkPos + ": " + e);

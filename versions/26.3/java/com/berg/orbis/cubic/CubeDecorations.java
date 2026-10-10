@@ -78,7 +78,17 @@ final class CubeDecorations {
         if (model.cfg().vanillaStructures) {
             try {
                 // Villages, temples, mineshafts, strongholds...: their starts are in the columns (see DecorationLevel.getChunk).
-                this.generator.placeStructures(region, new ChunkPos(chunkX, chunkZ), this.level.structureManager().forWorldGenRegion(region));
+                // copies of the columns' starts: the chunk's decoration may be worked out again (the cache let it go, or after a restart),
+                // and placing changes a start's pieces (a mineshaft corridor remembers it placed its spider spawner, and the next time
+                // its cobwebs and planks, and the caves near them, came out differently); the columns' own starts stay as they were made
+                net.minecraft.world.level.levelgen.structure.pieces.StructurePieceSerializationContext context =
+                        net.minecraft.world.level.levelgen.structure.pieces.StructurePieceSerializationContext.fromLevel(this.level);
+                long seed = this.level.getSeed();
+                this.generator.placeStructures(region, new ChunkPos(chunkX, chunkZ), this.level.structureManager().forWorldGenRegion(region), start -> {
+                    net.minecraft.world.level.levelgen.structure.StructureStart copy = net.minecraft.world.level.levelgen.structure.StructureStart
+                            .loadStaticStart(context, start.createTag(context, start.getChunkPos()), seed);
+                    return copy != null ? copy : start;
+                });
             } catch (RuntimeException e) {
                 System.err.println("[orbis] Structures failed for chunk " + chunkX + "," + chunkZ + " (cubic): " + e);
             }
@@ -106,7 +116,11 @@ final class CubeDecorations {
         return ChunkDecoration.of(region);
     }
 
-    /** The chunk's columns as painted (with the map region if it is loaded, as the cubes were painted after waiting for it). */
+    /**
+     * The chunk's columns as painted, with the map region as the cubes were painted: waited for when the world waits for map data (it may
+     * have left memory since the cubes were painted: painted without it, the decoration worked on other columns than the cubes', and its
+     * caves, vines and geodes came out differently from run to run), else whatever is loaded.
+     */
     PaintedChunk painted(int chunkX, int chunkZ) {
         long key = ChunkPos.pack(chunkX, chunkZ);
         synchronized (this.painted) {
@@ -114,7 +128,9 @@ final class CubeDecorations {
             if (chunk != null) return chunk;
         }
         WorldModel model = this.generator.model();
-        PaintedChunk chunk = PaintedChunk.paint(model, this.level.getSeed(), chunkX << 4, chunkZ << 4, model.rasterIfLoaded(chunkX << 4, chunkZ << 4));
+        RegionRaster raster = model.rasterIfLoaded(chunkX << 4, chunkZ << 4);
+        if (raster == null && model.cfg().waitForOsm) raster = model.rasterForBlock(chunkX << 4, chunkZ << 4);
+        PaintedChunk chunk = PaintedChunk.paint(model, this.level.getSeed(), chunkX << 4, chunkZ << 4, raster);
         synchronized (this.painted) {
             this.painted.putIfAbsent(key, chunk);
         }
