@@ -1780,7 +1780,7 @@ Norwegian peaks stand about 75 blocks above the sea.
 
 ## World map (key B; N until 5 Oct 2026)
 
-Press **N** in game (rebind under Controls, Orbis Terrarum) for a full-screen
+Press **B** in game (rebind under Controls, Orbis Terrarum) for a full-screen
 map of the real world under the Minecraft one (`client/map/WorldMapScreen`):
 street map, satellite photos with place names, or elevation (Esri's
 topographic map was dropped for it on 3 Oct 2026), lined up with the blocks through the world's own projection, so a

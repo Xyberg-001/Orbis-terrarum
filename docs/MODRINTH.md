@@ -23,7 +23,7 @@ title can read "Orbis Terrarum 1.0.0 (beta)". The git tag `v1.0.0` stays as it i
 | Issues | https://github.com/Xyberg-001/orbis-terrarum/issues |
 | **Contains AI-generated content** | **Tick it.** Modrinth rule 6.1 requires it: a substantial part of the code and this description were produced with an AI assistant. |
 | Icon | `E:\Software dev projects\Orbis Terrarum\art\Orbis terrarum icon.png` (800×800, 241 KiB; limit 256 KiB). The jar carries the same artwork at 128×128. |
-| Gallery | Real in-game screenshots only (e.g. Bergen from above, a street with buildings, a bridge, the N map). |
+| Gallery | Real in-game screenshots only (e.g. Bergen from above, a street with buildings, a bridge, the B map). |
 
 ## Version form
 

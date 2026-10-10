@@ -87,7 +87,7 @@ Open the **World generator map** to choose where the world is and what it genera
 
 ## In game
 
-### World map – press **N**
+### World map – press **B**
 
 | Action | How |
 |---|---|
@@ -119,7 +119,7 @@ You are the white arrow, other players are cyan arrows, the world spawn is a gre
 | `/orbis export aternos` [`orbis`] [`zip`] | Make an upload of this world for an Aternos server (op); see below |
 | `/orbis hardlimit` [`on`/`off`] | Show or change the hard limit: only the selected and pre-generated area generates (op) |
 | `/orbis pregen map` | Draws a picture of what's generated; opens in your browser with `/orbismap` (op) |
-| `/orbis map render` / `status` | Draws the whole world into the N map's **Blocks** layer at once (op) |
+| `/orbis map render` / `status` | Draws the whole world into the B map's **Blocks** layer at once (op) |
 | `/orbis mapdata` [`stop`] | Downloads the map data for the land around you from Geofabrik and keeps only that area (op) |
 | `/orbis import <file.osm.pbf>` | Imports a downloaded OpenStreetMap file so generation doesn't need the online map servers (op) |
 | `/orbis extracts` | Lists imported map files |
