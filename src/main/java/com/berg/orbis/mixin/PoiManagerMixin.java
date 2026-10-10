@@ -43,7 +43,7 @@ public abstract class PoiManagerMixin {
     private void orbisterrarum$surfaceSectionsOnly(Predicate<Holder<PoiType>> predicate, ChunkPos chunk, PoiManager.Occupancy occupancy,
                                                   CallbackInfoReturnable<Stream<PoiRecord>> cir) {
         LevelHeightAccessor lha = ((SectionStorageAccessor) this).orbisterrarum$heightAccessor();
-        if (!(lha instanceof ServerLevel level) || !OrbisMod.isOrbisSeaLevel(level.getSeaLevel())) return;
+        if (!(lha instanceof ServerLevel level) || !OrbisMod.isOrbisLevel(level)) return;
         if (!level.getServer().isSameThread()) return;
         Holder<PoiType> portal = orbisterrarum$portal;
         if (portal == null) {

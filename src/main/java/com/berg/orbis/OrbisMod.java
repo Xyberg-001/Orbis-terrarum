@@ -117,7 +117,19 @@ public class OrbisMod implements ModInitializer {
         return config;
     }
 
-    /** True when a level with this sea level is an Orbis Terrarum world (no vanilla dimension has one near -1700). */
+    /**
+     * True when the level is an Orbis Terrarum world: its generator is Orbis's. (Its sea level alone does not say: a cubic Orbis world has
+     * its sea at Y 0, as the End has.)
+     */
+    public static boolean isOrbisLevel(net.minecraft.world.level.Level level) {
+        return level instanceof net.minecraft.server.level.ServerLevel server
+                && server.getChunkSource().getGenerator() instanceof com.berg.orbis.worldgen.RealWorldChunkGenerator;
+    }
+
+    /**
+     * True when a level with this sea level may be an Orbis Terrarum world, where nothing but the sea level is known (no vanilla dimension
+     * has one near -1700; a cubic Orbis world's is 0, as the End's is): prefer {@link #isOrbisLevel}.
+     */
     public static boolean isOrbisSeaLevel(int seaLevel) {
         WorldModel m = model;
         return m != null && seaLevel == m.cfg().seaLevelY;

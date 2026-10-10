@@ -31,7 +31,7 @@ public abstract class ServerLevelSeasonMixin {
     @Inject(method = "tickPrecipitation", at = @At("TAIL"))
     private void orbisterrarum$thaw(BlockPos pos, CallbackInfo ci) {
         ServerLevel level = (ServerLevel) (Object) this;
-        if (!OrbisMod.isOrbisSeaLevel(level.getSeaLevel())) return; // the world's own setting decides (below)
+        if (!OrbisMod.isOrbisLevel(level)) return; // the world's own setting decides (below)
         var model = OrbisMod.model();
         if (model == null) return;
         if (level.getRandom().nextInt(3) != 0) return;

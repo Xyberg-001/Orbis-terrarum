@@ -27,7 +27,7 @@ public abstract class VillagerClockMixin {
             target = "Lnet/minecraft/world/entity/ai/Brain;updateActivityFromSchedule(Lnet/minecraft/world/attribute/EnvironmentAttributeSystem;JLnet/minecraft/world/phys/Vec3;)V"))
     private static void orbisterrarum$clockHours(Brain<?> brain, EnvironmentAttributeSystem attributes, long gameTime, Vec3 pos,
                                                  ServerLevel level, LivingEntity entity, long time) {
-        if (entity instanceof Villager villager && OrbisMod.isOrbisSeaLevel(level.getSeaLevel())) {
+        if (entity instanceof Villager villager && OrbisMod.isOrbisLevel(level)) {
             var model = OrbisMod.model();
             if (model != null && model.cfg().villagerClockHours && model.cfg().realDaylight) {
                 if (villager.tickCount % 20 == 0) {
