@@ -148,6 +148,24 @@ public final class SkySwitches {
         return Component.literal(sb.toString());
     }
 
+    /** For the world map's World window: each switch as "sky", word, on, off for the whole installation, label, description (tab-separated). */
+    public static java.util.List<String> lines() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        WorldModel model = OrbisMod.model();
+        if (model == null) return out;
+        for (Switch s : Switch.values()) {
+            boolean world = s.read(model.cfg()), installation = s.read(OrbisMod.config());
+            out.add(String.join("\t", "sky", s.word, world ? "1" : "0", installation ? "0" : "1", s.label, s.description));
+        }
+        return out;
+    }
+
+    /** The switch with this command word, or null. */
+    public static Switch byWord(String word) {
+        for (Switch s : Switch.values()) if (s.word.equals(word)) return s;
+        return null;
+    }
+
     private static void save() {
         Path dir = worldDir;
         if (dir == null) return;

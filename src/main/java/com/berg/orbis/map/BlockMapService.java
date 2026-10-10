@@ -199,6 +199,11 @@ public final class BlockMapService {
         return Component.translatable("orbisterrarum.mapcmd.started", regions.size());
     }
 
+    /** Whether the whole world is being drawn now (Draw all on the world map, or /orbis map render). */
+    public static boolean rendering() {
+        return RENDERING.get();
+    }
+
     public static Component status() {
         if (store == null) return Component.translatable("orbisterrarum.mapcmd.noworld");
         if (!RENDERING.get()) return Component.translatable("orbisterrarum.mapcmd.idle");

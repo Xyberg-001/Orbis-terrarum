@@ -1871,6 +1871,43 @@ scale, projection, world id; `net/WorldInfoPayload`) when they join, only if the
 has Orbis Terrarum installed, so friends without the mod still join with plain
 Minecraft. Tiles use the same disk cache as the area preview.
 
+### The map instead of commands (1.1.1)
+
+Most `/orbis` commands moved onto the map, behind as little screen furniture as
+possible: one **i** button (the World window), cards that appear only on a
+place you asked about, and landmark names only when zoomed in or hovered.
+
+- **Pre-generation panel** (`worldgen/PregenStatus`, `net/PregenStatusPayload`,
+  `net/PregenControlPayload`): progress broadcast once a second while a sweep
+  runs; Stop, Resume and the hard limit come back as control messages, checked
+  for operator permission on the server.
+- **Questions and switches** (`map/MapRequests`, `net/MapRequestPayload`
+  `orbisterrarum:map_question`, `net/MapAnswerPayload`): `here` (a place's
+  column, `map/SpotInfo`, worked out off the server thread because a far place
+  can need terrain tiles; one per player every 250 ms; only map data already
+  loaded is used), `about` (the World window's facts and switch states, asked
+  again every 2 s while the window is open), `landmarks` (read back from the
+  landmark pack's advancement files, with whether this player has each one),
+  and for operators `sky`, `drawall`, `mapdata` and `mapdata-stop`. Answers
+  carry the question's id, so a late answer for a card no longer shown is
+  dropped; changes answer with a `msg` line for the map.
+- **Download map data** takes the selection's box (else a box around the middle
+  of the map) to `MapDataJob`; where no Geofabrik file fits (it is on disk
+  already, it crosses a border, or the scale is 8 m per block or coarser) it
+  falls back to fetching the online servers' regions around it, at most 13 x 13.
+- **Landmarks rebuild themselves** (`Landmarks.rebuildSoon`) after a map data
+  download or an import finishes, so places the online servers missed join the
+  advancements.
+- **Select area** on a search card looks up the outline the way
+  `/orbis pregen area` does and selects its largest part; a second button swaps
+  in all its parts (undoing the first, so the selection mode still applies).
+- The World window is a screen of its own over the map: the map keeps its tiles
+  while it is open (`keepCanvas`) and draws dimmed behind it.
+
+The replaced commands still run in 1.1.1 and say where their work went; they go
+in the next release. `/orbis landmarks` and `/orbis import-places` became
+operator-only (a data pack reload; a file on the server's disk).
+
 ## Choosing the spawn point
 
 New worlds start at Mount Everest's summit (`PreviewChoices`, at game start and

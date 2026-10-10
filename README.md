@@ -92,43 +92,38 @@ Open the **World generator map** to choose where the world is and what it genera
 | Action | How |
 |---|---|
 | Move / zoom | Drag; scroll or double-click; **Me** jumps back to you |
-| Find a place | Type in the search box (addresses and landmarks work too) |
-| Teleport | Right-click → **Teleport here** (operators only) |
+| Find a place | Type in the search box (addresses and landmarks work too). The place gets a card with **Teleport** and, for operators, **Select area**: its outline (the largest part, then **All parts** for islands and overseas parts) is selected for pre-generation |
+| What's here | Right-click → **What's here**: the place's name, real elevation, climate, land cover, road, water and building |
+| Teleport | Right-click → **Teleport here**, or **Teleport** on a card (operators only) |
 | Mark a place | Right-click → **Mark this place** (yellow pin, saved per world) |
 | Copy coordinates | Right-click → **Copy coordinates** |
+| Landmarks | Purple diamonds, with a tick once you've found one; names show when zoomed in to a town, or under the mouse. Click one for its card |
 | Map style | **Map:** street / satellite / elevation (heights in colour, with the height under the cursor); the sun / moon button beside the street map switches day and night colours |
 | See Minecraft blocks | **Blocks** – shows the world from above over the real map (off / 35 % / 70 % / 100 %), handy for finding villages and structures |
 | See what's generated | **Grey** – a light grey haze over areas that aren't generated yet; with a hard limit, the area that never generates is tinted red |
-| Follow a pre-generation | A bar at the bottom shows what is being pre-generated and how far it has got; operators get **Stop** there, and **Resume** after a stop |
-| Hard limit | **Hard limit: on / off** above **Generate** (operators only) |
+| Follow a pre-generation | A panel at the top shows what is being pre-generated and how far it has got; operators get **Stop** there, and **Resume** after a stop |
+| About the world | The **i** button at the top right: where the world sits, its scale and height, the world border and where you are. Operators switch the **real sky** there (daylight, weather, seasons, snow depth, clock hours), the **hard limit**, **Draw all generated land** into the Blocks layer, and **Download map data** for the selection (or around the middle of the map) |
 
-You are the white arrow, other players are cyan arrows, the world spawn is a green square. The key can be changed in **Controls → Orbis Terrarum**.
+You are the white arrow, other players are cyan arrows, the world spawn is a green square. The key can be changed in **Controls → Orbis Terrarum**. Landmark advancements rebuild themselves when new map data arrives.
 
 ### Commands
+
+The world map does most of this now; these are for server consoles, scripts and players without the mod.
 
 | Command | What it does |
 |---|---|
 | `/tpll <place or lat, lon>` | Teleport to a place ("Eiffel Tower", "Bergen, Norway") or coordinates (op) |
 | `/wherell` | Your position as latitude/longitude |
-| `/orbis here` | Everything about the spot you stand on: place name, real elevation, land cover, road, building … |
-| `/orbis info` | The world's location, scale and cache stats |
-| `/orbis prefetch <0-6>` | Download map data around you in advance |
 | `/orbis pregen <km>` | Pre-generate everything within `<km>` real kilometres of you (op) |
 | `/orbis pregen at <lat> <lon> <km>` | Same, around a coordinate (op) |
-| `/orbis pregen area <place>` | Pre-generate a whole town, municipality or country by its outline (op) |
+| `/orbis pregen area <place>` | Pre-generate a whole town, municipality or country by its outline (op); `area all <place>` includes islands and overseas parts |
 | `/orbis pregen status` / `stop` | Progress / stop (op) |
-| `/orbis pregen resume` | Carry on with the area chosen when the world was created, after a stop (op) |
 | `/orbis export aternos` [`orbis`] [`zip`] | Make an upload of this world for an Aternos server (op); see below |
-| `/orbis hardlimit` [`on`/`off`] | Show or change the hard limit: only the selected and pre-generated area generates (op) |
-| `/orbis pregen map` | Draws a picture of what's generated; opens in your browser with `/orbismap` (op) |
-| `/orbis map render` / `status` | Draws the whole world into the B map's **Blocks** layer at once (op) |
-| `/orbis mapdata` [`stop`] | Downloads the map data for the land around you from Geofabrik and keeps only that area (op) |
 | `/orbis import <file.osm.pbf>` | Imports a downloaded OpenStreetMap file so generation doesn't need the online map servers (op) |
-| `/orbis extracts` | Lists imported map files |
-| `/orbis landmarks` | Rebuilds the landmark advancements |
-| `/orbis sky` | Shows which of the real sky features are on in this world (op) |
-| `/orbis daylight` / `weather` / `seasons` / `snow` / `clockhours` `on`/`off` | Switches real daylight, real weather, real seasons, real snow depth or the villagers' clock hours on or off in this world, at once and for good (op) |
+| `/orbis import-places <file.geojson>` | Imports Overture place data, merged with OpenStreetMap from then on (op) |
 | `/orbis settings` [`<name>` [`<value>`]] | Lists, shows or changes the mod's performance and network settings, e.g. `/orbis settings regionCacheSize 24` (op; for servers, which have no settings screen) |
+
+These still work in this release but go in the next one, because the world map does them: `/orbis here` and `/orbis info` (What's here, the **i** button), `/orbis prefetch` and `/orbis mapdata` (Download map data), `/orbis pregen resume` (Resume), `/orbis hardlimit`, `/orbis sky` and `/orbis daylight` / `weather` / `seasons` / `snow` / `clockhours` (the **i** button), `/orbis map render` / `status` (Draw all generated land), `/orbis pregen map` and `/orbismap` (the grey haze), `/orbis landmarks` (automatic now) and `/orbis extracts` (Mod Menu → Overview).
 
 ---
 

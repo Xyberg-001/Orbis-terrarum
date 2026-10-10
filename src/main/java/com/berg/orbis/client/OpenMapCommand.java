@@ -44,7 +44,8 @@ public final class OpenMapCommand {
             return 0;
         }
         McClient.openPath(page);
-        source.sendFeedback(Component.literal("Opening the map in your browser.").withStyle(net.minecraft.ChatFormatting.GRAY));
+        source.sendFeedback(Component.literal("Opening the map in your browser. The world map (B) shows the same live: the haze is what is not generated yet."
+                + " This command goes in the next release.").withStyle(net.minecraft.ChatFormatting.GRAY));
         return 1;
     }
 }

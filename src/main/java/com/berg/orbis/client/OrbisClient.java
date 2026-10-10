@@ -39,6 +39,10 @@ public class OrbisClient implements ClientModInitializer {
                 (payload, context) -> allowedArea = payload);
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PregenStatusPayload.TYPE,
                 (payload, context) -> pregenStatus = payload);
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.MapAnswerPayload.TYPE,
+                (payload, context) -> context.client().execute(() -> {
+                    if (context.client().gui.screen() instanceof com.berg.orbis.client.map.MapAnswerSink sink) sink.answer(payload);
+                }));
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.MapTilePayloads.Data.TYPE,
                 (payload, context) -> context.client().execute(() -> com.berg.orbis.client.map.BlockMapClient.receive(context.client(), payload)));
         // A server without Orbis (an Aternos upload for a plain server) sends no world info; its data pack's chat

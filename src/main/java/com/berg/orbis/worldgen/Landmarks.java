@@ -90,6 +90,89 @@ public final class Landmarks {
         return n;
     }
 
+    private static final java.util.concurrent.atomic.AtomicBoolean REBUILDING = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Rebuilds the pack in the background, as new map data arrives (a map data download or import finished): landmarks the online map
+     * servers missed come in with it. Replaces running /orbis landmarks by hand.
+     */
+    public static void rebuildSoon(MinecraftServer server) {
+        if (!REBUILDING.compareAndSet(false, true)) return;
+        Thread t = new Thread(() -> {
+            try {
+                int n = regenerate(server);
+                if (n >= 0) System.out.println("[orbis] Landmark datapack rebuilt with " + n + " advancements after new map data");
+            } catch (Exception e) {
+                System.err.println("[orbis] Could not rebuild the landmark datapack: " + e);
+            } finally {
+                REBUILDING.set(false);
+            }
+        }, "Orbis-landmarks");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** A landmark as the world map pins it: its name, the middle of its area in blocks, and its advancement. */
+    public record Pin(String name, String task, int x, int z, net.minecraft.resources.Identifier advancement) {}
+
+    /** The advancement titles' verbs (see title), taken off for the pin's name. */
+    private static final String[] TITLE_VERBS = {"Climb ", "Ride to ", "The view from ", "Visit "};
+
+    /** The landmarks of this world's pack, read back from its advancements (empty when it has none). */
+    public static List<Pin> pins(MinecraftServer server) {
+        Path dir = server.getWorldPath(LevelResource.DATAPACK_DIR).resolve(PACK_NAME)
+                .resolve("data").resolve("orbisterrarum").resolve("advancement").resolve("landmark");
+        List<Pin> out = new ArrayList<>();
+        if (!Files.isDirectory(dir)) return out;
+        try (var files = Files.list(dir)) {
+            for (Path f : (Iterable<Path>) files::iterator) {
+                String file = f.getFileName().toString();
+                if (!file.endsWith(".json")) continue;
+                try {
+                    JsonObject a = com.google.gson.JsonParser.parseString(Files.readString(f, StandardCharsets.UTF_8)).getAsJsonObject();
+                    String title = a.getAsJsonObject("display").get("title").getAsString();
+                    String task = a.getAsJsonObject("display").has("description") ? a.getAsJsonObject("display").get("description").getAsString() : "";
+                    for (String verb : TITLE_VERBS) {
+                        if (title.startsWith(verb) && title.length() > verb.length()) {
+                            title = title.substring(verb.length());
+                            break;
+                        }
+                    }
+                    JsonObject pos = findPosition(a.getAsJsonObject("criteria"));
+                    if (pos == null) continue;
+                    int x = (int) Math.round((pos.getAsJsonObject("x").get("min").getAsDouble() + pos.getAsJsonObject("x").get("max").getAsDouble()) / 2);
+                    int z = (int) Math.round((pos.getAsJsonObject("z").get("min").getAsDouble() + pos.getAsJsonObject("z").get("max").getAsDouble()) / 2);
+                    out.add(new Pin(title, task, x, z, net.minecraft.resources.Identifier.fromNamespaceAndPath("orbisterrarum",
+                            "landmark/" + file.substring(0, file.length() - 5))));
+                } catch (RuntimeException e) {
+                    // not one of ours, or written by hand: no pin
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("[orbis] Could not read the landmarks: " + e);
+        }
+        return out;
+    }
+
+    /** The "position" object of a location criterion, wherever the player condition's format put it. */
+    private static JsonObject findPosition(com.google.gson.JsonElement e) {
+        if (e == null) return null;
+        if (e.isJsonObject()) {
+            JsonObject o = e.getAsJsonObject();
+            if (o.has("position") && o.get("position").isJsonObject()) return o.getAsJsonObject("position");
+            for (var en : o.entrySet()) {
+                JsonObject p = findPosition(en.getValue());
+                if (p != null) return p;
+            }
+        } else if (e.isJsonArray()) {
+            for (var el : e.getAsJsonArray()) {
+                JsonObject p = findPosition(el);
+                if (p != null) return p;
+            }
+        }
+        return null;
+    }
+
     /**
      * Asks for the reload that switches on the mod's packs once the server is idle: a pack written into a running
      * world (this month's season) is otherwise found as new and never switched on.
