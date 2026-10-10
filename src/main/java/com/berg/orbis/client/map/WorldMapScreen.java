@@ -506,18 +506,43 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     /** The landmark pins: purple diamonds, a tick on the ones found; names when zoomed in to a town or under the mouse. */
     private void drawLandmarks(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         if (landmarks.isEmpty()) return;
-        boolean names = canvas.metresPerGuiPixel() * (canvas.right() - canvas.left()) < 8000;
+        boolean names = canvas.metresPerGuiPixel() * (canvas.right() - canvas.left()) < 4000;
         Landmark hover = landmarkNear(mouseX, mouseY);
+        float k = markerScale();
+        List<Landmark> shown = new ArrayList<>();
         for (Landmark l : landmarks) {
             double[] s = canvas.gui(l.lat(), l.lon());
             if (s[0] < canvas.left() - 40 || s[0] > canvas.right() + 40 || s[1] < canvas.top() - 20 || s[1] > canvas.bottom() + 20) continue;
+            shown.add(l);
             g.pose().pushMatrix();
             g.pose().translate((float) s[0], (float) s[1]);
-            g.pose().scale(markerScale(), markerScale());
+            g.pose().scale(k, k);
             diamond(g, 5, 0xFF000000);
             diamond(g, 4, LANDMARK);
             if (l.done()) g.fill(-1, -1, 2, 2, WHITE);
-            if (names || l == hover) label(g, 8, -4, l.name() + (l.done() ? " \u2713" : ""), LANDMARK);
+            g.pose().popMatrix();
+        }
+        // Names after all the diamonds, each only where it does not run into one already drawn (the one under the mouse first).
+        if (hover != null && shown.remove(hover)) shown.add(0, hover);
+        List<double[]> taken = new ArrayList<>();
+        for (Landmark l : shown) {
+            if (!names && l != hover) continue;
+            String text = l.name() + (l.done() ? " \u2713" : "");
+            double[] s = canvas.gui(l.lat(), l.lon());
+            double x0 = s[0] + 7 * k, y0 = s[1] - 5 * k, x1 = x0 + (font.width(text) + 2) * k, y1 = y0 + 10 * k;
+            boolean clear = true;
+            for (double[] r : taken) {
+                if (x0 < r[2] + 2 && x1 > r[0] - 2 && y0 < r[3] + 1 && y1 > r[1] - 1) {
+                    clear = false;
+                    break;
+                }
+            }
+            if (!clear) continue;
+            taken.add(new double[]{x0, y0, x1, y1});
+            g.pose().pushMatrix();
+            g.pose().translate((float) s[0], (float) s[1]);
+            g.pose().scale(k, k);
+            label(g, 8, -4, text, LANDMARK);
             g.pose().popMatrix();
         }
     }
@@ -871,7 +896,9 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         drawStatus(g);
         if (card != null) {
             if (!mapShown && card.shown()) card.hide();
-            card.draw(g, canvas, width, TOP_H, height - 16);
+            // Clear of the tool strip and the Markers button on the left and of the night and World buttons on the right.
+            int cardLeft = Math.max(select != null ? select.textLeft(TOP_H, height, 4) : 4, markersUnderBar ? 4 + 80 + 6 : 4);
+            card.draw(g, canvas, cardLeft, width - 30, TOP_H, height - 16);
         }
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         MapTiles.drawNightIcon(g, nightButton, canvas.layer);

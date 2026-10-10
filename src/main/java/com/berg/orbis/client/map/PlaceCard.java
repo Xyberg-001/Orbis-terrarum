@@ -21,7 +21,7 @@ final class PlaceCard {
     /** A button on the card. */
     record Action(Component label, Component tip, Runnable run) {}
 
-    private static final int PAD = 5, MAX_W = 230, MIN_W = 120;
+    private static final int PAD = 5, MAX_W = 200, MIN_W = 120;
     private final Font font;
     private final Button[] buttons = new Button[3];
     private final List<Action> actions = new ArrayList<>();
@@ -96,8 +96,8 @@ final class PlaceCard {
         return x >= box[0] && x < box[2] && y >= box[1] && y < box[3];
     }
 
-    /** Draws the card above its place within {@code top..bottom} of a {@code screenW} wide screen, and puts its buttons on it. */
-    void draw(GuiGraphicsExtractor g, MapView canvas, int screenW, int top, int bottom) {
+    /** Draws the card above its place within {@code left..right} and {@code top..bottom} (GUI), and puts its buttons on it. */
+    void draw(GuiGraphicsExtractor g, MapView canvas, int left, int right, int top, int bottom) {
         box = close = null;
         if (at == null) return;
         int buttonsW = 0;
@@ -105,7 +105,7 @@ final class PlaceCard {
         int crossW = font.width("×") + 6;
         int want = font.width(title) + crossW;
         for (String l : lines) want = Math.max(want, font.width(l.replace("\t", ": ")));
-        int w = Math.max(MIN_W, Math.min(Math.min(MAX_W, screenW - 8), Math.max(want, buttonsW) + 2 * PAD));
+        int w = Math.max(Math.min(MIN_W, right - left - 4), Math.min(Math.min(MAX_W, right - left - 4), Math.max(want, buttonsW) + 2 * PAD));
         List<FormattedCharSequence> rows = new ArrayList<>();
         for (String l : lines) rows.addAll(font.split(styled(l), w - 2 * PAD));
         if (rows.size() > 12) rows = rows.subList(0, 12);
@@ -113,7 +113,7 @@ final class PlaceCard {
         double[] a = canvas.gui(at[0], at[1]);
         int x = (int) Math.round(a[0]) - w / 2, y = (int) Math.round(a[1]) - 14 - h;
         if (y < top + 2) y = (int) Math.round(a[1]) + 8; // no room above: below the place
-        x = Math.max(4, Math.min(screenW - 4 - w, x));
+        x = Math.max(left + 2, Math.min(right - 2 - w, x));
         y = Math.max(top + 2, Math.min(bottom - 2 - h, y));
         g.fill(x - 1, y - 1, x + w + 1, y + h + 1, 0xFF4A5868);
         g.fill(x, y, x + w, y + h, 0xF0141A20);
