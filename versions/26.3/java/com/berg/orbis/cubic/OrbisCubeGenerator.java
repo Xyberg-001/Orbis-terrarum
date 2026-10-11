@@ -13,16 +13,16 @@ import com.berg.orbis.worldgen.HardLimit;
 import com.berg.orbis.worldgen.OreGenerator;
 import com.berg.orbis.worldgen.RealWorldChunkGenerator;
 import com.berg.orbis.worldgen.WorldModel;
-import io.github.opencubicchunks.cubicchunks.api.CubeGenerator;
-import io.github.opencubicchunks.cubicchunks.api.CubeTerrain;
-import io.github.opencubicchunks.cubicchunks.api.CubicApi;
+import io.github.xyberg001.cubicworlds.api.CubeGenerator;
+import io.github.xyberg001.cubicworlds.api.CubeTerrain;
+import io.github.xyberg001.cubicworlds.api.CubicApi;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Util;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
- * Orbis Terrarum in a cubic world (the Cubic Chunks mod): the cubes of a level made by Orbis's generator are painted by the same column
+ * Orbis Terrarum in a cubic world (the Cubic Worlds mod): the cubes of a level made by Orbis's generator are painted by the same column
  * painter as chunks, through a sink that keeps what falls in the cube. The world holds the real heights (a block a metre up and down from
  * sea level at Y 0, see {@link OrbisMod#useCubicHeights}), so nothing is squeezed.
  * <p>
@@ -47,7 +47,7 @@ public final class OrbisCubeGenerator implements CubeGenerator {
         this.decorations = new CubeDecorations(level, generator);
     }
 
-    /** Called at startup when Cubic Chunks is installed. */
+    /** Called at startup when Cubic Worlds is installed. */
     public static void register() {
         CubicApi.registerCubeGenerator(RealWorldChunkGenerator.class, (level, chunkGenerator) -> {
             if (!CubicApi.isCubic(level)) return null;

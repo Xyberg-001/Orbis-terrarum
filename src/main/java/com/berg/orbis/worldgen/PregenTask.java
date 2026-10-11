@@ -139,7 +139,7 @@ public final class PregenTask {
         /** Where the running sweep has got, for the world map; null when none runs. */
         Snapshot snapshot();
 
-        /** Whether the level is a cubic one (asked of Cubic Chunks, so it is known before the first cube is made). */
+        /** Whether the level is a cubic one (asked of Cubic Worlds, so it is known before the first cube is made). */
         boolean cubic(ServerLevel level);
     }
 

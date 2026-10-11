@@ -1027,7 +1027,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     }
 
     /**
-     * Beyond the world border, shaded as outside the allowed area: in a cubic world it is much nearer than vanilla's (Cubic Chunks packs
+     * Beyond the world border, shaded as outside the allowed area: in a cubic world it is much nearer than vanilla's (Cubic Worlds packs
      * positions with more bits for height), and the far side of the Earth can lie beyond it.
      */
     private void drawOutsideBorder(GuiGraphicsExtractor g) {

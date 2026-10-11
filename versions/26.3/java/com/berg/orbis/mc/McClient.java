@@ -18,16 +18,16 @@ public final class McClient {
         Blaze3D.openPath(path);
     }
 
-    /** Whether the world being created will be cubic (Cubic Chunks installed, and its tab on the creation screen says so). */
+    /** Whether the world being created will be cubic (Cubic Worlds installed, and its tab on the creation screen says so). */
     public static boolean newWorldCubic(net.minecraft.client.gui.screens.worldselection.WorldCreationUiState state) {
-        return net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("cubicchunks")
-                && io.github.opencubicchunks.cubicchunks.api.client.CubicClientApi.isNewWorldCubic(state);
+        return net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("cubicworlds")
+                && io.github.xyberg001.cubicworlds.api.client.CubicClientApi.isNewWorldCubic(state);
     }
 
-    /** How far the world border reaches from 0 on x and z with Cubic Chunks installed (Integer.MAX_VALUE without it). */
+    /** How far the world border reaches from 0 on x and z with Cubic Worlds installed (Integer.MAX_VALUE without it). */
     public static int cubicReach() {
-        return net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("cubicchunks")
-                ? io.github.opencubicchunks.cubicchunks.api.CubicApi.borderReach() : Integer.MAX_VALUE;
+        return net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("cubicworlds")
+                ? io.github.xyberg001.cubicworlds.api.CubicApi.borderReach() : Integer.MAX_VALUE;
     }
 
     /** A smooth (linear), edge-clamped texture sampler. */

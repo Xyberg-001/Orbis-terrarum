@@ -141,7 +141,7 @@ All need operator rights except `/wherell`.
 ### Servers
 Install the mod on the server only and set `level-type=orbisterrarum\:earth` in `server.properties` before the first start. Easiest: create and pre-generate the world in singleplayer, then upload it.
 
-**True height (optional, Minecraft 26.3):** add [Cubic Chunks Fabric Port](https://github.com/Xyberg-001/CubicChunks-Fabric-Port/releases) and switch on its **Cubic Chunks** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest.
+**True height (optional, Minecraft 26.3):** add [Cubic Worlds](https://github.com/Xyberg-001/CubicWorlds/releases) and switch on its **Cubic Worlds** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest.
 
 ### Internet and privacy
 New areas download map data from public map services while they generate (everything is cached). Orbis sends **no personal data and no telemetry**: the services only see the area being generated, the text of your place searches and, as with any download, your IP address. Every service and what it is sent: [PRIVACY.md](https://github.com/Xyberg-001/Orbis-terrarum/blob/main/docs/PRIVACY.md).

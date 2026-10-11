@@ -132,7 +132,7 @@ public final class MapRequests {
         out.add("info\tCentre\t" + String.format(Locale.ROOT, "%.5f, %.5f (block 0, 0)", cfg.originLat, cfg.originLon));
         out.add("info\tScale\t" + String.format(Locale.ROOT, "1 block = %s m", trim(cfg.metersPerBlock)));
         out.add("info\tHeight\t" + String.format(Locale.ROOT, "Y %,d to %,d, sea level at Y %d", cfg.minY, cfg.maxY(), cfg.seaLevelY));
-        out.add("info\tCubic Chunks\t" + (OrbisMod.cubicWorld() ? "yes (tall world)" : "no"));
+        out.add("info\tCubic Worlds\t" + (OrbisMod.cubicWorld() ? "yes (tall world)" : "no"));
         double half = border.getSize() / 2;
         out.add("info\tWorld border\t" + String.format(Locale.ROOT, "%,.0f blocks each way (%,.0f km)", half, half * cfg.metersPerBlock / 1000));
         out.add("info\tMap data\t" + (model.regions() == null ? "off" : "OpenStreetMap"));

@@ -5,8 +5,8 @@ import java.util.LinkedHashSet;
 
 import com.berg.orbis.map.BlockMapService;
 import com.berg.orbis.map.BlockMapStore;
-import io.github.opencubicchunks.cubicchunks.api.CubeTerrain;
-import io.github.opencubicchunks.cubicchunks.api.CubicApi;
+import io.github.xyberg001.cubicworlds.api.CubeTerrain;
+import io.github.xyberg001.cubicworlds.api.CubicApi;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.core.Holder;
@@ -108,7 +108,7 @@ public final class CubeMapDrawer implements CubicApi.CubeListener {
         if (level == null || !CubicApi.isCubic(level)) return;
         int size = CubeTerrain.SIZE, perRegion = 512 / size;
         int minCube = Math.floorDiv(CubicApi.minY(level), size), maxCube = Math.floorDiv(CubicApi.maxY(level), size);
-        // Nothing saved there (Cubic Chunks keeps 16 x 16 x 16 cubes a file, one map region across): skip it without asking the
+        // Nothing saved there (Cubic Worlds keeps 16 x 16 x 16 cubes a file, one map region across): skip it without asking the
         // generator for ground heights (which could fetch elevation data for places no one went).
         java.nio.file.Path files = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
                 .resolve("dimensions/minecraft/overworld/region3d");

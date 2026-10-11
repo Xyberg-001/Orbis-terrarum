@@ -601,7 +601,7 @@ public final class AreaPreviewScreen extends Screen {
     }
 
     /**
-     * How far from the spawn the world reaches on x and z if it will be cubic (Cubic Chunks packs block positions with more bits for height,
+     * How far from the spawn the world reaches on x and z if it will be cubic (Cubic Worlds packs block positions with more bits for height,
      * so its border is much nearer than vanilla's), in blocks; 0 when it will not be cubic or the reach is vanilla's.
      */
     private int cubicReach() {

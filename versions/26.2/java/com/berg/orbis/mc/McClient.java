@@ -18,7 +18,7 @@ public final class McClient {
         Util.getPlatform().openPath(path);
     }
 
-    /** Whether the world being created will be cubic: never on this version (Cubic Chunks is for 26.3). */
+    /** Whether the world being created will be cubic: never on this version (Cubic Worlds is for 26.3). */
     public static boolean newWorldCubic(net.minecraft.client.gui.screens.worldselection.WorldCreationUiState state) {
         return false;
     }

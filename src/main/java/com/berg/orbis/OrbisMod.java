@@ -45,7 +45,7 @@ public class OrbisMod implements ModInitializer {
     private static volatile OrbisConfig config;
     private static volatile WorldModel model;
     private static volatile WorldSettings modelSettings;
-    /** [lowest Y, highest Y] of the running world when it is a cubic one (Cubic Chunks), else null; see {@link #useCubicHeights}. */
+    /** [lowest Y, highest Y] of the running world when it is a cubic one (Cubic Worlds), else null; see {@link #useCubicHeights}. */
     private static volatile int[] cubicHeights;
     private static volatile int[] modelCubicHeights;
     /** True while the server shuts down: nothing may wait for downloads then. */
@@ -274,7 +274,7 @@ public class OrbisMod implements ModInitializer {
         com.berg.orbis.sky.SkySwitches.applyTo(effective); // the running world's sky switched by command (none outside a world)
         effective.worldHeight = height;
         if (cubic != null) {
-            // A cubic world (Cubic Chunks): it holds the real heights, so a block is a metre up and down from sea level at
+            // A cubic world (Cubic Worlds): it holds the real heights, so a block is a metre up and down from sea level at
             // Y 0, with nothing squeezed.
             effective.minY = cubic[0];
             effective.seaLevelY = 0;
@@ -303,7 +303,7 @@ public class OrbisMod implements ModInitializer {
     }
 
     /**
-     * Switches the model to a cubic world's (Cubic Chunks; called as the world's cube generator is made): its own lowest and
+     * Switches the model to a cubic world's (Cubic Worlds; called as the world's cube generator is made): its own lowest and
      * highest Y instead of the dimension's, sea level at Y 0 and a block a metre up and down. Until the server stops.
      */
     public static synchronized WorldModel useCubicHeights(WorldSettings settings, int minY, int maxY) {
@@ -312,7 +312,7 @@ public class OrbisMod implements ModInitializer {
         return modelFor(settings);
     }
 
-    /** True while the running world is a cubic one (Cubic Chunks). */
+    /** True while the running world is a cubic one (Cubic Worlds). */
     public static boolean cubicWorld() {
         return cubicHeights != null;
     }
@@ -399,7 +399,7 @@ public class OrbisMod implements ModInitializer {
                 .register(com.berg.orbis.net.AllowedAreaPayload.TYPE, com.berg.orbis.net.AllowedAreaPayload.CODEC);
         com.berg.orbis.map.BlockMapService.register();
         com.berg.orbis.compat.dh.DhCompat.init(); // optional: only acts when Distant Horizons is installed
-        com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Chunks is installed (26.3)
+        com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Worlds is installed (26.3)
         net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             WorldModel m = model;
             if (m == null || !(server.overworld().getChunkSource().getGenerator() instanceof RealWorldChunkGenerator)) return;
