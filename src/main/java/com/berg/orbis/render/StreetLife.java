@@ -46,8 +46,12 @@ public final class StreetLife {
                         if (y != Integer.MIN_VALUE) {
                             EntityType<? extends Mob> type = (h >>> 12) % 3 == 0 ? EntityTypes.COW : EntityTypes.SHEEP;
                             spawn(level, type, x, y, z, true);
+                            long taken = ((long) x << 32) ^ (z & 0xFFFFFFFFL), takenToo = taken;
                             for (int i = 1; i <= 2; i++) {
                                 int gx = x + (int) ((h >>> (16 + 4 * i)) % 5) - 2, gz = z + (int) ((h >>> (18 + 4 * i)) % 5) - 2;
+                                long spot = ((long) gx << 32) ^ (gz & 0xFFFFFFFFL);
+                                if (spot == taken || spot == takenToo) continue; // one animal a spot (they would share an id, see SpawnIds)
+                                takenToo = spot;
                                 int gi = r.index(gx, gz);
                                 int gy = gi >= 0 ? standY(level, pos, r, gi, gx, gz, cfg) : Integer.MIN_VALUE;
                                 if (gy != Integer.MIN_VALUE && Math.abs(gy - y) <= 2) spawn(level, type, gx, gy, gz, true);
@@ -77,6 +81,7 @@ public final class StreetLife {
                             Entity b = boat.create(level.getLevel(), EntitySpawnReason.STRUCTURE);
                             if (b != null) {
                                 b.snapTo(x + 0.5, surface, z + 0.5, (float) (h % 360), 0f);
+                                SpawnIds.assign(level, b);
                                 level.addFreshEntity(b);
                             }
                         }
@@ -113,6 +118,7 @@ public final class StreetLife {
             mob.finalizeSpawn(level, level.getCurrentDifficultyAt(BlockPos.containing(x, y, z)), EntitySpawnReason.STRUCTURE, null);
             if (persistent) mob.setPersistenceRequired();
         }
+        SpawnIds.assign(level, e);
         level.addFreshEntityWithPassengers(e);
         return e;
     }

@@ -32,10 +32,10 @@
   "depends": {
     "fabricloader": ">=0.19.3",
     "fabric-api": "*",
-    "minecraft": "${minecraft_dependency}"
+    "minecraft": "${minecraft_dependency}",
+    "yet_another_config_lib_v3": "*"
   },
   "recommends": {
-    "yet_another_config_lib_v3": "*",
     "modmenu": "*"
   }
 }

@@ -3,7 +3,8 @@
 Everything to paste into Modrinth's project settings and "Upload version" forms.
 The description below is the project body (Modrinth renders Markdown).
 
-1.0.0 (28 Sep 2026) was the beta; 1.1.0 is the first full release, a major overhaul. On Modrinth, 1.0.0 stays
+1.0.0 (28 Sep 2026) was the beta; 1.1.0 (11 Oct 2026) is the first full release, a major overhaul. (A first 1.1.0
+build of 3 Oct was on GitHub only; this 1.1.0 replaces it.) On Modrinth, 1.0.0 stays
 in the **Beta** channel (Versions → 1.0.0 → Edit → Release channel, if it was ever set to Release), and its
 title can read "Orbis Terrarum 1.0.0 (beta)". The git tag `v1.0.0` stays as it is.
 
@@ -16,14 +17,14 @@ title can read "Orbis Terrarum 1.0.0 (beta)". The git tag `v1.0.0` stays as it i
 | Summary | Generates the real Earth in Minecraft: real elevation, coastlines and rivers, OpenStreetMap buildings, roads, bridges and forests, streamed in as you explore. Pick any place on Earth as a new world type. |
 | Project type | Mod |
 | Categories | Worldgen (primary), Adventure |
-| Client side | Optional (settings screens, area preview and the N world map) |
+| Client side | Optional (settings screens, area preview and the B world map) |
 | Server side | Required (it generates the world) |
 | License | All Rights Reserved (`LicenseRef-All-Rights-Reserved`), matching `LICENSE` and `fabric.mod.json` |
 | Source code | https://github.com/Xyberg-001/orbis-terrarum |
 | Issues | https://github.com/Xyberg-001/orbis-terrarum/issues |
 | **Contains AI-generated content** | **Tick it.** Modrinth rule 6.1 requires it: a substantial part of the code and this description were produced with an AI assistant. |
 | Icon | `E:\Software dev projects\Orbis Terrarum\art\Orbis terrarum icon.png` (800×800, 241 KiB; limit 256 KiB). The jar carries the same artwork at 128×128. |
-| Gallery | Real in-game screenshots only (e.g. Bergen from above, a street with buildings, a bridge, the N map). |
+| Gallery | Real in-game screenshots only (e.g. Bergen from above, a street with buildings, a bridge, the B map). |
 
 ## Version form
 
@@ -39,7 +40,7 @@ Two uploads, one jar per Minecraft version (the same changelog for both):
 | Release channel | Release | Release |
 | Loaders | Fabric | Fabric |
 | Game versions | 26.3 | 26.2 |
-| Dependencies | Fabric API — required; YetAnotherConfigLib (v3) — optional; Mod Menu — optional | the same |
+| Dependencies | Fabric API — required; Mod Menu — optional (YetAnotherConfigLib comes inside the jar, LGPL, unmodified) | the same |
 
 Changelog:
 
@@ -61,8 +62,23 @@ New
 - Street name signs at junctions.
 - Pre-generation planned when the world is created: select the area on the map
   (rectangle, ellipse, lasso, expand/shrink, skip open sea), generate it on creation,
-  and keep the world to it with a hard limit (/orbis hardlimit on|off).
+  and keep the world to it with a hard limit.
 - Much faster pre-generation, and a resumed one skips what is already there.
+- The world map (B) does most of the work the commands did: search a place and
+  teleport there or select its outline (its largest part or all of it); right-click
+  What's here (place, elevation, climate, road, building); landmarks as pins, ticked
+  once found; the i window with the world's facts, the real sky switches, the hard
+  limit, Draw all for the Blocks layer and Download map data; pre-generation progress
+  with Stop and Resume. The /orbis commands it replaces still work in this release.
+- Map data from Geofabrik: when you create a world, Orbis offers OpenStreetMap's file
+  for its region, keeps only your area and reads the map from disk from then on.
+- Far view with Voxy in singleplayer: land shown from the map data before it exists.
+- Mountains at 1:1: an area high above the sea (the Himalaya) gets the world's height
+  laid over its own ground, 1:1 from the valleys to the summits.
+- Lush Caves, Dripstone Caves and the Deep Dark underground.
+- Bare-earth terrain (GEDTM30) outside the lidar countries: no more forests and
+  buildings baked into the ground.
+- YetAnotherConfigLib comes inside the mod: nothing extra to install.
 - /orbis export aternos: an upload of your world for an Aternos server.
 - Mod Menu settings: downloads by country, a data folder on any drive, performance and
   network settings.
@@ -72,7 +88,14 @@ Fixed
   outside the lidar countries, e.g. the Himalaya).
 - Dry sea floor and water walls along some coasts; villages and outposts on open sea.
 - Trail ruins buried deep underground; buried treasure on mountainsides.
-- Road steps at tunnel junctions and uneven bridge decks, and many smaller fixes.
+- Road steps at tunnel junctions and uneven bridge decks.
+- /locate, eyes of ender, explorer maps and dolphins no longer freeze the server: the
+  structure search runs in the background.
+- Trees no longer fill houses with leaves; doors open onto a room inside and clear
+  ground outside.
+- Cities with many shops stay smooth: shop display frames are shown within 48 blocks
+  (a setting), and new shops hang fewer.
+- And many smaller fixes.
 ```
 
 ---
@@ -82,7 +105,7 @@ Fixed
 **Orbis Terrarum** turns Minecraft into the real Earth. Choose a place — a city, a mountain, a whole country — and explore it with real elevation, coastlines, lakes and rivers, OpenStreetMap buildings in their real colours and shapes, roads with markings, bridges, tunnels, railways, forests, farmland, street lamps and more. Terrain and map data stream in as you explore.
 
 ### Features
-- **Real terrain** from national lidar models where they exist (Norway 1 m, Switzerland, Austria, Germany, Japan, the USA, …) and Copernicus GLO-30 everywhere else, with a real sea floor.
+- **Real terrain** from national lidar models where they exist (Norway 1 m, Switzerland, Austria, Germany, Japan, the USA, …) and the bare-earth GEDTM30 everywhere else (Copernicus GLO-30 with forests and buildings taken out), with a real sea floor.
 - **Buildings** from OpenStreetMap with heights, roof shapes and colours matched to aerial imagery.
 - **Roads, rails, bridges and tunnels** at their real width, with markings, sidewalks and street furniture.
 - **Water, land cover and trees** from OpenStreetMap and ESA WorldCover; trees can follow a real canopy-height map.
@@ -91,11 +114,12 @@ Fixed
 - **Real rock and lake beds**: the real bedrock under the ground, lakes that deepen away from the shore, and kelp and seagrass in the sea.
 - **World generator map** before you create a world: search a place or right-click to put the spawn there, select the area like in an image editor (rectangle, ellipse, lasso, add and subtract) and see its size in blocks, chunks, disk size and time to pre-generate; optionally generate only that area.
 - **Fast pre-generation** (`/orbis pregen`, or by itself when the world is created): Orbis builds the terrain ahead of the sweep on half your cores, the world stands still while it runs, and nothing that already exists is touched.
-- An in-game **world map** (key N) with street, satellite and elevation layers, search, area selection and teleport.
+- An in-game **world map** (key B) with street, satellite and elevation layers: search a place and teleport there or select its outline, see what is at any spot, find the landmarks, follow a pre-generation, and switch the world's real sky and hard limit.
 - Vanilla ores, caves, animals and structures adapted to the real terrain.
+- Lush Caves, Dripstone Caves and the Deep Dark with its Ancient Cities underground (new worlds from 1.1.0).
 
 ### Getting started
-1. Install Fabric Loader and Fabric API for Minecraft 26.2 or 26.3, and the Orbis Terrarum jar for that version. For the settings screens also install **YetAnotherConfigLib** and (optionally) **Mod Menu**.
+1. Install Fabric Loader and Fabric API for Minecraft 26.2 or 26.3, and the Orbis Terrarum jar for that version. **Mod Menu** is recommended, to open the settings (YetAnotherConfigLib, which they need, comes inside the jar).
 2. Create a new world, set **World Type → Orbis Terrarum**, then **Customize** and open the **World generator map** to choose the place; the other tabs choose the scale and features.
 3. Every other world type stays plain vanilla — the mod stays out of those worlds.
 
@@ -107,10 +131,13 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 | Service | Used for | Sent |
 |---|---|---|
 | Mapterhorn (tiles.mapterhorn.com) | Terrain elevation; the Elevation map layer | Tile coordinates |
+| OpenGeoHub (s3.opengeohub.org) | Bare-earth terrain (GEDTM30) where no national survey exists, for worlds made with 1.1.0 or later | Byte ranges of one global file |
 | Open Waters Seascape (tiles.openwaters.io) | Sea floor; sea depths on the Elevation map layer | Tile coordinates |
+| Geofabrik (download.geofabrik.de) | OpenStreetMap's file for the region holding a new world's area, only when you agree at Create (or press Download map data on the world map); the region list once a month | The region file's name |
 | Overpass API mirrors (overpass-api.de, overpass.kumi.systems, overpass.private.coffee, overpass.openstreetmap.fr) | OpenStreetMap buildings, roads, water | Bounding box of the area |
 | Nominatim (nominatim.openstreetmap.org), Photon (photon.komoot.io) | Place search and area outlines, only when you search or preview | Your search text / coordinates |
-| Esri ArcGIS Online (server.arcgisonline.com) | Aerial-imagery colours; map backgrounds in the preview and world map | Tile coordinates |
+| Esri ArcGIS Online (server.arcgisonline.com) | Aerial-imagery colours; satellite map background in the preview and world map | Tile coordinates |
+| OpenFreeMap (tiles.openfreemap.org) | The street map in the preview and world map (OpenStreetMap vector tiles, drawn by the mod) | Tile coordinates |
 | National mapping agencies' photo services (swisstopo, PDOK, Digitaal Vlaanderen, SPW Wallonia, geoportail.lu, IGN France, IGN España, Bavaria, NRW, basemap.at, ČÚZK, GURS, Maa- ja Ruumiamet, GSI Japan, NLSC Taiwan, HK Lands Department, NSW Spatial Services, Vicmap, Ontario GEO, MassGIS) | Aerial-imagery colours, only for areas inside that country or state | Tile coordinates / the tile's bounding box |
 | ESA WorldCover (AWS S3, eu-central-1) | Land cover | 3° tile name |
 | Norwegian Meteorological Institute (api.met.no) | Real weather, while a world runs (every few minutes at most) | Coordinates of the players' area (4 decimals) |
@@ -129,7 +156,7 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 A country's own services (photos, rock map, road widths, lake surveys) are only contacted for areas inside that country; the lidar services only when switched on (Advanced tab). Data Sources → Downloads by country shows and deletes what each source keeps on disk. The generation sources (imagery, sea floor, land cover, lidar, road widths, the tile and Overpass URLs) can be switched off or replaced in `config/orbisterrarum/orbisterrarum.json`. The map backgrounds load only while the area preview or world map is open, place search only runs when you search, and the DNS fallback only when your system DNS fails.
 
 ### Data attribution
-Map data © OpenStreetMap contributors (ODbL). Terrain: Mapterhorn and its sources (https://mapterhorn.com/attribution), incl. Copernicus GLO-30 © DLR/ESA/Airbus. Sea floor: Open Waters Seascape (GEBCO 2026 and regional surveys), CC BY 4.0. Land cover: ESA WorldCover 2021 v200, CC BY 4.0. Imagery: Esri, Maxar, Earthstar Geographics and the GIS User Community; USDA NAIP via USGS; © swisstopo; Beeldmateriaal Nederland (PDOK, CC BY 4.0); © Digitaal Vlaanderen; © SPW; © ACT Luxembourg (CC0); © IGN France (Licence Ouverte); PNOA © IGN España (CC BY 4.0); © Bayerische Vermessungsverwaltung (CC BY 4.0); © Geobasis NRW (dl-de/zero-2.0); basemap.at (CC BY 4.0); © ČÚZK (CC BY 4.0); © GURS (CC BY 4.0); © Maa- ja Ruumiamet (CC BY 4.0); GSI Japan tiles; © NLSC Taiwan (OGDL); © Lands Department, HKSAR; © Spatial Services NSW (CC BY 4.0); © Vicmap (CC BY 4.0); © King's Printer for Ontario (OGL-Ontario); MassGIS. Norway: © Kartverket (CC BY 4.0), NVDB © Statens vegvesen (NLOD), bedrock map © Norges geologiske undersøkelse (NGU, NLOD / CC BY 4.0), lake depth surveys © NVE (NLOD). Lake depth contours: © SYKE (CC BY 4.0), Minnesota DNR, © King's Printer for Ontario (OGL-Ontario). Road widths and lanes: BD TOPO © IGN (Licence Ouverte), Digiroad © Väylävirasto (CC BY 4.0), FHWA HPMS (public domain), BC Digital Road Atlas (OGL-BC). Building registers: BD TOPO © IGN (Licence Ouverte), 3DBAG (CC BY 4.0), © GURS (CC BY 4.0), © Stadt Wien (CC BY 4.0), NYC Open Data. Lidar building heights: © swisstopo (swissSURFACE3D), NRCan HRDEM (Open Government Licence – Canada), AHN (CC0), © IGN (Licence Ouverte), © Geobasis NRW (dl-de/zero-2.0), © Maa- ja Ruumiamet (CC BY 4.0), © ČÚZK (CC BY 4.0), DOGAMI (Oregon), KyFromAbove (Kentucky), DC GIS (CC BY 4.0), GeoNB (New Brunswick, OGL-NB). Rock types elsewhere: Macrostrat (macrostrat.org) and its source maps, CC BY 4.0. Optional lake depths you import: GLOBathy (CC0) with HydroLAKES (HydroSHEDS, CC BY 4.0). Weather: Norwegian Meteorological Institute (MET Norway), CC BY 4.0. Time zone and snow depth: Open-Meteo (open-meteo.com), CC BY 4.0. Optional local data you add yourself: German LoD2 buildings (Geobasis NRW, dl-de/zero-2.0; Bayerische Vermessungsverwaltung, CC BY 4.0), Meta/WRI canopy height (CC BY 4.0), GlobalBuildingAtlas building heights (TUM, CC BY-NC 4.0), Overture Places.
+Map data © OpenStreetMap contributors (ODbL); street map tiles from OpenFreeMap (openfreemap.org) in the OpenMapTiles schema. Terrain: Mapterhorn and its sources (https://mapterhorn.com/attribution), incl. Copernicus GLO-30 © DLR/ESA/Airbus. Bare-earth terrain outside the surveys: GEDTM30 v1.2, OpenLandMap / OpenGeoHub Foundation, CC BY 4.0. Sea floor: Open Waters Seascape (GEBCO 2026 and regional surveys), CC BY 4.0. Land cover: ESA WorldCover 2021 v200, CC BY 4.0. Imagery: Esri, Maxar, Earthstar Geographics and the GIS User Community; USDA NAIP via USGS; © swisstopo; Beeldmateriaal Nederland (PDOK, CC BY 4.0); © Digitaal Vlaanderen; © SPW; © ACT Luxembourg (CC0); © IGN France (Licence Ouverte); PNOA © IGN España (CC BY 4.0); © Bayerische Vermessungsverwaltung (CC BY 4.0); © Geobasis NRW (dl-de/zero-2.0); basemap.at (CC BY 4.0); © ČÚZK (CC BY 4.0); © GURS (CC BY 4.0); © Maa- ja Ruumiamet (CC BY 4.0); GSI Japan tiles; © NLSC Taiwan (OGDL); © Lands Department, HKSAR; © Spatial Services NSW (CC BY 4.0); © Vicmap (CC BY 4.0); © King's Printer for Ontario (OGL-Ontario); MassGIS. Norway: © Kartverket (CC BY 4.0), NVDB © Statens vegvesen (NLOD), bedrock map © Norges geologiske undersøkelse (NGU, NLOD / CC BY 4.0), lake depth surveys © NVE (NLOD). Lake depth contours: © SYKE (CC BY 4.0), Minnesota DNR, © King's Printer for Ontario (OGL-Ontario). Road widths and lanes: BD TOPO © IGN (Licence Ouverte), Digiroad © Väylävirasto (CC BY 4.0), FHWA HPMS (public domain), BC Digital Road Atlas (OGL-BC). Building registers: BD TOPO © IGN (Licence Ouverte), 3DBAG (CC BY 4.0), © GURS (CC BY 4.0), © Stadt Wien (CC BY 4.0), NYC Open Data. Lidar building heights: © swisstopo (swissSURFACE3D), NRCan HRDEM (Open Government Licence – Canada), AHN (CC0), © IGN (Licence Ouverte), © Geobasis NRW (dl-de/zero-2.0), © Maa- ja Ruumiamet (CC BY 4.0), © ČÚZK (CC BY 4.0), DOGAMI (Oregon), KyFromAbove (Kentucky), DC GIS (CC BY 4.0), GeoNB (New Brunswick, OGL-NB). Rock types elsewhere: Macrostrat (macrostrat.org) and its source maps, CC BY 4.0. Optional lake depths you import: GLOBathy (CC0) with HydroLAKES (HydroSHEDS, CC BY 4.0). Weather: Norwegian Meteorological Institute (MET Norway), CC BY 4.0. Time zone and snow depth: Open-Meteo (open-meteo.com), CC BY 4.0. Optional local data you add yourself: German LoD2 buildings (Geobasis NRW, dl-de/zero-2.0; Bayerische Vermessungsverwaltung, CC BY 4.0), Meta/WRI canopy height (CC BY 4.0), GlobalBuildingAtlas building heights (TUM, CC BY-NC 4.0), Overture Places.
 
 ### Known issues
 - Generation is network-bound: expect slow chunks while exploring new areas; pre-generate for multiplayer.

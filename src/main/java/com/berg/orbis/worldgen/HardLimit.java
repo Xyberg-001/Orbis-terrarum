@@ -293,6 +293,16 @@ public final class HardLimit {
         });
     }
 
+    /** Whether the hard limit is on, and the allowed area's chunks (for the world map's World window). */
+    public static boolean on() {
+        return enabled;
+    }
+
+    public static long allowedChunks() {
+        ChunkSelection a = allowed;
+        return a == null ? 0 : a.count();
+    }
+
     public static Component status() {
         ChunkSelection a = allowed;
         if (dir == null) return Component.literal("Not an Orbis Terrarum world.");

@@ -1,11 +1,6 @@
 package com.berg.orbis.command;
 
 import com.berg.orbis.OrbisMod;
-import com.berg.orbis.biome.BiomeClassifier;
-import com.berg.orbis.feature.BuildingFeature;
-import com.berg.orbis.feature.RegionRaster;
-import com.berg.orbis.feature.RoadFeature;
-import com.berg.orbis.feature.WaterFeature;
 import com.berg.orbis.net.Geocoder;
 import com.berg.orbis.worldgen.PregenTask;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -28,6 +23,7 @@ import java.util.Locale;
  * /orbis info           generator status (origin, caches, climate here)
  * /orbis here           what OSM/DEM know about the column you stand on
  * /orbis prefetch <r>   pre-download OSM regions within r regions of you
+ * /orbis sky            the real sky switches of this world; /orbis daylight|weather|seasons|snow|clockhours on|off switches one
  */
 public class TeleportCommands {
 
@@ -41,7 +37,17 @@ public class TeleportCommands {
                             .executes(TeleportCommands::teleportToTarget)));
             dispatcher.register(Commands.literal("wherell").executes(TeleportCommands::reportLatLon));
 
-            dispatcher.register(Commands.literal("orbis")
+            var orbis = Commands.literal("orbis");
+            // The world's real sky, switched while it runs (kept with the world, see SkySwitches); for operators.
+            orbis.then(Commands.literal("sky").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                    .executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.status(), WORLD)));
+            for (com.berg.orbis.sky.SkySwitches.Switch s : com.berg.orbis.sky.SkySwitches.Switch.values()) {
+                orbis.then(Commands.literal(s.word).requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.status(), WORLD))
+                        .then(Commands.literal("on").executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.set(ctx.getSource().getServer(), s, true), WORLD)))
+                        .then(Commands.literal("off").executes(ctx -> reply(ctx, com.berg.orbis.sky.SkySwitches.set(ctx.getSource().getServer(), s, false), WORLD))));
+            }
+            dispatcher.register(orbis
                     // The mod's performance and network settings, for a server's operators (no settings screen there).
                     .then(Commands.literal("settings")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
@@ -57,24 +63,47 @@ public class TeleportCommands {
                             .then(Commands.argument("target", StringArgumentType.greedyString())
                                     .executes(TeleportCommands::teleportToTarget)))
                     .then(Commands.literal("where").executes(TeleportCommands::reportLatLon))
-                    .then(Commands.literal("info").executes(TeleportCommands::info))
-                    .then(Commands.literal("here").executes(TeleportCommands::here))
+                    .then(Commands.literal("info").executes(ctx -> info(ctx) + moved(ctx, WORLD)))
+                    .then(Commands.literal("here").executes(ctx -> here(ctx) + moved(ctx, "right-click a place, What's here")))
                     .then(Commands.literal("prefetch")
                             .then(Commands.argument("radius", IntegerArgumentType.integer(0, 6))
-                                    .executes(TeleportCommands::prefetch)))
+                                    .executes(ctx -> prefetch(ctx) + moved(ctx, WORLD + ", Download map data"))))
                     .then(Commands.literal("import")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.argument("file", StringArgumentType.greedyString())
                                     .executes(TeleportCommands::importExtract)))
-                    .then(Commands.literal("extracts").executes(TeleportCommands::listExtracts))
+                    .then(Commands.literal("extracts").executes(ctx -> {
+                        listExtracts(ctx);
+                        ctx.getSource().sendSuccess(() -> Component.literal("This list is in Mod Menu now (Orbis Terrarum, Overview). The command goes in the next release.")
+                                .withStyle(net.minecraft.ChatFormatting.GRAY), false);
+                        return 1;
+                    }))
+                    .then(Commands.literal("mapdata")
+                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                            .executes(ctx -> mapData(ctx) + moved(ctx, WORLD + ", Download map data"))
+                            .then(Commands.literal("stop").executes(ctx -> {
+                                com.berg.orbis.osm.extract.MapDataJob.stop();
+                                ctx.getSource().sendSuccess(() -> Component.literal("Stopping the map data download (it continues next time)."), false);
+                                return moved(ctx, WORLD);
+                            })))
+                    // Reads a file on the server's disk: operators only, as /orbis import.
                     .then(Commands.literal("import-places")
+                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.argument("file", StringArgumentType.greedyString())
                                     .executes(TeleportCommands::importPlaces)))
-                    .then(Commands.literal("landmarks").executes(TeleportCommands::landmarks))
+                    // Reloads every data pack: operators only. The pack rebuilds itself when new map data arrives now.
+                    .then(Commands.literal("landmarks")
+                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                            .executes(ctx -> {
+                                landmarks(ctx);
+                                ctx.getSource().sendSuccess(() -> Component.literal("Landmarks rebuild themselves when new map data arrives now, and show as pins on the world map (B). The command goes in the next release.")
+                                        .withStyle(net.minecraft.ChatFormatting.GRAY), false);
+                                return 1;
+                            }))
                     .then(Commands.literal("map")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
-                            .then(Commands.literal("render").executes(ctx -> reply(ctx, com.berg.orbis.map.BlockMapService.renderAll(ctx.getSource().getServer()))))
-                            .then(Commands.literal("status").executes(ctx -> reply(ctx, com.berg.orbis.map.BlockMapService.status()))))
+                            .then(Commands.literal("render").executes(ctx -> reply(ctx, com.berg.orbis.map.BlockMapService.renderAll(ctx.getSource().getServer()), WORLD + ", Draw all")))
+                            .then(Commands.literal("status").executes(ctx -> reply(ctx, com.berg.orbis.map.BlockMapService.status(), WORLD))))
                     .then(Commands.literal("export")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.literal("aternos")
@@ -87,18 +116,20 @@ public class TeleportCommands {
                                                     .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), true, true)))))))
                     .then(Commands.literal("hardlimit")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
-                            .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.status()))
-                            .then(Commands.literal("on").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.set(ctx.getSource().getServer(), true))))
-                            .then(Commands.literal("off").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.set(ctx.getSource().getServer(), false)))))
+                            .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.status(), WORLD))
+                            .then(Commands.literal("on").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.set(ctx.getSource().getServer(), true), WORLD)))
+                            .then(Commands.literal("off").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.HardLimit.set(ctx.getSource().getServer(), false), WORLD))))
                     .then(Commands.literal("pregen")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.literal("stop").executes(ctx -> reply(ctx, PregenTask.stop())))
-                            .then(Commands.literal("resume").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.AutoPregen.resume(ctx.getSource().getServer()))))
+                            .then(Commands.literal("resume").executes(ctx -> reply(ctx, com.berg.orbis.worldgen.AutoPregen.resume(ctx.getSource().getServer()),
+                                    "Resume in the pre-generation panel")))
                             .then(Commands.literal("status").executes(ctx -> reply(ctx, PregenTask.status())))
                             .then(Commands.literal("map")
-                                    .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.PregenMap.writeNow(ctx.getSource().getLevel())))
+                                    .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.PregenMap.writeNow(ctx.getSource().getLevel()),
+                                            "the haze shows what is not generated yet"))
                                     .then(Commands.argument("place", StringArgumentType.greedyString())
-                                            .executes(TeleportCommands::pregenMapOf)))
+                                            .executes(ctx -> pregenMapOf(ctx) + moved(ctx, "the haze shows what is not generated yet"))))
                             .then(Commands.literal("area")
                                     .then(Commands.literal("all")
                                             .then(Commands.argument("place", StringArgumentType.greedyString())
@@ -115,6 +146,9 @@ public class TeleportCommands {
         });
     }
 
+    /** Where the World window is, for the moved commands' notes. */
+    private static final String WORLD = "then the i button at the top right for the World window";
+
     /** What /orbis settings can show and change: the installation's performance and network settings. */
     private static final java.util.Map<String, String> SERVER_SETTINGS = new java.util.LinkedHashMap<>();
 
@@ -127,9 +161,10 @@ public class TeleportCommands {
                 {"fastChunkWrites", "don't force every chunk to disk at once (restart)"},
                 {"waitForOsm", "hold new chunks until their map data has arrived"},
                 {"prefetchSpawnAtStartup", "download the map around the spawn when the server starts"},
+                {"keepDownloadedMapFiles", "keep Geofabrik files after /orbis mapdata imported the area"},
                 {"regionPrefetchRadius", "map regions downloaded ahead of players, 0-6"},
+                {"displayFrameRange", "blocks within which shop display frames are sent to players (0 = vanilla's 160)"},
                 {"regionCacheSize", "map regions kept in memory, 8-256 (restart)"},
-                {"terrainOnlyBeyondBlocks", "only terrain beyond this distance from the origin, 0 = off"},
                 {"overpassConcurrentRequests", "parallel OpenStreetMap downloads, 1-8"},
                 {"osmMaxWaitMinutes", "longest wait for a region's map data"},
                 {"demTileCacheSize", "terrain tiles kept in memory (restart)"},
@@ -192,6 +227,21 @@ public class TeleportCommands {
         return 1;
     }
 
+    /**
+     * A command whose work moved onto the world map in 1.1.0: it still runs for this release, and says where it went (it goes in the
+     * next one).
+     */
+    private static int moved(CommandContext<CommandSourceStack> ctx, String where) {
+        ctx.getSource().sendSuccess(() -> Component.literal("This is on the world map now (press B, " + where
+                + "). The command goes in the next release.").withStyle(net.minecraft.ChatFormatting.GRAY), false);
+        return 1;
+    }
+
+    private static int reply(CommandContext<CommandSourceStack> ctx, Component msg, String movedTo) {
+        reply(ctx, msg);
+        return moved(ctx, movedTo);
+    }
+
     /** /orbis pregen area [all] <place>: sweep a country/region/city outline north to south. */
     private static int pregenArea(CommandContext<CommandSourceStack> ctx, boolean mainlandOnly) {
         CommandSourceStack source = ctx.getSource();
@@ -236,6 +286,74 @@ public class TeleportCommands {
         return 1;
     }
 
+    /**
+     * /orbis mapdata: Geofabrik's file for the land around you (the smallest region that holds it), downloaded in the
+     * background, only that area imported, the file deleted afterwards (unless keepDownloadedMapFiles). For servers,
+     * which have no Create screen to offer it.
+     */
+    private static int mapData(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        var model = OrbisMod.model();
+        if (model == null) {
+            source.sendFailure(Component.literal("Not an Orbis Terrarum world."));
+            return 0;
+        }
+        if (com.berg.orbis.osm.extract.MapDataJob.busy()) {
+            source.sendFailure(Component.literal("A map data download is running already (/orbis mapdata stop stops it)."));
+            return 0;
+        }
+        double mpb = model.cfg().metersPerBlock;
+        if (mpb >= 8.0) {
+            source.sendFailure(Component.literal("At 8 m per block or coarser, import a country's map file with /orbis import instead."));
+            return 0;
+        }
+        var pos = source.getPosition();
+        double[] ll = model.mapper().toLatLon((int) Math.floor(pos.x), (int) Math.floor(pos.z));
+        double[] box = com.berg.orbis.osm.extract.MapDataJob.boxAround(ll[0], ll[1], mpb);
+        var server = source.getServer();
+        java.nio.file.Path data = OrbisMod.dataDir();
+        source.sendSuccess(() -> Component.literal("Looking up map data for the land around you..."), false);
+        Thread t = new Thread(() -> {
+            com.berg.orbis.osm.extract.MapDataJob.Plan plan;
+            try {
+                plan = com.berg.orbis.osm.extract.MapDataJob.plan(data, box, mpb);
+            } catch (Exception e) {
+                server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Map data look-up failed: " + e.getMessage())));
+                return;
+            }
+            if (plan == null) {
+                server.execute(() -> source.sendSystemMessage(Component.literal(
+                        "[Orbis Terrarum] Nothing to download: map data on disk covers this area already, or it crosses a border (no single region file holds it).")));
+                return;
+            }
+            server.execute(() -> source.sendSystemMessage(Component.literal(String.format(Locale.ROOT,
+                    "[Orbis Terrarum] Downloading map data for %s (%s); only this area is kept. The world uses the online servers until it is ready.",
+                    plan.region().name(), plan.sizeText()))));
+            long[] lastLine = {0};
+            com.berg.orbis.osm.extract.MapDataJob.start(data, plan, OrbisMod.config().keepDownloadedMapFiles, new com.berg.orbis.osm.extract.MapDataJob.Listener() {
+                @Override
+                public void progress(String line, float fraction) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastLine[0] < 30_000) return;
+                    lastLine[0] = now;
+                    server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Map data: " + line)));
+                }
+
+                @Override
+                public void finished(String message, boolean ok) {
+                    System.out.println("[orbis] " + message);
+                    server.execute(() -> {
+                        source.sendSystemMessage(Component.literal("[Orbis Terrarum] " + message));
+                        if (ok) com.berg.orbis.worldgen.Landmarks.rebuildSoon(server); // landmarks the online servers missed
+                    });
+                }
+            });
+        }, "Orbis-map-data-plan");
+        t.setDaemon(true);
+        t.start();
+        return 1;
+    }
+
     /** /orbis import <file.osm.pbf>: turn a country extract into the local map-data store. */
     private static int importExtract(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack source = ctx.getSource();
@@ -257,8 +375,11 @@ public class TeleportCommands {
                         pbf, extracts, com.berg.orbis.osm.extract.ExtractImporter.Profile.MAP,
                         msg -> server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] " + msg))));
                 com.berg.orbis.osm.extract.LocalExtractStore.get(extracts).rescan();
-                server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Import finished. " + s.describe()
-                        + " New worlds at 8 m per block or coarser use it automatically; a running world uses it for regions it has not loaded yet.")));
+                server.execute(() -> {
+                    source.sendSystemMessage(Component.literal("[Orbis Terrarum] Import finished. " + s.describe()
+                            + " New worlds at 8 m per block or coarser use it automatically; a running world uses it for regions it has not loaded yet."));
+                    com.berg.orbis.worldgen.Landmarks.rebuildSoon(server);
+                });
             } catch (Throwable e) {
                 server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Import failed: " + e)));
             }
@@ -385,10 +506,21 @@ public class TeleportCommands {
     private static void teleport(CommandSourceStack source, ServerPlayer player, WorldModel model, Geocoder.Result target) {
         int[] block = model.mapper().toBlock(target.lat(), target.lon());
         int blockX = block[0], blockZ = block[1];
+        net.minecraft.world.level.border.WorldBorder border = source.getLevel().getWorldBorder();
+        if (!border.isWithinBounds(blockX, blockZ)) {
+            // a cubic world's border is nearer than vanilla's (Cubic Chunks packs positions with more bits for height), so far places
+            // can lie beyond it; a smaller scale (more metres a block) brings more of the Earth inside
+            source.sendFailure(Component.literal(String.format(Locale.ROOT,
+                    "%s (block %d, %d) is beyond the world border (x %.0f..%.0f, z %.0f..%.0f).%s", target.name(), blockX, blockZ,
+                    border.getMinX(), border.getMaxX(), border.getMinZ(), border.getMaxZ(), OrbisMod.cubicWorld()
+                            ? " A cubic world reaches less far than a normal one; a world made at a smaller scale (more metres a block) holds more of the Earth."
+                            : "")));
+            return;
+        }
         int surfaceY = source.getLevel().getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
         if (surfaceY <= model.cfg().minY + 1) {
             // Chunk not generated yet: use the real elevation so we don't fall into the void.
-            surfaceY = Math.max(model.terrainHeight(blockX, blockZ), model.cfg().seaLevelY) + 1;
+            surfaceY = Math.max(model.terrainHeight(blockX, blockZ), model.cfg().waterLevelY()) + 1;
         }
         player.teleportTo(blockX + 0.5, surfaceY + 1, blockZ + 0.5);
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
@@ -438,36 +570,8 @@ public class TeleportCommands {
         }
         int x = (int) Math.floor(source.getPosition().x), z = (int) Math.floor(source.getPosition().z);
         double[] ll = model.mapper().toLatLon(x, z);
-        double elev = model.elevation(x, z);
-        BiomeClassifier.Climate climate = model.climate(x, z, elev);
-        StringBuilder sb = new StringBuilder();
-        double shift = model.vertical().shiftBlocks(x, z);
-        sb.append(String.format(Locale.ROOT, "%.5f, %.5f | elevation %.1f m -> Y %d%s | climate %s (%.1f C)%s",
-                ll[0], ll[1], elev, Double.isNaN(elev) ? model.cfg().seaLevelY : model.blockY(elev, x, z),
-                shift > 0 ? String.format(Locale.ROOT, " (relief shift -%.0f)", shift) : "",
-                climate.zone(), climate.meanTempC(), climate.snowy() ? " snowy" : ""));
-        RegionRaster r = model.regions() == null ? null : model.regions().get(model.regions().regionCoord(x), model.regions().regionCoord(z), false);
-        if (r == null) {
-            sb.append(" | OSM region not loaded");
-        } else {
-            int idx = r.index(x, z);
-            if (idx >= 0) {
-                sb.append(" | cover ").append(r.landCoverAt(idx));
-                RoadFeature rf = r.roadAt(idx);
-                if (rf != null) sb.append(" | road ").append(rf.highway != null ? rf.highway : rf.kind).append(rf.name != null ? " '" + rf.name + "'" : "");
-                WaterFeature wf = r.waterAt(idx);
-                if (wf != null) sb.append(" | water ").append(wf.kind).append(wf.name != null ? " '" + wf.name + "'" : "");
-                if (r.hasCoastline && r.isSea(idx)) sb.append(" | sea");
-                BuildingFeature bf = r.buildingAt(idx);
-                if (bf != null) {
-                    sb.append(" | building ").append(bf.type).append(bf.name != null ? " '" + bf.name + "'" : "")
-                            .append(" h=").append(bf.heightBlocks).append(" (").append(bf.heightSource).append(") roof=").append(bf.roofShape)
-                            .append('/').append(bf.roof.getBlock().getDescriptionId().replace("block.minecraft.", ""));
-                }
-                sb.append(" | decor ").append(r.decorAt(idx));
-                sb.append(" | imagery ").append(com.berg.orbis.imagery.GroundClass.byCode(r.groundClassAt(idx)));
-            }
-        }
+        StringBuilder sb = new StringBuilder(String.format(Locale.ROOT, "%.5f, %.5f", ll[0], ll[1]));
+        for (String line : com.berg.orbis.map.SpotInfo.describe(model, x, z, true)) sb.append(" | ").append(line.replace("\t", ": "));
         String msg = sb.toString();
         source.sendSuccess(() -> Component.literal(msg), false);
         // The place name arrives a moment later from the reverse geocoder.

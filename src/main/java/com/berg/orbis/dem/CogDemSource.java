@@ -280,9 +280,7 @@ public final class CogDemSource implements DemSource {
                     raw = fetchRange(url, oc[0], oc[1]);
                 }
                 Files.createDirectories(dir);
-                Path tmp = cached.resolveSibling(cached.getFileName() + ".tmp");
-                Files.write(tmp, raw);
-                Files.move(tmp, cached, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                DemTileProvider.writeCached(cached, raw);
             }
             float[] out = new float[tileW * tileH];
             if (raw.length == 0) {

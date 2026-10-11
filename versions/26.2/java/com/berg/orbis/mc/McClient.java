@@ -18,6 +18,16 @@ public final class McClient {
         Util.getPlatform().openPath(path);
     }
 
+    /** Whether the world being created will be cubic: never on this version (Cubic Chunks is for 26.3). */
+    public static boolean newWorldCubic(net.minecraft.client.gui.screens.worldselection.WorldCreationUiState state) {
+        return false;
+    }
+
+    /** How far a cubic world's border reaches from 0 on x and z: no cubic worlds on this version. */
+    public static int cubicReach() {
+        return Integer.MAX_VALUE;
+    }
+
     /** A smooth (linear), edge-clamped texture sampler. */
     public static GpuSampler linearClampSampler() {
         return RenderSystem.getSamplerCache().getClampToEdge(FilterMode.LINEAR);

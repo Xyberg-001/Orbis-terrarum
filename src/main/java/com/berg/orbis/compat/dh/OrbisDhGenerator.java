@@ -1,6 +1,7 @@
 package com.berg.orbis.compat.dh;
 
 import com.berg.orbis.map.RegionReader;
+import com.berg.orbis.worldgen.FarTerrain;
 import com.berg.orbis.worldgen.PregenMap;
 import com.mojang.serialization.Codec;
 import com.seibel.distanthorizons.api.DhApi;
@@ -43,7 +44,9 @@ import java.util.function.Consumer;
  * 2^d x 2^d blocks. Every column is taken from the chunk saved on disk at that spot, read straight from the region
  * file ({@link RegionReader}): at the finest level each block column is used, at coarser levels the column in the
  * middle of the area it stands for, so a distant view of a whole pre-generated area only reads a sample of its
- * chunks. Spots without a finished saved chunk are left empty.
+ * chunks. Spots without a finished saved chunk are painted from the world's data instead ({@link FarTerrain}: the
+ * elevation, climate, snow and the generator's own painter, so they meet the real chunks when those come), unless
+ * the hard limit keeps them empty or {@code farViewFromData} is off.
  *
  * <p>A column is written bottom to top as runs of equal blocks (Distant Horizons' format: no gaps, heights relative
  * to the level's floor, the top exclusive). Near the surface every block is kept (buildings, trees, water); deeper
@@ -65,8 +68,9 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
     private final Map<Holder<Biome>, IDhApiBiomeWrapper> biomeWrappers = new ConcurrentHashMap<>();
     // -Dorbis.dh.validate=true makes DH check every column we hand it (for development; it costs time).
     private final boolean validate = Boolean.getBoolean("orbis.dh.validate");
-    private final AtomicLong chunksRead = new AtomicLong(), columnsWritten = new AtomicLong();
-    private volatile long startedAt;
+    private final AtomicLong chunksRead = new AtomicLong(), columnsWritten = new AtomicLong(), farColumns = new AtomicLong();
+    private volatile FarTerrain far;
+    private volatile long startedAt, startBytes;
     private final AtomicLong calls = new AtomicLong();
     private volatile boolean askedType, taskStartSeen;
     private volatile boolean failureLogged;
@@ -111,16 +115,22 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
     public CompletableFuture<Void> generateLod(int chunkPosMinX, int chunkPosMinZ, int lodPosX, int lodPosZ, byte detailLevel,
                                               IDhApiFullDataSource dataSource, EDhApiDistantGeneratorMode generatorMode,
                                               ExecutorService pool, Consumer<IDhApiFullDataSource> resultConsumer) {
-        if (startedAt == 0) startedAt = System.nanoTime();
+        if (startedAt == 0) {
+            startBytes = com.berg.orbis.net.OrbisHttp.bytesReceived();
+            startedAt = System.nanoTime();
+        }
         long call = calls.incrementAndGet();
         if (call <= 5 || call % 1000 == 0) {
             System.out.println("[orbis] Distant Horizons request #" + call + ": chunk " + chunkPosMinX + ", " + chunkPosMinZ
                     + ", detail " + detailLevel + ", width " + dataSource.getWidthInDataColumns() + ", mode " + generatorMode);
         }
+        // On threads of its own, not the pool Distant Horizons hands over: that pool also turns the loaded chunks into
+        // LODs, and with 4,064-block Everest chunks it was busy with them for 15 minutes before running a single
+        // request of ours (6 Oct 2026).
         return CompletableFuture.runAsync(() -> {
             try {
                 fill(chunkPosMinX, chunkPosMinZ, detailLevel, dataSource);
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | LinkageError e) {
                 if (!failureLogged) {
                     failureLogged = true;
                     System.err.println("[orbis] Distant Horizons LOD generation failed at chunk " + chunkPosMinX + ", " + chunkPosMinZ
@@ -130,8 +140,22 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
                 throw e;
             }
             resultConsumer.accept(dataSource);
-        }, pool);
+        }, FILL);
     }
+
+    /** The threads the LOD requests are filled on: half the processor, below the game's own threads. */
+    private static final ExecutorService FILL = java.util.concurrent.Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors() / 2), new java.util.concurrent.ThreadFactory() {
+                private final java.util.concurrent.atomic.AtomicInteger n = new java.util.concurrent.atomic.AtomicInteger();
+
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "Orbis-DH-fill-" + n.incrementAndGet());
+                    t.setDaemon(true);
+                    t.setPriority(Thread.NORM_PRIORITY - 1);
+                    return t;
+                }
+            });
 
     /** One decoded saved chunk. */
     private record SavedChunk(PalettedContainer<BlockState>[] sections, PalettedContainerRO<Holder<Biome>>[] biomes, long[] heights, int bits) {}
@@ -149,7 +173,18 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
                 int cx = bx >> 4, cz = bz >> 4;
                 long key = ((long) cx << 32) | (cz & 0xffffffffL);
                 SavedChunk chunk = chunks.computeIfAbsent(key, k -> load(cx, cz));
-                if (chunk == NONE) continue;
+                if (chunk == NONE) {
+                    // Nothing generated there yet: the column from the world's data.
+                    FarTerrain f = farTerrain();
+                    List<FarTerrain.Run> runs = f == null ? null : f.column(bx, bz, detail);
+                    if (runs == null) continue;
+                    column.clear();
+                    farColumn(runs, bx, bz, column);
+                    ds.setApiDataPointColumn(rx, rz, EDhApiWorldGenerationStep.LIGHT, column);
+                    columnsWritten.incrementAndGet();
+                    farColumns.incrementAndGet();
+                    continue;
+                }
                 column.clear();
                 if (!buildColumn(chunk, bx & 15, bz & 15, column)) continue;
                 ds.setApiDataPointColumn(rx, rz, EDhApiWorldGenerationStep.LIGHT, column);
@@ -171,11 +206,39 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
         }
         double s = Math.max(1e-3, (System.nanoTime() - startedAt) / 1e9);
         // println, not printf: Minecraft copies only println output into latest.log.
-        System.out.println(String.format("[orbis] Distant Horizons LOD generator: %,d saved chunks read (%.0f/s), %,d columns written, %.0f s",
-                chunksRead.get(), chunksRead.get() / s, columnsWritten.get(), s));
+        System.out.println(String.format("[orbis] Distant Horizons LOD generator: %,d saved chunks read (%.0f/s), %,d columns written"
+                        + " (%,d from data, %.0f/s), %.1f MB downloaded, %.0f s", chunksRead.get(), chunksRead.get() / s, columnsWritten.get(),
+                farColumns.get(), farColumns.get() / s, (com.berg.orbis.net.OrbisHttp.bytesReceived() - startBytes) / 1e6, s));
     }
 
     private static final SavedChunk NONE = new SavedChunk(null, null, null, 0);
+
+    /** The data painter, once the world's model is there (null while it is not, or with farViewFromData off). */
+    private FarTerrain farTerrain() {
+        FarTerrain f = far;
+        if (f != null) return f;
+        com.berg.orbis.worldgen.WorldModel m = com.berg.orbis.OrbisMod.model();
+        if (m == null || !com.berg.orbis.OrbisMod.config().farViewFromData) return null;
+        return far = new FarTerrain(m, minY, height);
+    }
+
+    /** A painted column, bottom to top in Distant Horizons' format, with the surface biome. */
+    private void farColumn(List<FarTerrain.Run> runs, int x, int z, List<DhApiTerrainDataPoint> out) {
+        int surface = FarTerrain.surface(runs, minY);
+        Holder<Biome> holder = level.getChunkSource().getGenerator().getBiomeSource() instanceof com.berg.orbis.biome.RealWorldBiomeSource b
+                ? b.biomeAt(x >> 2, surface >> 2, z >> 2) : null;
+        if (holder == null) holder = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME)
+                .getOrThrow(net.minecraft.world.level.biome.Biomes.PLAINS);
+        IDhApiBiomeWrapper biome = biomeWrappers.computeIfAbsent(holder, h -> DhApi.Delayed.wrapperFactory.getBiomeWrapper(new Object[] {h}, wrapper));
+        for (int i = runs.size() - 1; i >= 0; i--) {
+            FarTerrain.Run r = runs.get(i);
+            if (r.state().isAir()) {
+                out.add(DhApiTerrainDataPoint.create((byte) 0, 0, 15, r.y0() - minY, r.y1() + 1 - minY, DhApi.Delayed.wrapperFactory.getAirBlockStateWrapper(), biome));
+            } else {
+                out.add(point(r.state(), r.y0(), r.y1(), biome));
+            }
+        }
+    }
 
     private SavedChunk load(int cx, int cz) {
         CompoundTag tag;
@@ -298,8 +361,8 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
         reader.close();
         if (startedAt != 0) {
             double s = (System.nanoTime() - startedAt) / 1e9;
-            System.out.println(String.format("[orbis] Distant Horizons LOD generator: %,d saved chunks read, %,d columns written in %.0f s",
-                    chunksRead.get(), columnsWritten.get(), s));
+            System.out.println(String.format("[orbis] Distant Horizons LOD generator: %,d saved chunks read, %,d columns written (%,d from data) in %.0f s",
+                    chunksRead.get(), columnsWritten.get(), farColumns.get(), s));
         }
     }
 }

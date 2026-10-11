@@ -6,7 +6,11 @@
   "mixins": [
     "ServerPlayerMixin",
     "DimensionTypeMixin",
+    "DisplayFrameRangeMixin",
     "StructureStartAccessor",
+    "StructurePaletteMixin",
+    "ServerLevelStructureSearchMixin",
+    "EnderEyeSearchMixin",
     "ItemFrameAccessor",
     "BiomeMixin",
     "VillagerMixin",
@@ -22,7 +26,10 @@
     "ServerChunkCacheTicketsMixin",
     "CompoundTagMixin",
     "RegionFileStorageMixin",
-    "RegionFileAccessor"
+    "RegionFileAccessor",
+    "JigsawPlacementMixin",
+    "LocateCommandMixin",
+    "ChunkGeneratorLocateMixin"
   ],
   "client": [
     "client.ClientLevelDataMixin",

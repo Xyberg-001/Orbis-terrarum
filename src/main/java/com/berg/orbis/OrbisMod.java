@@ -45,6 +45,9 @@ public class OrbisMod implements ModInitializer {
     private static volatile OrbisConfig config;
     private static volatile WorldModel model;
     private static volatile WorldSettings modelSettings;
+    /** [lowest Y, highest Y] of the running world when it is a cubic one (Cubic Chunks), else null; see {@link #useCubicHeights}. */
+    private static volatile int[] cubicHeights;
+    private static volatile int[] modelCubicHeights;
     /** True while the server shuts down: nothing may wait for downloads then. */
     private static volatile boolean stopping;
 
@@ -114,7 +117,19 @@ public class OrbisMod implements ModInitializer {
         return config;
     }
 
-    /** True when a level with this sea level is an Orbis Terrarum world (no vanilla dimension has one near -1700). */
+    /**
+     * True when the level is an Orbis Terrarum world: its generator is Orbis's. (Its sea level alone does not say: a cubic Orbis world has
+     * its sea at Y 0, as the End has.)
+     */
+    public static boolean isOrbisLevel(net.minecraft.world.level.Level level) {
+        return level instanceof net.minecraft.server.level.ServerLevel server
+                && server.getChunkSource().getGenerator() instanceof com.berg.orbis.worldgen.RealWorldChunkGenerator;
+    }
+
+    /**
+     * True when a level with this sea level may be an Orbis Terrarum world, where nothing but the sea level is known (no vanilla dimension
+     * has one near -1700; a cubic Orbis world's is 0, as the End's is): prefer {@link #isOrbisLevel}.
+     */
     public static boolean isOrbisSeaLevel(int seaLevel) {
         WorldModel m = model;
         return m != null && seaLevel == m.cfg().seaLevelY;
@@ -251,15 +266,26 @@ public class OrbisMod implements ModInitializer {
     public static synchronized WorldModel modelFor(WorldSettings settings) {
         if (settings == null) settings = defaultWorldSettings();
         WorldModel current = model;
-        int height = effectiveHeight(settings);
-        if (current != null && settings.equals(modelSettings) && height == modelHeight) return current;
+        int[] cubic = cubicHeights;
+        int height = cubic != null ? cubic[1] - cubic[0] + 1 : effectiveHeight(settings);
+        if (current != null && settings.equals(modelSettings) && height == modelHeight && cubic == modelCubicHeights) return current;
         System.out.println("[orbis] Building world model: " + settings.describe() + " (world height " + height + ")");
         OrbisConfig effective = settings.effective(config);
+        com.berg.orbis.sky.SkySwitches.applyTo(effective); // the running world's sky switched by command (none outside a world)
         effective.worldHeight = height;
+        if (cubic != null) {
+            // A cubic world (Cubic Chunks): it holds the real heights, so a block is a metre up and down from sea level at
+            // Y 0, with nothing squeezed.
+            effective.minY = cubic[0];
+            effective.seaLevelY = 0;
+            effective.verticalMode = "clamp";
+            System.out.println("[orbis] Cubic world: Y " + cubic[0] + ".." + cubic[1] + ", sea level Y 0, 1 block = 1 m up and down");
+        }
         WorldModel built = buildModel(effective, configDir);
         model = built;
         modelSettings = settings.copy();
         modelHeight = height;
+        modelCubicHeights = cubic;
         cloudHeight = (float) built.cloudHeightY();
         System.out.println("[orbis] Cloud layer at Y " + cloudHeight);
         if (current != null) current.shutdown();
@@ -274,6 +300,21 @@ public class OrbisMod implements ModInitializer {
             spawnPrefetch.start();
         }
         return built;
+    }
+
+    /**
+     * Switches the model to a cubic world's (Cubic Chunks; called as the world's cube generator is made): its own lowest and
+     * highest Y instead of the dimension's, sea level at Y 0 and a block a metre up and down. Until the server stops.
+     */
+    public static synchronized WorldModel useCubicHeights(WorldSettings settings, int minY, int maxY) {
+        int[] current = cubicHeights;
+        if (current == null || current[0] != minY || current[1] != maxY) cubicHeights = new int[]{minY, maxY};
+        return modelFor(settings);
+    }
+
+    /** True while the running world is a cubic one (Cubic Chunks). */
+    public static boolean cubicWorld() {
+        return cubicHeights != null;
     }
 
     /**
@@ -349,6 +390,7 @@ public class OrbisMod implements ModInitializer {
         config = OrbisConfig.load(configDir.resolve("orbisterrarum.json"));
 
         RealWorldChunkGenerator.register();
+        com.berg.orbis.worldgen.BackgroundLocate.register();
         // The world map's data: where this world sits on Earth, for players who have the mod (vanilla players
         // never get it, so they still join with plain Minecraft).
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
@@ -357,6 +399,7 @@ public class OrbisMod implements ModInitializer {
                 .register(com.berg.orbis.net.AllowedAreaPayload.TYPE, com.berg.orbis.net.AllowedAreaPayload.CODEC);
         com.berg.orbis.map.BlockMapService.register();
         com.berg.orbis.compat.dh.DhCompat.init(); // optional: only acts when Distant Horizons is installed
+        com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Chunks is installed (26.3)
         net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             WorldModel m = model;
             if (m == null || !(server.overworld().getChunkSource().getGenerator() instanceof RealWorldChunkGenerator)) return;
@@ -369,6 +412,7 @@ public class OrbisMod implements ModInitializer {
         });
         RealWorldBiomeSource.register();
         TeleportCommands.register();
+        com.berg.orbis.sky.SkySwitches.register();
         com.berg.orbis.sky.RealSky.register();
 
         // The defaults' model: on a dedicated server it is the world's, so its spawn area is fetched now; a client does
@@ -417,7 +461,7 @@ public class OrbisMod implements ModInitializer {
                     .getOrThrow(net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD).value().height();
             levelHeight = actual;
             WorldModel m = model;
-            if (m != null && m.cfg().worldHeight != actual) {
+            if (m != null && m.cfg().worldHeight != actual && !cubicWorld()) {
                 System.out.println("[orbis] Level height is " + actual + " (model had " + m.cfg().worldHeight + "); rebuilding the model");
                 m = modelFor(modelSettings);
             }
@@ -426,7 +470,11 @@ public class OrbisMod implements ModInitializer {
                 System.out.println("[orbis] Server starting; " + m.regions().stats());
             }
         });
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> levelHeight = 0);
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            com.berg.orbis.worldgen.StructureSearches.clear();
+            levelHeight = 0;
+            cubicHeights = null;
+        });
         ServerLifecycleEvents.SERVER_STARTING.register(server -> stopping = false);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             stopping = true;
@@ -434,6 +482,8 @@ public class OrbisMod implements ModInitializer {
         });
         com.berg.orbis.worldgen.AutoPregen.register();
         com.berg.orbis.worldgen.HardLimit.register();
+        com.berg.orbis.worldgen.PregenStatus.register(); // the pre-generation's progress and controls on the world map
+        com.berg.orbis.map.MapRequests.register(); // the world map's What's here, World window and landmark pins
         // A selection drawn on the world map (operators only, like /orbis pregen).
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.serverboundPlay()
                 .register(com.berg.orbis.net.PregenSelectionPayload.TYPE, com.berg.orbis.net.PregenSelectionPayload.CODEC);
@@ -451,9 +501,14 @@ public class OrbisMod implements ModInitializer {
         int[] tick = {0};
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             com.berg.orbis.worldgen.Landmarks.tick(server);
+            com.berg.orbis.export.AternosExport.tick(server);
             if (++tick[0] % 40 != 0) return;
             WorldModel m = model;
             if (m == null || m.regions() == null) return;
+            // Only in an Orbis world: the model of the installation's place exists in any world, and an Aternos
+            // export opened in singleplayer (a plain world) had Bergen's map regions loaded around the player.
+            net.minecraft.server.level.ServerLevel overworld = server.overworld();
+            if (overworld == null || !(overworld.getChunkSource().getGenerator() instanceof RealWorldChunkGenerator)) return;
             List<int[]> positions = new ArrayList<>();
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (p.level().dimension() != Level.OVERWORLD) continue;
@@ -477,6 +532,12 @@ public class OrbisMod implements ModInitializer {
         // ---- elevation ----
         DemTileProvider tiles = new DemTileProvider(data.resolve("dem-cache"), cfg.demTileUrl, cfg.demTileCacheSize);
         System.out.println("[orbis] Terrain tiles (zoom " + cfg.demZoom + "): " + tiles.describeSource());
+        if (cfg.bareEarthTerrain && cfg.demZoom >= 13 && cfg.demTileUrl != null && cfg.demTileUrl.contains("mapterhorn")) {
+            // Copernicus measures treetops and roofs; where no survey exists the ground comes from GEDTM30 instead.
+            tiles.setCorrection(cfg.demZoom, new com.berg.orbis.dem.BareEarthBlend(tiles, new com.berg.orbis.dem.BareEarth(data.resolve("dem-cache").resolve("gedtm30"))));
+            System.out.println("[orbis] Where no national survey exists: " + com.berg.orbis.dem.BareEarth.ATTRIBUTION
+                    + ", blended into the surveys over " + (int) com.berg.orbis.dem.BareEarthBlend.BLEND_METRES + " m");
+        }
         BicubicElevationSampler globalSampler = new BicubicElevationSampler(tiles, cfg.demZoom);
         List<DemSource> sources = new ArrayList<>();
         // Lidar is only worth its downloads at fine scales (whatever the switches say): see OrbisConfig.lidarUseful.
@@ -507,7 +568,10 @@ public class OrbisMod implements ModInitializer {
         if (lidar && cfg.buildingHeightsFromSurfaceModel) {
             for (OrbisConfig.ElevationSource es : cfg.surfaceModelSources) {
                 if (es == null || !es.enabled) continue;
-                if (es.needsSwitch && !(cfg.useHighResElevation || cfg.lidarSurfaceModel)) continue;
+                // Kartverket's: always with its switch on, else by itself while it answers from this network (new
+                // worlds; worlds made before 1.1.0 keep their heights from the other sources).
+                boolean auto = es.needsSwitch && !(cfg.useHighResElevation || cfg.lidarSurfaceModel);
+                if (auto && !cfg.kartverketWhenReachable) continue;
                 if (es.stacSearch != null && !es.stacSearch.isBlank()) {
                     // Files in a national grid, read block by block.
                     if (com.berg.orbis.dem.NationalGrids.knows(es.crs)) surfaceSources.add(new com.berg.orbis.dem.CogDemSource(es, data.resolve("dsm-cache")));
@@ -515,6 +579,7 @@ public class OrbisMod implements ModInitializer {
                 }
                 if (es.urlTemplate == null || es.urlTemplate.isBlank()) continue;
                 ImageServiceDemSource s = new ImageServiceDemSource(es, data.resolve("dsm-cache"));
+                if (auto) s.useWhenReachable(com.berg.orbis.config.DataSources.KARTVERKET_PROBE);
                 if (es.aboveGround) s.setGround(elevation::sampleMeters); // heights above the ground: on the terrain
                 surfaceSources.add(s);
             }
@@ -530,13 +595,15 @@ public class OrbisMod implements ModInitializer {
         CoordinateMapper mapper = new CoordinateMapper(cfg.originLat, cfg.originLon, cfg.metersPerBlock,
                 CoordinateMapper.Projection.of(cfg.projection));
         VerticalMapping vertical = new VerticalMapping(cfg, mapper, tiles);
-        System.out.println("[orbis] Vertical mapping: " + vertical.mode() + " (1:1 below " + cfg.reliefKneeMeters
+        System.out.println("[orbis] Vertical mapping: " + vertical.mode() + (cfg.heightSquash > 1 ? String.format(java.util.Locale.ROOT,
+                ", uniform heights: 1 block up = %.2f m", cfg.verticalMetersPerBlock()) : "") + " (1:1 below " + cfg.reliefKneeMeters
                 + " m, sea level Y=" + cfg.seaLevelY + ", ceiling Y=" + cfg.maxY() + ")");
         BiomeClassifier classifier = new BiomeClassifier(cfg);
         LandmarkRegistry landmarks = LandmarkRegistry.load(cfgDir.resolve("landmarks.json"), cfgDir.resolve("schematics"), mapper);
 
         // ---- OSM streaming ----
         OsmRegionManager regions = null;
+        com.berg.orbis.landcover.WorldCoverProvider worldCover = null;
         boolean anyOsm = cfg.generateBuildings || cfg.generateRoads || cfg.generateWater || cfg.generateLandCover
                 || cfg.generateTrees || cfg.generateStreetFurniture;
         if (anyOsm) {
@@ -607,7 +674,8 @@ public class OrbisMod implements ModInitializer {
                 if (!hs.isEmpty()) System.out.println("[orbis] Building heights found in heights/: GlobalBuildingAtlas (TUM, CC BY-NC 4.0) fills in untagged buildings");
             }
             if (cfg.generateLandCover && cfg.worldCoverLandCover) {
-                rasterizer.setWorldCover(new com.berg.orbis.landcover.WorldCoverProvider(data.resolve("worldcover-cache"), cfg.worldCoverUrl));
+                worldCover = new com.berg.orbis.landcover.WorldCoverProvider(data.resolve("worldcover-cache"), cfg.worldCoverUrl);
+                rasterizer.setWorldCover(worldCover);
                 System.out.println("[orbis] Land cover gaps are filled from " + com.berg.orbis.landcover.WorldCoverProvider.ATTRIBUTION);
             }
             // Tree canopy height in blocks: lidar surface minus terrain where a surface model covers, else the
@@ -683,6 +751,7 @@ public class OrbisMod implements ModInitializer {
         if (cfg.realSnow) model.setSnowCover(com.berg.orbis.sky.SnowCover.shared(data.resolve("snow-cache")));
         model.setCoarseSampler(new BicubicElevationSampler(tiles, Math.min(cfg.demZoom, 11)));
         model.setTerrainTiles(tiles, cfg.demZoom);
+        model.setWorldCover(worldCover);
         if (regions != null) regions.setTerrainFailures(tiles::failures);
         return model;
     }

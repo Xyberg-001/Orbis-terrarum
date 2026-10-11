@@ -78,7 +78,7 @@ public final class ColumnPainter {
         this.cfg = cfg;
         this.minY = cfg.minY;
         this.maxY = cfg.maxY();
-        this.seaLevel = cfg.seaLevelY;
+        this.seaLevel = cfg.waterLevelY(); // the sea's surface: in a window world a shallow sea on the floor
     }
 
     /**
@@ -87,9 +87,22 @@ public final class ColumnPainter {
      * @param idx        raster index of the column (ignored when r == null)
      */
     public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx) {
+        paint(s, x, z, terrainY, climate, r, idx, seaLevel - 60);
+    }
+
+    /**
+     * As above, with deepslate from {@code deepslateTop} down (layout 2: the underground band's vanilla Y 0, with
+     * vanilla's ragged eight-block transition; before, 60 blocks under sea level everywhere).
+     */
+    public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx, int deepslateTop) {
+        paint(s, x, z, terrainY, climate, r, idx, deepslateTop, null);
+    }
+
+    /** As above, with the land cover to paint where there is no raster (the far view's, from ESA WorldCover), or null. */
+    public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx, int deepslateTop, LandCover noRasterCover) {
         terrainY = clampY(terrainY);
         boolean hasRaster = r != null && idx >= 0;
-        LandCover lc = hasRaster ? r.landCoverAt(idx) : LandCover.NONE;
+        LandCover lc = hasRaster ? r.landCoverAt(idx) : noRasterCover != null ? noRasterCover : LandCover.NONE;
         GroundClass gc = hasRaster ? GroundClass.byCode(r.groundClassAt(idx)) : GroundClass.UNKNOWN;
         WaterFeature wf = hasRaster ? r.waterAt(idx) : null;
         RoadFeature rf = hasRaster ? r.roadAt(idx) : null;
@@ -128,9 +141,13 @@ public final class ColumnPainter {
         // The walls start at the lowest corner of the footprint, so on a slope the natural ground in front of
         // the door can be several blocks above (or below) the sill. The three cells outside the door become
         // a stair of one block per cell, so residents can walk in and out.
+        boolean doorstep = false;
         if (bf == null && hasRaster && cfg.buildingDoors && !sea && wf == null) {
             int step = doorstepY(r, x, z, terrainY);
-            if (step != Integer.MIN_VALUE) terrainY = clampY(step);
+            if (step != Integer.MIN_VALUE) {
+                terrainY = clampY(step);
+                doorstep = true;
+            }
         }
 
         // ---- water levels ----------------------------------------------------
@@ -287,12 +304,15 @@ public final class ColumnPainter {
         }
 
         if (cfg.generateBedrock) s.set(x, minY, z, BEDROCK);
-        int deepslateTop = seaLevel - 60;
         int rockTop = groundTop - 4;
         // Deepslate below deepslateTop, stone above it, as two runs.
         s.fill(x, minY + 1, Math.min(rockTop, deepslateTop - 1), z, DEEPSLATE);
         s.fill(x, Math.max(minY + 1, deepslateTop), rockTop, z, deep);
         s.fill(x, Math.max(minY + 1, groundTop - 3), groundTop - 1, z, sub);
+        // Layout 2: sandstone under sand, as vanilla has it. Buried treasure looks down from the surface for the
+        // first block standing on sandstone or stone and puts its chest there; over a region's own rock (tuff,
+        // basalt, ...) it found none and its chest ended up deep in the deepslate or nowhere.
+        if (cfg.undergroundVersion >= 2 && top.is(Blocks.SAND) && rockTop > minY) s.set(x, rockTop, z, SANDSTONE);
         if (groundTop > minY) s.set(x, groundTop, z, top);
 
         // ---- water ---------------------------------------------------------------
@@ -378,7 +398,7 @@ public final class ColumnPainter {
         if (!waterColumn && !roadOnGround && !underRoad && groundTop + 1 < maxY) {
             if (gc == GroundClass.TREE_CANOPY && !lc.isForest()) lc = LandCover.FOREST;
             else if ((gc == GroundClass.PAVED_DARK || gc == GroundClass.PAVED_LIGHT || gc == GroundClass.ROCK) && lc == LandCover.NONE) lc = LandCover.PEDESTRIAN;
-            decorateGround(s, x, z, groundTop, lc, climate, top, h);
+            decorateGround(s, x, z, groundTop, lc, climate, top, h, doorstep);
         } else if (roadOnGround && snowLayers(climate) > 0 && groundTop + 1 < maxY && !rf.isRail()) {
             s.set(x, groundTop + 1, z, SNOW_LAYER);
         }
@@ -615,7 +635,8 @@ public final class ColumnPainter {
         return climate.zone() == BiomeClassifier.Zone.ICE_CAP ? Math.max(1, layers) : layers;
     }
 
-    private void decorateGround(Sink s, int x, int z, int groundTop, LandCover lc, BiomeClassifier.Climate climate, BlockState top, long h) {
+    /** Snow, plants and crops on the ground; on a doorstep only snow (no berry bush or tall flower in the way in). */
+    private void decorateGround(Sink s, int x, int z, int groundTop, LandCover lc, BiomeClassifier.Climate climate, BlockState top, long h, boolean doorstep) {
         int y = groundTop + 1;
         int layers = snowLayers(climate);
         if (layers > 0) {
@@ -628,6 +649,7 @@ public final class ColumnPainter {
             if (rest > 0 && y + full < maxY - 1) s.set(x, y + full, z, SNOW_LAYER.setValue(SnowLayerBlock.LAYERS, rest));
             return;
         }
+        if (doorstep) return;
         int r = (int) ((h >>> 16) % 1000);
         BiomeClassifier.Zone zone = climate.zone();
         if (lc == LandCover.FARMLAND && top.is(Blocks.FARMLAND)) {
@@ -840,7 +862,7 @@ public final class ColumnPainter {
             int top = clampY(base + bf.heightBlocks + bf.roofHeightBlocks + Math.max(8, bf.heightBlocks));
             for (int y = base + 1; y <= top; y++) s.set(x, y, z, bf.wall);
             if (top + 1 < maxY) s.set(x, top + 1, z, bf.roof);
-            if (top + 2 < maxY) s.set(x, top + 2, z, Blocks.GOLD_BLOCK.defaultBlockState());
+            if (top + 2 < maxY) s.set(x, top + 2, z, Blocks.CONCRETE.yellow().defaultBlockState()); // a gilded finial, not gold
             return;
         }
 
@@ -1002,7 +1024,7 @@ public final class ColumnPainter {
 
     /** Doors are always ones villagers can open (never iron): residents must be able to leave their houses. */
     private static BlockState doorFor(BuildingFeature bf) {
-        if (bf.wall.is(Blocks.CONCRETE.lightGray()) || bf.wall.is(Blocks.CONCRETE.gray()) || bf.glassCurtain || bf.wall.is(Blocks.IRON_BLOCK)) {
+        if (bf.wall.is(Blocks.CONCRETE.lightGray()) || bf.wall.is(Blocks.CONCRETE.gray()) || bf.glassCurtain) {
             return Blocks.BIRCH_DOOR.defaultBlockState();
         }
         if (bf.wall.is(Blocks.SPRUCE_PLANKS) || bf.wall.is(Blocks.DYED_TERRACOTTA.red()) || bf.wall.is(Blocks.OAK_PLANKS)) {
@@ -1011,13 +1033,53 @@ public final class ColumnPainter {
         return Blocks.DARK_OAK_DOOR.defaultBlockState();
     }
 
+    private static final Direction[] DOOR_SIDES = {Direction.EAST, Direction.WEST, Direction.SOUTH, Direction.NORTH};
+
+    /** The side a door opens to (as the rasterizer chose it), or for any other wall cell its first side facing out. */
     public static Direction outwardDirection(RegionRaster r, int x, int z, int idx) {
+        int flags = r.buildingFlags[idx];
+        if ((flags & RegionRaster.FLAG_DOOR) != 0) return DOOR_SIDES[(flags >> RegionRaster.DOOR_SIDE_SHIFT) & 3];
         short code = r.building[idx];
         if (!sameBuilding(r, x + 1, z, code)) return Direction.EAST;
         if (!sameBuilding(r, x - 1, z, code)) return Direction.WEST;
         if (!sameBuilding(r, x, z + 1, code)) return Direction.SOUTH;
         if (!sameBuilding(r, x, z - 1, code)) return Direction.NORTH;
         return null;
+    }
+
+    /** Cells kept clear straight out from a door (the doorstep) and straight in from it. */
+    public static final int DOORSTEP_CELLS = 3, DOORWAY_CELLS = 2;
+
+    /** Whether (x, z) is on a doorstep, the cells straight out from a door: no fence, tree or bench may stand there. */
+    public static boolean inFrontOfDoor(RegionRaster r, int x, int z) {
+        if (r == null) return false;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            for (int step = 1; step <= DOORSTEP_CELLS; step++) {
+                int dx = x - d.getStepX() * step, dz = z - d.getStepZ() * step;
+                int didx = r.index(dx, dz);
+                if (didx < 0) break;
+                if (r.building[didx] == 0) continue;
+                if ((r.buildingFlags[didx] & RegionRaster.FLAG_DOOR) != 0 && outwardDirection(r, dx, dz, didx) == d) return true;
+                break; // a wall without a door, or some other building, between here and any door
+            }
+        }
+        return false;
+    }
+
+    /** Whether (x, z) is in a doorway, the cells straight in from a door of its building: no furniture or stairs there. */
+    public static boolean behindDoor(RegionRaster r, int x, int z) {
+        if (r == null) return false;
+        int idx = r.index(x, z);
+        if (idx < 0 || r.building[idx] == 0) return false;
+        for (Direction d : Direction.Plane.HORIZONTAL) {
+            for (int step = 1; step <= DOORWAY_CELLS; step++) {
+                int dx = x + d.getStepX() * step, dz = z + d.getStepZ() * step;
+                int didx = r.index(dx, dz);
+                if (didx < 0 || r.building[didx] != r.building[idx]) break;
+                if ((r.buildingFlags[didx] & RegionRaster.FLAG_DOOR) != 0 && outwardDirection(r, dx, dz, didx) == d) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean sameBuilding(RegionRaster r, int x, int z, short code) {

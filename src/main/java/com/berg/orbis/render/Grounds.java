@@ -33,6 +33,7 @@ public final class Grounds {
                 int x = minX + lx, z = minZ + lz;
                 int idx = r.index(x, z);
                 if (idx < 0 || r.road[idx] != 0 || r.building[idx] != 0 || r.water[idx] != 0 || r.decor[idx] != 0) continue;
+                if (ColumnPainter.inFrontOfDoor(r, x, z)) continue;
                 LandCover lc = r.landCoverAt(idx);
                 if (lc != LandCover.CEMETERY && lc != LandCover.PLAYGROUND) continue;
                 int surface = level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z) - 1;

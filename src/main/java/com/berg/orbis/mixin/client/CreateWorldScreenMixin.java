@@ -22,6 +22,11 @@ public abstract class CreateWorldScreenMixin {
         CreateWorldScreen self = (CreateWorldScreen) (Object) this;
         // The area selected on the world generator map is this world's, whether or not Customize was saved.
         SpawnGate.takeSelection(self);
+        // Map data for the area from Geofabrik, when none is on disk (asked once; the download runs in the background).
+        if (SpawnGate.offerMapData(self)) {
+            ci.cancel();
+            return;
+        }
         if (SpawnGate.showNeeds(self)) {
             ci.cancel();
             return;

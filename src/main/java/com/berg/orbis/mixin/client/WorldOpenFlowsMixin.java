@@ -25,6 +25,7 @@ public abstract class WorldOpenFlowsMixin {
         try {
             Path level = Minecraft.getInstance().getLevelSource().getBaseDir().resolve(levelId);
             Path packs = level.resolve("datapacks");
+            com.berg.orbis.worldgen.StructureDensity.refresh(packs); // a world opened by another Minecraft version
             if (!Files.isDirectory(packs.resolve(WorldHeight.PACK_NAME))) return;
             double lat = Seasons.worldLatitude(level);
             if (Double.isNaN(lat)) lat = OrbisMod.config().originLat;

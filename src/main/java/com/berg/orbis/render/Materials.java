@@ -153,7 +153,8 @@ public final class Materials {
             };
             case "plaster", "stucco", "render", "rendered", "plastered" -> Blocks.CONCRETE.white().defaultBlockState();
             case "glass", "mirror" -> Blocks.STAINED_GLASS.lightBlue().defaultBlockState();
-            case "metal", "steel", "aluminium", "aluminum", "corrugated_metal", "sheet_metal", "tin" -> Blocks.IRON_BLOCK.defaultBlockState();
+            // Metal cladding: light grey concrete like metal roofs, never iron blocks (nine free ingots each).
+            case "metal", "steel", "aluminium", "aluminum", "corrugated_metal", "sheet_metal", "tin" -> Blocks.CONCRETE.lightGray().defaultBlockState();
             case "sandstone" -> Blocks.SANDSTONE.defaultBlockState();
             case "limestone" -> Blocks.SMOOTH_SANDSTONE.defaultBlockState();
             case "marble" -> Blocks.QUARTZ_BLOCK.defaultBlockState();
@@ -162,7 +163,7 @@ public final class Materials {
             case "adobe", "mud", "earth", "loam", "clay" -> Blocks.PACKED_MUD.defaultBlockState();
             case "vinyl", "plastic" -> Blocks.CONCRETE.white().defaultBlockState();
             case "tile", "tiles", "ceramic" -> Blocks.DYED_TERRACOTTA.white().defaultBlockState();
-            case "copper" -> Blocks.COPPER_BLOCK.waxed().exposed().defaultBlockState();
+            case "copper" -> Blocks.CUT_COPPER.waxed().exposed().defaultBlockState();
             case "basalt" -> Blocks.SMOOTH_BASALT.defaultBlockState();
             case "tuff" -> Blocks.TUFF.defaultBlockState();
             case "terracotta" -> Blocks.TERRACOTTA.defaultBlockState();
@@ -205,7 +206,7 @@ public final class Materials {
             case "roof_tiles", "tiles", "tile", "clay_tiles", "ceramic" -> (h & 2) == 0 ? Blocks.BRICKS.defaultBlockState() : Blocks.DYED_TERRACOTTA.red().defaultBlockState();
             case "slate" -> Blocks.DEEPSLATE_TILES.defaultBlockState();
             case "metal", "steel", "tin", "zinc", "corrugated", "corrugated_metal", "aluminium", "aluminum", "sheet_metal" -> Blocks.CONCRETE.lightGray().defaultBlockState();
-            case "copper" -> Blocks.COPPER_BLOCK.waxed().oxidized().defaultBlockState();
+            case "copper" -> Blocks.CUT_COPPER.waxed().oxidized().defaultBlockState();
             case "tar_paper", "asphalt", "bitumen", "roofing_felt", "felt", "rubber", "epdm" -> Blocks.CONCRETE.gray().defaultBlockState();
             case "concrete", "cement" -> Blocks.CONCRETE.gray().defaultBlockState();
             case "gravel", "stone_gravel" -> Blocks.GRAVEL.defaultBlockState();
@@ -217,7 +218,7 @@ public final class Materials {
             case "eternit", "fibre_cement", "fiber_cement", "asbestos" -> Blocks.DYED_TERRACOTTA.lightGray().defaultBlockState();
             case "plastic", "pvc", "polycarbonate" -> Blocks.CONCRETE.lightGray().defaultBlockState();
             case "lead" -> Blocks.CONCRETE.gray().defaultBlockState();
-            case "gold", "gilded" -> Blocks.GOLD_BLOCK.defaultBlockState();
+            case "gold", "gilded" -> Blocks.CONCRETE.yellow().defaultBlockState();
             case "sandstone" -> Blocks.SANDSTONE.defaultBlockState();
             case "solar_panels", "solar" -> Blocks.CONCRETE.blue().defaultBlockState();
             default -> null;
@@ -275,7 +276,7 @@ public final class Materials {
                     r < 40 ? Blocks.CONCRETE.lightGray().defaultBlockState()
                             : r < 60 ? Blocks.CONCRETE.gray().defaultBlockState()
                             : r < 75 ? Blocks.DYED_TERRACOTTA.lightGray().defaultBlockState()
-                            : r < 88 ? Blocks.IRON_BLOCK.defaultBlockState()
+                            : r < 88 ? Blocks.SMOOTH_STONE.defaultBlockState()
                             : Blocks.BRICKS.defaultBlockState();
             case "church", "cathedral", "chapel", "monastery", "temple", "synagogue", "shrine" ->
                     r < 45 ? Blocks.STONE_BRICKS.defaultBlockState()
@@ -319,8 +320,8 @@ public final class Materials {
     private static BlockState defaultRoof(String type, RoofShape shape, Style style, boolean domed, long h) {
         int r = (int) (h % 100);
         if (domed || shape == RoofShape.DOME || shape == RoofShape.ONION) {
-            if ("mosque".equals(type)) return r < 50 ? Blocks.COPPER_BLOCK.waxed().oxidized().defaultBlockState() : Blocks.GOLD_BLOCK.defaultBlockState();
-            return r < 60 ? Blocks.COPPER_BLOCK.waxed().oxidized().defaultBlockState()
+            if ("mosque".equals(type)) return r < 50 ? Blocks.CUT_COPPER.waxed().oxidized().defaultBlockState() : Blocks.CONCRETE.yellow().defaultBlockState();
+            return r < 60 ? Blocks.CUT_COPPER.waxed().oxidized().defaultBlockState()
                     : r < 80 ? Blocks.CONCRETE.lightGray().defaultBlockState()
                     : Blocks.QUARTZ_BLOCK.defaultBlockState();
         }
@@ -335,7 +336,7 @@ public final class Materials {
         }
         if ("church".equals(type) || "cathedral".equals(type) || "chapel".equals(type) || "monastery".equals(type)) {
             return r < 60 ? Blocks.DEEPSLATE_TILES.defaultBlockState()
-                    : r < 80 ? Blocks.COPPER_BLOCK.waxed().oxidized().defaultBlockState()
+                    : r < 80 ? Blocks.CUT_COPPER.waxed().oxidized().defaultBlockState()
                     : Blocks.BRICKS.defaultBlockState();
         }
         return switch (style) {
@@ -472,7 +473,7 @@ public final class Materials {
             case "grass" -> Blocks.GRASS_BLOCK.defaultBlockState();
             case "sand" -> Blocks.SAND.defaultBlockState();
             case "wood", "woodchips", "boardwalk", "planks", "decking" -> Blocks.SPRUCE_PLANKS.defaultBlockState();
-            case "metal", "metal_grid", "steel" -> Blocks.IRON_BLOCK.defaultBlockState();
+            case "metal", "metal_grid", "steel" -> Blocks.SMOOTH_STONE.defaultBlockState();
             case "brick", "bricks" -> Blocks.BRICKS.defaultBlockState();
             case "tartan", "rubber", "acrylic" -> Blocks.DYED_TERRACOTTA.red().defaultBlockState();
             case "artificial_turf", "artificial_grass" -> Blocks.MOSS_BLOCK.defaultBlockState();

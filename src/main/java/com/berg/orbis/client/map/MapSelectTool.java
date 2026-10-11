@@ -220,6 +220,33 @@ public final class MapSelectTool {
         return (c - a) * (d - b);
     }
 
+    /** Switches selecting on (a place's outline was just put in): the strip and Generate show. */
+    public void activate() {
+        if (!active) setActive(true);
+    }
+
+    /** Takes back the last change (a place's outline swapped for another of its parts). */
+    public void undoLast() {
+        undo();
+    }
+
+    /** South, west, north, east of what is selected (the added shapes), or null when nothing is. */
+    public double[] bounds() {
+        double s = 90, w = 180, n = -90, e = -180;
+        boolean any = false;
+        for (Shape shape : shapes) {
+            if (shape.subtract()) continue;
+            for (double[] ll : shape.latLon()) {
+                s = Math.min(s, ll[0]);
+                n = Math.max(n, ll[0]);
+                w = Math.min(w, ll[1]);
+                e = Math.max(e, ll[1]);
+                any = true;
+            }
+        }
+        return any ? new double[]{s, w, n, e} : null;
+    }
+
     /** Operators of a server (or singleplayer with cheats) running Orbis: they can pre-generate. */
     static boolean allowed(Minecraft mc) {
         if (mc.player == null || !ClientPlayNetworking.canSend(PregenSelectionPayload.TYPE)) return false;

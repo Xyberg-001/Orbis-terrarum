@@ -27,7 +27,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class MapTiles {
     public enum Layer {
-        STREET("Street map", "World_Street_Map", null),
+        /** OpenStreetMap's data drawn here (see {@link StreetTiles}): streets, buildings, places, house numbers. */
+        STREET("Street map", StreetTiles.SERVICE, null),
+        /** The street map in night colours: the moon button beside the map switches to it; the layer button skips it. */
+        STREET_DARK("Street map", StreetTiles.SERVICE_DARK, null),
         SATELLITE("Satellite", "World_Imagery", "Reference/World_Boundaries_and_Places"),
         /** Heights in colour with hillshading, drawn here from the world's terrain tiles (see {@link ElevationTiles}). */
         ELEVATION("Elevation", ElevationTiles.SERVICE, "Reference/World_Boundaries_and_Places");
@@ -40,8 +43,21 @@ public final class MapTiles {
             this.labels = labels;
         }
 
+        /** The next layer for the layer button: street map (light or dark, as last chosen), satellite, elevation. */
         public Layer next() {
-            return values()[(ordinal() + 1) % values().length];
+            return switch (this) {
+                case STREET, STREET_DARK -> SATELLITE;
+                case SATELLITE -> ELEVATION;
+                case ELEVATION -> street(com.berg.orbis.OrbisMod.config() != null && com.berg.orbis.OrbisMod.config().streetMapDark);
+            };
+        }
+
+        public boolean isStreet() {
+            return this == STREET || this == STREET_DARK;
+        }
+
+        public static Layer street(boolean dark) {
+            return dark ? STREET_DARK : STREET;
         }
     }
 
@@ -189,6 +205,10 @@ public final class MapTiles {
                 elevationTile(t, k);
                 continue;
             }
+            if (StreetTiles.SERVICE.equals(t.service) || StreetTiles.SERVICE_DARK.equals(t.service)) {
+                streetTile(t, StreetTiles.SERVICE_DARK.equals(t.service));
+                continue;
+            }
             try {
                 byte[] bytes;
                 synchronized (BYTES) {
@@ -222,6 +242,23 @@ public final class MapTiles {
                 t.retryAt = System.currentTimeMillis() + 15_000;
                 t.state = State.FAILED;
             }
+        }
+    }
+
+    /** A street map tile, drawn from OpenStreetMap's vector data. */
+    private void streetTile(Tile t, boolean dark) {
+        try {
+            int[] argb = StreetTiles.render(disk, t.z, t.x, t.y, dark);
+            t.argb = toAbgr(argb);
+            t.w = 512;
+            t.h = 512;
+            t.state = State.DECODED;
+            decoded.add(t);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            t.retryAt = System.currentTimeMillis() + 15_000;
+            t.state = State.FAILED;
         }
     }
 
@@ -264,6 +301,90 @@ public final class MapTiles {
             return grid[gy * ElevationTiles.GRID + gx];
         }
         return Double.NaN;
+    }
+
+    /**
+     * The street map's light / night switch: a small button with a moon (or a sun on the night map) at the map's
+     * right edge, shown while the street map is on. Returns it so the screen can show or hide it with the layer.
+     */
+    public static net.minecraft.client.gui.components.Button nightButton(java.util.function.Supplier<Layer> get, java.util.function.Consumer<Layer> set,
+                                                                        int x, int y) {
+        net.minecraft.client.gui.components.Button b = net.minecraft.client.gui.components.Button.builder(nightLabel(get.get()), btn -> {
+            boolean dark = get.get() != Layer.STREET_DARK;
+            set.accept(Layer.street(dark));
+            com.berg.orbis.OrbisMod.updateConfig(c -> c.streetMapDark = dark);
+            btn.setMessage(nightLabel(Layer.street(dark)));
+        }).bounds(x, y, 20, 20).tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                net.minecraft.network.chat.Component.translatable("orbisterrarum.map.night.tip"))).build();
+        b.visible = get.get().isStreet();
+        return b;
+    }
+
+    /** No text: the symbol is drawn over the button by {@link #drawNightIcon} (the font's moon came out as a "C"). */
+    private static net.minecraft.network.chat.Component nightLabel(Layer l) {
+        return net.minecraft.network.chat.Component.empty();
+    }
+
+    private static final int ICON = 12;
+    /**
+     * The night button's symbols, ICON x ICON pixels with soft edges (how much of each pixel the shape covers, from
+     * 4 x 4 samples): a crescent moon tilted like the emoji, both horns tapering (a sharper cut left the lower horn
+     * flat), and a sun with rays.
+     */
+    private static final float[] MOON = new float[ICON * ICON], SUN = new float[ICON * ICON];
+
+    static {
+        for (int y = 0; y < ICON; y++) {
+            for (int x = 0; x < ICON; x++) {
+                int moon = 0, sun = 0;
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        double px = x + (i + 0.5) / 4, py = y + (j + 0.5) / 4;
+                        if (Math.hypot(px - 6, py - 6) <= 5.4 && Math.hypot(px - 9.1, py - 5.0) > 4.7) moon++;
+                        double r = Math.hypot(px - 6, py - 6), a = Math.atan2(py - 6, px - 6);
+                        if (r <= 3.0 || r >= 4.1 && r <= 5.9 && Math.abs(Math.IEEEremainder(a, Math.PI / 4)) < 0.2) sun++;
+                    }
+                }
+                MOON[y * ICON + x] = moon / 16f;
+                SUN[y * ICON + x] = sun / 16f;
+            }
+        }
+    }
+
+    /**
+     * The night button's symbol for the mode the map is in: a moon while the street map is dark, a sun while it is
+     * light (players read the symbol as the mode they are in). Call after the screen has drawn its widgets.
+     */
+    public static void drawNightIcon(net.minecraft.client.gui.GuiGraphicsExtractor g, net.minecraft.client.gui.components.Button b, Layer layer) {
+        if (b == null || !b.visible) return;
+        boolean dark = layer == Layer.STREET_DARK;
+        float[] mask = dark ? MOON : SUN;
+        int rgb = dark ? 0xE8E6F5 : 0xFFC93C;
+        int x0 = b.getX() + (b.getWidth() - ICON) / 2, y0 = b.getY() + (b.getHeight() - ICON) / 2;
+        for (int y = 0; y < ICON; y++) {
+            for (int x = 0; x < ICON; x++) {
+                float a = mask[y * ICON + x];
+                if (a > 0.05f) g.fill(x0 + x, y0 + y, x0 + x + 1, y0 + y + 1, Math.round(a * 255) << 24 | rgb);
+            }
+        }
+    }
+
+    /**
+     * A map layer's credit line in the top-right corner of the map, at half the GUI text size when the whole text
+     * would take more than a third of the map's width (the street map's three credits ran across the map at GUI
+     * scale 4).
+     */
+    public static void drawCredit(net.minecraft.client.gui.GuiGraphicsExtractor g, net.minecraft.client.gui.Font font, String credit, int right, int top, int mapWidth) {
+        int w = font.width(credit);
+        if (w <= mapWidth / 3) {
+            g.text(font, credit, right - w, top, 0xC0000000, false);
+            return;
+        }
+        g.pose().pushMatrix();
+        g.pose().translate(right - w * 0.5f, top);
+        g.pose().scale(0.5f, 0.5f);
+        g.text(font, credit, 0, 0, 0xC0000000, false);
+        g.pose().popMatrix();
     }
 
     /** ARGB (Java images) to the byte order NativeImage keeps in memory (R, G, B, A = ABGR as a little-endian int), in place. */

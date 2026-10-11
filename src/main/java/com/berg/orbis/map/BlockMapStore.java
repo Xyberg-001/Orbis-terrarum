@@ -178,7 +178,7 @@ public final class BlockMapStore {
     // ------------------------------------------------------------------ drawing chunks in
 
     /** Access to one chunk's blocks by local x, absolute y, local z. */
-    private interface Column {
+    public interface Column {
         BlockState at(int x, int y, int z);
 
         /** Y of the top non-air block of the column, or below the world. */
@@ -186,6 +186,12 @@ public final class BlockMapStore {
 
         /** The biome at a block (local x, absolute y, local z), or null when unknown. */
         Holder<Biome> biome(int x, int y, int z);
+    }
+
+    /** A chunk's columns from elsewhere than a chunk (a cubic world's cubes; main thread). */
+    public void draw(int chunkX, int chunkZ, Column column) {
+        if (com.berg.orbis.worldgen.HardLimit.emptied(chunkX, chunkZ)) return;
+        drawColumns(chunkX, chunkZ, column);
     }
 
     /** A loaded chunk (main thread). */
@@ -311,12 +317,50 @@ public final class BlockMapStore {
 
     // ------------------------------------------------------------------ serving
 
+    /** Fills a region of a cubic world from its saved cubes (set by versions/26.3 cubic.CubeMapDrawer; null elsewhere). */
+    public interface RegionFiller {
+        void fill(BlockMapStore store, int rx, int rz);
+    }
+
+    public static volatile RegionFiller cubicFiller;
+
+    /** Raised when the filler draws more than before, so regions it drew are drawn again. */
+    private static final String CUBIC_FILL_VERSION = "2";
+
     /**
      * The region with every saved, fully generated chunk drawn in: a region pre-generated before the map existed
      * is drawn from its region file here (about a thousand chunks; seconds), once. Background threads only.
      */
     public Region complete(int rx, int rz) {
         Region r = get(rx, rz);
+        RegionFiller filler = cubicFiller;
+        if (filler != null && com.berg.orbis.OrbisMod.cubicWorld()) {
+            // A cubic world has no region files: the region is drawn from its saved cubes, once (a marker beside the map file; regions
+            // marked complete before cubic worlds were drawn get it too, and so do regions drawn by an older filler: its version is in it).
+            Path marker = dir.resolve("r." + rx + "." + rz + ".cubic");
+            String done;
+            try {
+                done = Files.exists(marker) ? Files.readString(marker).trim() : "";
+            } catch (IOException e) {
+                done = "";
+            }
+            if (!done.equals(CUBIC_FILL_VERSION)) {
+                try {
+                    filler.fill(this, rx, rz);
+                    Files.createDirectories(dir);
+                    Files.writeString(marker, CUBIC_FILL_VERSION);
+                } catch (IOException | RuntimeException e) {
+                    System.err.println("[orbis] Map region " + rx + "," + rz + " (cubic): " + e);
+                }
+                synchronized (r) {
+                    r.complete = true;
+                    r.dirty = true;
+                    r.version++;
+                }
+                save(r);
+            }
+            return r;
+        }
         if (r.complete) return r;
         Path file = regionDir.resolve("r." + rx + "." + rz + ".mca");
         try {

@@ -32,6 +32,11 @@ public final class TileDiskCache {
     private final Path dir;
     private final String userAgent;
 
+    /** The cache folder. */
+    public Path dir() {
+        return dir;
+    }
+
     public TileDiskCache(Path dir, String userAgent) {
         this.dir = dir;
         this.userAgent = userAgent;
@@ -47,6 +52,17 @@ public final class TileDiskCache {
      * not exist at that zoom; an exception when it cannot be had at all (offline and never cached).
      */
     public byte[] fetch(String service, int z, int x, int y) throws IOException, InterruptedException {
+        String url = "https://server.arcgisonline.com/ArcGIS/rest/services/" + service + "/MapServer/tile/" + z + "/" + y + "/" + x;
+        return fetch(url, service, z, x, y, Map.of(), Long.MAX_VALUE);
+    }
+
+    /**
+     * Like {@link #fetch(String, int, int, int)} for any tile server: {@code url} is the tile's address, kept under
+     * {@code service}; extra request headers, and a cap on how long a copy counts as fresh whatever the server says
+     * (OpenFreeMap's versioned tiles say ten years, but the address changes weekly with the map).
+     */
+    public byte[] fetch(String url, String service, int z, int x, int y, Map<String, String> extraHeaders, long maxAgeCapS)
+            throws IOException, InterruptedException {
         Path img = file(service, z, x, y), meta = img.resolveSibling(y + ".meta");
         byte[] cached = null;
         String etag = null;
@@ -60,13 +76,12 @@ public final class TileDiskCache {
                     if (m.length > 1) maxAge = Long.parseLong(m[1].trim());
                 }
                 long age = System.currentTimeMillis() - Files.getLastModifiedTime(img).toMillis();
-                if (age < maxAge * 1000) return cached;
+                if (age < Math.min(maxAge, maxAgeCapS) * 1000) return cached;
             } catch (IOException | RuntimeException e) {
                 cached = null;
             }
         }
-        String url = "https://server.arcgisonline.com/ArcGIS/rest/services/" + service + "/MapServer/tile/" + z + "/" + y + "/" + x;
-        Map<String, String> headers = new HashMap<>();
+        Map<String, String> headers = new HashMap<>(extraHeaders);
         headers.put("User-Agent", userAgent);
         if (cached != null && etag != null) headers.put("If-None-Match", etag);
         OrbisHttp.Response r;

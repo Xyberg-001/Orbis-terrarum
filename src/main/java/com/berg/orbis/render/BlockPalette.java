@@ -45,7 +45,7 @@ public final class BlockPalette {
                  "packed_mud", "bone_block", "purpur_block", "lapis_block", "prismarine_bricks", "end_stone_bricks",
                  "warped_planks", "crimson_planks", "moss_block", "spruce_wood", "dark_oak_wood", "birch_wood", "gravel" -> 9.0;
             case "hay_block", "mud_bricks", "nether_bricks", "red_nether_bricks", "dark_prismarine", "polished_blackstone_bricks",
-                 "iron_block", "gold_block" -> 4.0;
+                 "iron_block", "gold_block" -> 4.0; // (no longer listed: see EXCLUDED)
             default -> 0.0;
         };
     }
@@ -120,7 +120,6 @@ public final class BlockPalette {
         both("quartz_block", Blocks.QUARTZ_BLOCK, 0xECE9E3);
         wall("smooth_quartz", Blocks.SMOOTH_QUARTZ, 0xEDEAE4);
         wall("quartz_bricks", Blocks.QUARTZ_BRICKS, 0xEAE6E0);
-        both("iron_block", Blocks.IRON_BLOCK, 0xD8D8D8);
         both("deepslate_tiles", Blocks.DEEPSLATE_TILES, 0x363636);
         both("deepslate_bricks", Blocks.DEEPSLATE_BRICKS, 0x474747);
         wall("polished_deepslate", Blocks.POLISHED_DEEPSLATE, 0x4A4A4A);
@@ -146,8 +145,6 @@ public final class BlockPalette {
         both("resin_bricks", Blocks.RESIN_BRICKS, 0xCF6D2A);
         wall("bone_block", Blocks.BONE_BLOCK, 0xE1DDC9);
         wall("purpur_block", Blocks.PURPUR_BLOCK, 0xA87BA8);
-        wall("lapis_block", Blocks.LAPIS_BLOCK, 0x1F4A9E);
-        roof("gold_block", Blocks.GOLD_BLOCK, 0xF8D33E);
         both("moss_block", Blocks.MOSS_BLOCK, 0x5B6F2C);
         roof("hay_block", Blocks.HAY_BLOCK, 0xB89C3B);
 
@@ -174,11 +171,11 @@ public final class BlockPalette {
         wall("birch_wood", Blocks.BIRCH_WOOD, 0xD7D3CF);
 
         // ---- metals (copper family gives the classic green/brown roof range) ----
-        both("copper_block", Blocks.COPPER_BLOCK.waxed().unaffected(), 0xC1704F);
-        both("exposed_copper", Blocks.COPPER_BLOCK.waxed().exposed(), 0xA18468);
-        both("weathered_copper", Blocks.COPPER_BLOCK.waxed().weathered(), 0x6EA067);
-        both("oxidized_copper", Blocks.COPPER_BLOCK.waxed().oxidized(), 0x54A587);
-        roof("cut_copper", Blocks.CUT_COPPER.waxed().unaffected(), 0xBF6B4D);
+        // Cut copper only: a copper block crafts back into nine ingots, cut copper into nothing.
+        both("cut_copper", Blocks.CUT_COPPER.waxed().unaffected(), 0xBF6B4D);
+        both("exposed_cut_copper", Blocks.CUT_COPPER.waxed().exposed(), 0x9B7A65);
+        both("weathered_cut_copper", Blocks.CUT_COPPER.waxed().weathered(), 0x6D9166);
+        both("oxidized_cut_copper", Blocks.CUT_COPPER.waxed().oxidized(), 0x4F9986);
 
         // ---- CSS colour names + common OSM spellings ----
         // The basic names are deliberately NOT the pure CSS primaries: a
@@ -300,7 +297,8 @@ public final class BlockPalette {
             "chiseled_", "lamp", "gilded_"};
     private static final java.util.Set<String> EXCLUDED = java.util.Set.of(
             "bedrock", "barrier", "diamond_block", "emerald_block", "netherite_block", "redstone_block", "coal_block",
-            "lapis_block", "amethyst_block", "obsidian", "crying_obsidian", "end_portal_frame", "cartography_table",
+            "lapis_block", "amethyst_block", "iron_block", "gold_block", "waxed_copper_block", "waxed_exposed_copper",
+            "waxed_weathered_copper", "waxed_oxidized_copper", "obsidian", "crying_obsidian", "end_portal_frame", "cartography_table",
             "fletching_table", "smithing_table", "light", "structure_void", "mud", "muddy_mangrove_roots", "cobweb",
             "packed_mud", "bamboo_block");
 

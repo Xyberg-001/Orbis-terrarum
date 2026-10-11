@@ -232,6 +232,11 @@ public final class FastPregen {
     }
 
     /** "terrain built ahead 12,345 - 67 existing kept" for the progress lines. */
+    /** Chunks built ahead of the sweep so far. */
+    public long builtAhead() {
+        return built.get();
+    }
+
     public String summary() {
         String s = String.format(java.util.Locale.ROOT, "terrain built ahead %,d", built.get());
         if (existing.get() > 0) s += String.format(java.util.Locale.ROOT, " - %,d existing kept", existing.get());

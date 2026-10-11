@@ -24,18 +24,45 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * The world map (key N): the real world under the Minecraft world, as a street map, satellite photos with place
+ * The world map (key B by default): the real world under the Minecraft world, as a street map, satellite photos with place
  * names, or elevation in colour, lined up with the blocks through the world's own projection. Shows you (an arrow
  * facing where you look), other players in sight, the world spawn, your marks and a searched place; drag to
  * move, scroll to zoom, right-click to teleport, mark a place or copy its coordinates. Needs the server to run
  * Orbis Terrarum (it sends where the world sits on Earth) and only works in the overworld. Operators also get
  * {@link MapSelectTool}: select an area with a rectangle, ellipse or lasso and pre-generate it.
  */
-public final class WorldMapScreen extends Screen {
+public final class WorldMapScreen extends Screen implements MapAnswerSink {
     private static final int TOP_H = 24;
     private static final int BG = 0xFF1E2227, TOP_BG = 0xE8101418;
     private static final int WHITE = 0xFFFFFFFF, GREY = 0xFFA0A8B0, YELLOW = 0xFFFACC15, RED = 0xFFF87171, CYAN = 0xFF67E8F9, GREEN = 0xFF4ADE80;
     private static MapTiles.Layer lastLayer = MapTiles.Layer.STREET;
+    private net.minecraft.client.gui.components.Button nightButton;
+    /** The pre-generation's Stop and Resume (in its panel): operators only. */
+    private Button pregenStop, pregenResume;
+    /** The World window's button, under the night button: the one button for everything about the world. */
+    private Button worldButton;
+    /** The card on a place (searched, What's here, a landmark), made with the screen's font. */
+    private PlaceCard card;
+    /** Opening the World window over the map: keep the map's tiles (it comes back). */
+    private boolean keepCanvas;
+    /** The landmark advancements, as pins (from the server). */
+    private record Landmark(String name, String task, double lat, double lon, boolean done) {}
+    private List<Landmark> landmarks = List.of();
+    private boolean landmarksAsked;
+    private static final int LANDMARK = 0xFFC084FC;
+    /** The search's words and full answer, for its card's Select area. */
+    private String foundQuery, foundFull;
+    /** The outline a card selected, and whether all its parts are in. */
+    private com.berg.orbis.net.AreaOutline outline;
+    private boolean outlineAll, outlineLooking;
+    private String outlineNote;
+    /** The What's here card: its question, the place's name and the server's lines as they come. */
+    private int hereSeq;
+    private String hereId, herePlace;
+    private List<String> hereServer;
+    /** A left press on the map: a click (no drag) opens the card of a landmark or the searched place there. */
+    private double pressX, pressY;
+    private boolean pressMoved;
     private static double lastScale = -1;
     /** The Minecraft layer's opacity: 0 off, then 35%, 70%, 100%. */
     private static final int[] BLOCK_ALPHA = {0, 90, 180, 255};
@@ -129,17 +156,42 @@ public final class WorldMapScreen extends Screen {
             greyOut = !greyOut;
             b.setMessage(greyLabel());
         }).bounds(bx[bi++], 2, 72, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.grey.tip"))).build());
+        if (canvas.layer.isStreet()) canvas.layer = MapTiles.Layer.street(OrbisMod.config().streetMapDark);
         addRenderableWidget(Button.builder(Component.literal(canvas.layer.label), b -> {
             canvas.layer = canvas.layer.next();
             lastLayer = canvas.layer;
             b.setMessage(Component.literal(canvas.layer.label));
+            if (nightButton != null) nightButton.visible = canvas.layer.isStreet();
         }).bounds(bx[bi++], 2, 96, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.layer.tip"))).build());
+        // Night mode for the street map: on the map's right edge, under the credit line.
+        nightButton = addRenderableWidget(MapTiles.nightButton(() -> canvas.layer, l -> {
+            canvas.layer = l;
+            lastLayer = l;
+        }, width - 24, TOP_H + 14));
         addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.me"), b -> centreOnPlayer())
                 .bounds(bx[bi++], 2, 46, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.me.tip"))).build());
         if (select == null && mapper != null && MapSelectTool.allowed(minecraft)) {
             select = new MapSelectTool(minecraft, canvas, mapper, info.metersPerBlock(), worldKey, true, s -> say(s, false, 8000));
         }
         if (select != null) select.addWidgets(this::addRenderableWidget, 4, markersInBar ? TOP_H + 4 : TOP_H + 28, width, height);
+        markersUnderBar = !markersInBar;
+        pregenStop = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.stop"),
+                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.STOP))
+                .bounds(0, 0, 52, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.stop.tip"))).build());
+        pregenResume = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.resume"),
+                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.RESUME))
+                .bounds(0, 0, 52, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.resume.tip"))).build());
+        // Everything about the world (and its switches) is behind this one button, under the night button.
+        worldButton = addRenderableWidget(Button.builder(Component.literal("i"), b -> openWorldWindow())
+                .bounds(width - 24, TOP_H + 38, 20, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.world.tip"))).build());
+        worldButton.visible = mapper != null;
+        if (card == null) card = new PlaceCard(font);
+        card.addWidgets(this::addRenderableWidget);
+        refreshPregenControls();
+        if (!landmarksAsked && mapper != null && canAsk()) {
+            landmarksAsked = true;
+            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new com.berg.orbis.net.MapRequestPayload("landmarks", "", 0, 0));
+        }
         if (!viewSet && mapper != null) {
             centreOnPlayer();
             if (lastScale > 0) canvas.scale = lastScale;
@@ -149,8 +201,387 @@ public final class WorldMapScreen extends Screen {
             }
             canvas.clamp();
             viewSet = true;
-            status = Component.translatable("orbisterrarum.map.help").getString();
+            status = Component.translatable("orbisterrarum.map.help", com.berg.orbis.client.OrbisClient.MAP_KEY == null ? Component.literal("B")
+                    : com.berg.orbis.client.OrbisClient.MAP_KEY.getTranslatedKeyMessage()).getString();
             statusUntil = System.currentTimeMillis() + 5000;
+        }
+    }
+
+    // ------------------------------------------------------------------ pre-generation (stage 1 of moving the commands onto the map)
+
+    /** Operators of a server running Orbis can run its pre-generation from the map (the server checks again). */
+    private boolean canControlPregen() {
+        return mapper != null && MapSelectTool.allowed(minecraft)
+                && net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(com.berg.orbis.net.PregenControlPayload.TYPE);
+    }
+
+    private void control(com.berg.orbis.net.PregenControlPayload.Action action) {
+        if (!canControlPregen()) return;
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new com.berg.orbis.net.PregenControlPayload(action));
+    }
+
+    /** Whether the Markers button sits under the bar, top left (a large GUI scale), where the panel keeps clear of it. */
+    private boolean markersUnderBar;
+    /** The pre-generation panel's box as last drawn (left, top, right, bottom), or null when none is shown: messages go under it. */
+    private int[] pregenPanel;
+
+    /**
+     * The pre-generation panel's room, top centre under the bar: clear of the Markers button and the selection tools on the left, and of
+     * the day and night button on the right; below the credit line.
+     */
+    private int[] pregenPanelRoom() {
+        int top = TOP_H + 16;
+        int left = markersUnderBar ? 4 + 80 + 6 : 6;
+        if (select != null) left = Math.max(left, select.textLeft(top, top + 50, 6));
+        int right = width - 30;
+        int w = Math.min(380, right - left);
+        int x = left + (right - left - w) / 2;
+        return new int[]{x, top, x + w};
+    }
+
+    /** Shows the buttons that fit what the server's pre-generation is doing now. */
+    private void refreshPregenControls() {
+        if (pregenStop == null) return;
+        com.berg.orbis.net.PregenStatusPayload st = com.berg.orbis.client.OrbisClient.pregenStatus;
+        boolean ops = canControlPregen() && (minecraft.level == null || minecraft.level.dimension() == Level.OVERWORLD);
+        pregenStop.visible = ops && st.running();
+        pregenResume.visible = ops && !st.running() && !st.resumable().isEmpty();
+        if (mapper == null || (minecraft.level != null && minecraft.level.dimension() != Level.OVERWORLD)) {
+            pregenStop.visible = pregenResume.visible = false;
+        }
+    }
+
+    /** What the server's pre-generation is doing: its name, a bar, and how far it has got; or that a stopped one can be resumed. */
+    private void drawPregenPanel(GuiGraphicsExtractor g) {
+        pregenPanel = null;
+        com.berg.orbis.net.PregenStatusPayload st = com.berg.orbis.client.OrbisClient.pregenStatus;
+        if (!st.running() && st.resumable().isEmpty()) return;
+        int[] room = pregenPanelRoom();
+        Button button = pregenStop.visible ? pregenStop : pregenResume.visible ? pregenResume : null;
+        int pad = 5, textW = room[2] - room[0] - 2 * pad - (button != null ? button.getWidth() + pad : 0);
+        if (textW < 60) return; // no room on this screen
+        int x = room[0] + pad, y = room[1] + pad;
+        List<String> rows = new ArrayList<>();
+        List<FormattedCharSequence> body;
+        if (st.running()) {
+            String title = Component.translatable("orbisterrarum.map.pregen.running", st.label()).getString()
+                    + (st.waiting().isEmpty() ? "" : " (" + st.waiting() + ")");
+            rows.add(fit(title, textW));
+            body = font.split(Component.literal(st.detail()), textW);
+            if (body.size() > 2) body = body.subList(0, 2);
+        } else {
+            body = font.split(Component.translatable("orbisterrarum.map.pregen.stopped", st.resumable()), textW);
+        }
+        int barH = st.running() ? 12 : 0;
+        int textH = rows.size() * 10 + barH + body.size() * 10;
+        int height = Math.max(textH, button != null ? 20 : 0) + 2 * pad;
+        int[] p = {room[0], room[1], room[2], room[1] + height};
+        g.fill(p[0], p[1], p[2], p[3], 0xD0000000);
+        for (String r : rows) {
+            g.text(font, r, x, y, WHITE);
+            y += 10;
+        }
+        if (st.running()) {
+            g.fill(x, y + 1, x + textW, y + 9, 0xFF404850);
+            g.fill(x, y + 1, x + Math.round(textW * Math.max(0f, Math.min(1f, st.fraction()))), y + 9, 0xFF4ADE80);
+            String pct = Math.round(st.fraction() * 100) + "%";
+            g.text(font, pct, x + (textW - font.width(pct)) / 2, y + 1, WHITE);
+            y += barH;
+        }
+        for (FormattedCharSequence l : body) {
+            g.text(font, l, x, y, st.running() ? 0xFFB0B8C0 : WHITE);
+            y += 10;
+        }
+        if (button != null) button.setPosition(p[2] - pad - button.getWidth(), p[1] + (height - 20) / 2);
+        pregenPanel = p;
+    }
+
+    /** The text, cut with "..." to fit the width. */
+    private String fit(String s, int w) {
+        if (font.width(s) <= w) return s;
+        return font.plainSubstrByWidth(s, Math.max(0, w - font.width("..."))).stripTrailing() + "...";
+    }
+
+    // ------------------------------------------------------------------ cards, landmarks and the World window
+
+    /** Whether the server answers the map's questions (it runs Orbis Terrarum). */
+    private static boolean canAsk() {
+        return net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(com.berg.orbis.net.MapRequestPayload.TYPE);
+    }
+
+    private void openWorldWindow() {
+        if (mapper == null) return;
+        keepCanvas = true;
+        minecraft.setScreenAndShow(new WorldWindow(this, info));
+    }
+
+    /** What the selection covers (south, west, north, east), or null: the World window downloads map data for it. */
+    double[] selectionBox() {
+        return select == null ? null : select.bounds();
+    }
+
+    /** The place in the middle of the map. */
+    double[] middle() {
+        return canvas.latLonAt((canvas.left() + canvas.right()) / 2.0, (canvas.top() + canvas.bottom()) / 2.0);
+    }
+
+    /** Operators can teleport to a place inside the world border (/tpll on a server with Orbis, /tp without). */
+    private boolean canTeleport(double lat, double lon) {
+        if (minecraft.player == null) return false;
+        var root = minecraft.player.connection.getCommands().getRoot();
+        if (root.getChild("tpll") == null && root.getChild("tp") == null) return false;
+        int[] at = mapper == null ? null : mapper.toBlock(lat, lon);
+        return at == null || minecraft.level == null || minecraft.level.getWorldBorder().isWithinBounds(at[0], at[1]);
+    }
+
+    private void teleportTo(double lat, double lon) {
+        if (minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null) {
+            minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tpll %.6f %.6f", lat, lon));
+        } else {
+            // A server without Orbis (no /tpll): vanilla's teleport, keeping the height (operators only).
+            int[] b = mapper.toBlock(lat, lon);
+            minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tp @s %d ~ %d", b[0], b[1]));
+        }
+        onClose();
+    }
+
+    private PlaceCard.Action teleportAction(double lat, double lon) {
+        return new PlaceCard.Action(Component.translatable("orbisterrarum.map.card.teleport"), Component.translatable("orbisterrarum.map.card.teleport.tip"),
+                () -> teleportTo(lat, lon));
+    }
+
+    private String coordsLine(double lat, double lon) {
+        int[] b = mapper.toBlock(lat, lon);
+        return String.format(Locale.ROOT, "%.5f, %.5f  \u00B7  block %d, %d", lat, lon, b[0], b[1]);
+    }
+
+    /** The searched place's card: where it is, Teleport, and (operators) Select area with its outline. */
+    private void showFoundCard() {
+        if (found == null || card == null) return;
+        List<String> lines = new ArrayList<>();
+        int comma = foundFull == null ? -1 : foundFull.indexOf(',');
+        if (comma > 0) lines.add(foundFull.substring(comma + 1).trim());
+        lines.add(coordsLine(found[0], found[1]));
+        if (outlineLooking) lines.add(Component.translatable("orbisterrarum.map.card.looking").getString());
+        if (outlineNote != null) lines.add(outlineNote);
+        List<PlaceCard.Action> actions = new ArrayList<>();
+        if (canTeleport(found[0], found[1])) actions.add(teleportAction(found[0], found[1]));
+        if (select != null && !outlineLooking) {
+            if (outline == null) {
+                actions.add(new PlaceCard.Action(Component.translatable("orbisterrarum.map.card.select"),
+                        Component.translatable("orbisterrarum.map.card.select.tip"), this::selectOutline));
+            } else if (outline.polygons().size() > 1) {
+                actions.add(outlineAll
+                        ? new PlaceCard.Action(Component.translatable("orbisterrarum.map.card.mainland"), Component.translatable("orbisterrarum.map.card.mainland.tip"), this::toggleParts)
+                        : new PlaceCard.Action(Component.translatable("orbisterrarum.map.card.allparts", String.format(Locale.ROOT, "%,d", outline.polygons().size())),
+                        Component.translatable("orbisterrarum.map.card.allparts.tip"), this::toggleParts));
+            }
+        }
+        if (card.shown() && card.at == found) card.set(foundName, lines, actions);
+        else card.show(found, foundName, lines, actions);
+    }
+
+    /** Looks up the searched place's outline and selects it (its largest part; a second press swaps in all its parts). */
+    private void selectOutline() {
+        if (select == null || foundQuery == null || outlineLooking) return;
+        outlineLooking = true;
+        outlineNote = null;
+        showFoundCard();
+        String q = foundQuery;
+        double[] at = found;
+        com.berg.orbis.net.Geocoder.lookupArea(q).whenComplete((o, error) -> minecraft.execute(() -> {
+            if (at != found) return; // another search since
+            outlineLooking = false;
+            if (error != null || o == null || o.polygons().isEmpty()) {
+                outlineNote = Component.translatable("orbisterrarum.map.card.nooutline", foundName).getString();
+                showFoundCard();
+                return;
+            }
+            outline = o;
+            outlineAll = false;
+            select.activate();
+            select.addOutline(o.largestOnly().polygons());
+            noteOutline();
+            fitTo(o.largestOnly());
+            showFoundCard();
+        }));
+    }
+
+    private void toggleParts() {
+        if (select == null || outline == null) return;
+        outlineAll = !outlineAll;
+        select.undoLast();
+        select.addOutline(outlineAll ? outline.polygons() : outline.largestOnly().polygons());
+        noteOutline();
+        fitTo(outlineAll ? outline : outline.largestOnly());
+        showFoundCard();
+    }
+
+    private void noteOutline() {
+        com.berg.orbis.net.AreaOutline chosen = outlineAll ? outline : outline.largestOnly();
+        String km2 = String.format(Locale.ROOT, "%,.0f", chosen.totalKm2());
+        outlineNote = outline.polygons().size() > 1 && !outlineAll
+                ? Component.translatable("orbisterrarum.map.card.selectedpart", String.format(Locale.ROOT, "%,d", outline.polygons().size()), km2).getString()
+                : Component.translatable("orbisterrarum.map.card.selected", km2).getString();
+    }
+
+    /** Shows the whole outline, with a little room round it. */
+    private void fitTo(com.berg.orbis.net.AreaOutline o) {
+        double midLat = (o.south() + o.north()) / 2, midLon = (o.west() + o.east()) / 2;
+        double wide = (o.east() - o.west()) * 111_320 * Math.cos(Math.toRadians(midLat));
+        double tall = (o.north() - o.south()) * 111_320;
+        double aspect = Math.max(1, canvas.right() - canvas.left()) / (double) Math.max(1, canvas.bottom() - canvas.top());
+        canvas.centerOn(midLat, midLon);
+        canvas.showMetresAcross(midLat, Math.max(500, Math.max(wide, tall * aspect) * 1.2));
+        canvas.clamp();
+    }
+
+    /** What's here: the place's name (looked up by the game) and what the server knows there. */
+    private void showHere(double lat, double lon) {
+        if (card == null || mapper == null) return;
+        hereId = String.valueOf(++hereSeq);
+        herePlace = null;
+        hereServer = null;
+        double[] at = {lat, lon};
+        String id = hereId;
+        if (canAsk()) net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new com.berg.orbis.net.MapRequestPayload("here", id, lat, lon));
+        com.berg.orbis.net.Geocoder.reverse(lat, lon).whenComplete((name, error) -> minecraft.execute(() -> {
+            if (!id.equals(hereId)) return;
+            herePlace = error == null && name != null ? name : "";
+            refreshHere();
+        }));
+        card.show(at, Component.translatable("orbisterrarum.map.card.here").getString(), List.of(), List.of());
+        refreshHere();
+    }
+
+    private void refreshHere() {
+        if (card == null || !card.shown() || hereId == null) return;
+        double[] at = card.at;
+        String title = Component.translatable("orbisterrarum.map.card.here").getString();
+        List<String> lines = new ArrayList<>();
+        if (herePlace != null && !herePlace.isEmpty()) {
+            String[] parts = herePlace.split(",", 2);
+            title = parts[0].trim();
+            if (parts.length > 1) lines.add(parts[1].trim());
+        }
+        lines.add(coordsLine(at[0], at[1]));
+        if (hereServer != null) lines.addAll(hereServer);
+        else if (canAsk()) lines.add(Component.translatable("orbisterrarum.map.card.loading").getString());
+        List<PlaceCard.Action> actions = new ArrayList<>();
+        if (canTeleport(at[0], at[1])) actions.add(teleportAction(at[0], at[1]));
+        card.set(title, lines, actions);
+    }
+
+    /** A click on the map (no drag): the card of the landmark or searched place under it. */
+    private void clickedAt(double x, double y) {
+        Landmark l = landmarkNear(x, y);
+        if (l != null) {
+            hereId = null;
+            double[] at = {l.lat(), l.lon()};
+            List<String> lines = new ArrayList<>();
+            lines.add(Component.translatable(l.done() ? "orbisterrarum.map.card.landmark.done" : "orbisterrarum.map.card.landmark.todo").getString());
+            if (!l.done() && !l.task().isEmpty()) lines.add(l.task());
+            lines.add(coordsLine(l.lat(), l.lon()));
+            card.show(at, l.name(), lines, canTeleport(l.lat(), l.lon()) ? List.of(teleportAction(l.lat(), l.lon())) : List.of());
+            return;
+        }
+        if (found != null) {
+            double[] s = canvas.gui(found[0], found[1]);
+            if (Math.abs(s[0] - x) <= 6 && Math.abs(s[1] - 4 - y) <= 8) {
+                hereId = null;
+                showFoundCard();
+            }
+        }
+    }
+
+    private Landmark landmarkNear(double x, double y) {
+        double r = 6 * Math.max(1, markerScale());
+        for (Landmark l : landmarks) {
+            double[] s = canvas.gui(l.lat(), l.lon());
+            if (Math.abs(s[0] - x) <= r && Math.abs(s[1] - y) <= r) return l;
+        }
+        return null;
+    }
+
+    /** The landmark pins: purple diamonds, a tick on the ones found; names when zoomed in to a town or under the mouse. */
+    private void drawLandmarks(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        if (landmarks.isEmpty()) return;
+        boolean names = canvas.metresPerGuiPixel() * (canvas.right() - canvas.left()) < 4000;
+        Landmark hover = landmarkNear(mouseX, mouseY);
+        float k = markerScale();
+        List<Landmark> shown = new ArrayList<>();
+        for (Landmark l : landmarks) {
+            double[] s = canvas.gui(l.lat(), l.lon());
+            if (s[0] < canvas.left() - 40 || s[0] > canvas.right() + 40 || s[1] < canvas.top() - 20 || s[1] > canvas.bottom() + 20) continue;
+            shown.add(l);
+            g.pose().pushMatrix();
+            g.pose().translate((float) s[0], (float) s[1]);
+            g.pose().scale(k, k);
+            diamond(g, 5, 0xFF000000);
+            diamond(g, 4, LANDMARK);
+            if (l.done()) g.fill(-1, -1, 2, 2, WHITE);
+            g.pose().popMatrix();
+        }
+        // Names after all the diamonds, each only where it does not run into one already drawn (the one under the mouse first).
+        if (hover != null && shown.remove(hover)) shown.add(0, hover);
+        List<double[]> taken = new ArrayList<>();
+        for (Landmark l : shown) {
+            if (!names && l != hover) continue;
+            String text = l.name() + (l.done() ? " \u2713" : "");
+            double[] s = canvas.gui(l.lat(), l.lon());
+            double x0 = s[0] + 7 * k, y0 = s[1] - 5 * k, x1 = x0 + (font.width(text) + 2) * k, y1 = y0 + 10 * k;
+            boolean clear = true;
+            for (double[] r : taken) {
+                if (x0 < r[2] + 2 && x1 > r[0] - 2 && y0 < r[3] + 1 && y1 > r[1] - 1) {
+                    clear = false;
+                    break;
+                }
+            }
+            if (!clear) continue;
+            taken.add(new double[]{x0, y0, x1, y1});
+            g.pose().pushMatrix();
+            g.pose().translate((float) s[0], (float) s[1]);
+            g.pose().scale(k, k);
+            label(g, 8, -4, text, LANDMARK);
+            g.pose().popMatrix();
+        }
+    }
+
+    private static void diamond(GuiGraphicsExtractor g, int r, int colour) {
+        for (int dy = -r; dy <= r; dy++) {
+            int half = r - Math.abs(dy);
+            g.fill(-half, dy, half + 1, dy + 1, colour);
+        }
+    }
+
+    /** The server's answers: What's here, the landmarks, a message from the World window's switches. */
+    @Override
+    public void answer(com.berg.orbis.net.MapAnswerPayload p) {
+        switch (p.kind()) {
+            case "here" -> {
+                if (p.id().equals(hereId)) {
+                    hereServer = p.lines();
+                    refreshHere();
+                }
+            }
+            case "landmarks" -> {
+                if (mapper == null) return;
+                List<Landmark> list = new ArrayList<>();
+                for (String l : p.lines()) {
+                    String[] f = l.split("\t");
+                    if (f.length < 4) continue;
+                    try {
+                        double[] ll = mapper.toLatLonExact(Integer.parseInt(f[1]) + 0.5, Integer.parseInt(f[2]) + 0.5);
+                        list.add(new Landmark(f[0], f.length > 4 ? f[4] : "", ll[0], ll[1], f[3].equals("1")));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                landmarks = list;
+            }
+            case "msg" -> {
+                if (!p.lines().isEmpty()) say(p.lines().get(0), false, 8000);
+            }
+            default -> { }
         }
     }
 
@@ -173,7 +604,8 @@ public final class WorldMapScreen extends Screen {
         return Component.translatable(greyOut ? "orbisterrarum.map.grey.on" : "orbisterrarum.map.grey.off");
     }
 
-    private double[] playerLatLon() {
+    double[] playerLatLon() {
+        if (mapper == null || minecraft.player == null) return null;
         return mapper.toLatLonExact(minecraft.player.getX(), minecraft.player.getZ());
     }
 
@@ -196,9 +628,13 @@ public final class WorldMapScreen extends Screen {
             }
             found = new double[]{r.lat(), r.lon()};
             foundName = r.name().split(",")[0].trim();
+            foundQuery = q;
+            foundFull = r.name();
+            outline = null;
+            outlineNote = null;
             canvas.centerOn(r.lat(), r.lon());
             if (mapper != null) canvas.showMetresAcross(r.lat(), Math.max(800, 600 * info.metersPerBlock()));
-            say(r.name(), false, 5000);
+            showFoundCard();
         }));
     }
 
@@ -210,9 +646,18 @@ public final class WorldMapScreen extends Screen {
 
     @Override
     public void removed() {
+        if (keepCanvas) {
+            keepCanvas = false; // the World window is over the map, which comes back
+        } else {
+            release();
+        }
+        super.removed();
+    }
+
+    /** Lets go of the map's tiles (the screen is closed for good). */
+    void release() {
         lastScale = canvas.scale;
         canvas.close(minecraft);
-        super.removed();
     }
 
     // ------------------------------------------------------------------ input
@@ -226,6 +671,7 @@ public final class WorldMapScreen extends Screen {
             return true;
         }
         if (super.mouseClicked(e, doubleClick)) return true;
+        if (card != null && card.click(e.x(), e.y())) return true;
         if (mapper == null || !canvas.contains(e.x(), e.y())) return false;
         setFocused(null);
         boolean selecting = select != null && select.active;
@@ -248,6 +694,9 @@ public final class WorldMapScreen extends Screen {
         if (e.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             if (doubleClick) canvas.zoomAt(e.x(), e.y(), 2);
             dragging = true;
+            pressX = e.x();
+            pressY = e.y();
+            pressMoved = doubleClick;
             return true;
         }
         return false;
@@ -264,6 +713,7 @@ public final class WorldMapScreen extends Screen {
             return true;
         }
         if (dragging) {
+            if (Math.hypot(e.x() - pressX, e.y() - pressY) > 3) pressMoved = true;
             canvas.pan(dx, dy);
             return true;
         }
@@ -280,6 +730,8 @@ public final class WorldMapScreen extends Screen {
         }
         if (dragging && (e.button() == InputConstants.MOUSE_BUTTON_LEFT || e.button() == InputConstants.MOUSE_BUTTON_MIDDLE)) {
             dragging = false;
+            if (e.button() == InputConstants.MOUSE_BUTTON_LEFT && !pressMoved) clickedAt(pressX, pressY);
+            pressMoved = true;
             return true;
         }
         return super.mouseReleased(e);
@@ -307,6 +759,10 @@ public final class WorldMapScreen extends Screen {
                 return true;
             }
         }
+        if (e.key() == InputConstants.KEY_ESCAPE && card != null && card.shown()) {
+            card.hide();
+            return true;
+        }
         if (!searchBox.isFocused() && com.berg.orbis.client.OrbisClient.MAP_KEY != null && com.berg.orbis.client.OrbisClient.MAP_KEY.matches(e)) {
             onClose();
             return true;
@@ -324,10 +780,15 @@ public final class WorldMapScreen extends Screen {
         menuAt = canvas.latLonAt(x, y);
         menuMark = markNear(x, y);
         menuItems.clear();
-        // /tpll is for operators; the server only sends a player the commands they may run.
-        if (minecraft.player != null && minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null) {
+        // /tpll (Orbis on the server) or vanilla /tp (a server without it) is for operators; the server only sends a
+        // player the commands they may run.
+        int[] at = mapper == null ? null : mapper.toBlock(menuAt[0], menuAt[1]);
+        if (minecraft.player != null && (minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null
+                || minecraft.player.connection.getCommands().getRoot().getChild("tp") != null)
+                && (at == null || minecraft.level == null || minecraft.level.getWorldBorder().isWithinBounds(at[0], at[1]))) {
             menuItems.add("teleport");
         }
+        menuItems.add("here");
         menuItems.add(menuMark == null ? "mark" : "unmark");
         menuItems.add("copy");
         int w = 0;
@@ -352,10 +813,8 @@ public final class WorldMapScreen extends Screen {
         double lat = menuAt[0], lon = menuAt[1];
         int[] b = mapper.toBlock(lat, lon);
         switch (item) {
-            case "teleport" -> {
-                minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tpll %.6f %.6f", lat, lon));
-                onClose();
-            }
+            case "teleport" -> teleportTo(lat, lon);
+            case "here" -> showHere(lat, lon);
             case "mark" -> {
                 String name = String.format(Locale.ROOT, "%d, %d", b[0], b[1]);
                 MapMarks.Mark m = new MapMarks.Mark(name, lat, lon);
@@ -407,9 +866,11 @@ public final class WorldMapScreen extends Screen {
             canvas.draw(g, minecraft);
             drawMinecraftLayer(g);
             drawOutsideLimit(g);
+            drawOutsideBorder(g);
             if (select != null && select.active) select.draw(g, font, mouseX, mouseY);
             g.enableScissor(canvas.left(), canvas.top(), canvas.right(), canvas.bottom());
             drawSpawn(g);
+            drawLandmarks(g, mouseX, mouseY);
             for (MapMarks.Mark m : marks) pin(g, canvas.gui(m.lat(), m.lon()), YELLOW, m.name());
             if (found != null) pin(g, canvas.gui(found[0], found[1]), RED, foundName);
             drawPlayers(g);
@@ -418,16 +879,29 @@ public final class WorldMapScreen extends Screen {
             drawLimitLegend(g);
             if (select != null) select.drawPanel(g, font, width, height);
             if (canvas.contains(mouseX, mouseY) && menuItems.isEmpty()) drawReadout(g, mouseX, mouseY);
-            String credit = canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri" : "Map tiles © Esri";
-            g.text(font, credit, width - font.width(credit) - 4, TOP_H + 3, 0xC0000000, false);
+            String credit = canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri"
+                    : canvas.layer == com.berg.orbis.client.MapTiles.Layer.STREET || canvas.layer == com.berg.orbis.client.MapTiles.Layer.STREET_DARK
+                    ? com.berg.orbis.client.StreetTiles.CREDIT : "Map tiles © Esri";
+            com.berg.orbis.client.MapTiles.drawCredit(g, font, credit, width - 4, TOP_H + 3, width);
             // Bottom right, above the bottom line (the readout).
             if (canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION) {
                 com.berg.orbis.client.ElevationTiles.drawLegend(g, font, width - 4, select != null && select.generateShown() ? height - 62 : height - 19);
             }
         }
         g.fill(0, 0, width, TOP_H, TOP_BG);
+        refreshPregenControls();
+        pregenPanel = null;
+        boolean mapShown = mapper != null && (minecraft.level == null || minecraft.level.dimension() == Level.OVERWORLD);
+        if (mapShown) drawPregenPanel(g);
         drawStatus(g);
+        if (card != null) {
+            if (!mapShown && card.shown()) card.hide();
+            // Clear of the tool strip and the Markers button on the left and of the night and World buttons on the right.
+            int cardLeft = Math.max(select != null ? select.textLeft(TOP_H, height, 4) : 4, markersUnderBar ? 4 + 80 + 6 : 4);
+            card.draw(g, canvas, cardLeft, width - 30, TOP_H, height - 16);
+        }
         super.extractRenderState(g, mouseX, mouseY, partialTick);
+        MapTiles.drawNightIcon(g, nightButton, canvas.layer);
         if (select != null) select.drawIcons(g);
         if (!menuItems.isEmpty()) drawMenu(g, mouseX, mouseY);
     }
@@ -493,7 +967,7 @@ public final class WorldMapScreen extends Screen {
     }
 
     /** Outside the hard limit: a dark red tint (the not-generated haze is light grey, and never drawn there). */
-    private static final int LIMIT_SHADE = 0x9C3A0A12, LIMIT_EDGE = 0xFFF87171, VEIL_SWATCH = 0xFFD4D8DC;
+    private static final int LIMIT_SHADE = 0x9C3A0A12, LIMIT_EDGE = 0xFFF87171, VEIL_SWATCH = 0xFFF5A04A;
 
     /**
      * With the server's hard limit on: everything outside the allowed area darkened (it never generates), with a red
@@ -548,6 +1022,38 @@ public final class WorldMapScreen extends Screen {
                     }
                 }
             }
+        }
+        canvas.endOverlay(g);
+    }
+
+    /**
+     * Beyond the world border, shaded as outside the allowed area: in a cubic world it is much nearer than vanilla's (Cubic Chunks packs
+     * positions with more bits for height), and the far side of the Earth can lie beyond it.
+     */
+    private void drawOutsideBorder(GuiGraphicsExtractor g) {
+        if (minecraft.level == null || mapper == null) return;
+        net.minecraft.world.level.border.WorldBorder border = minecraft.level.getWorldBorder();
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (double[] c : new double[][]{{canvas.left(), canvas.top()}, {canvas.right(), canvas.top()}, {canvas.left(), canvas.bottom()}, {canvas.right(), canvas.bottom()}}) {
+            double[] ll = canvas.latLonAt(c[0], c[1]);
+            double[] b = mapper.toBlockExact(ll[0], ll[1]);
+            minX = Math.min(minX, b[0]);
+            maxX = Math.max(maxX, b[0]);
+            minZ = Math.min(minZ, b[1]);
+            maxZ = Math.max(maxZ, b[1]);
+        }
+        if (minX >= border.getMinX() && maxX <= border.getMaxX() && minZ >= border.getMinZ() && maxZ <= border.getMaxZ()) return;
+        int cx0 = (int) Math.floor(minX / 16) - 1, cx1 = (int) Math.floor(maxX / 16) + 1;
+        int cz0 = (int) Math.floor(minZ / 16) - 1, cz1 = (int) Math.floor(maxZ / 16) + 1;
+        int bx0 = (int) Math.floor(border.getMinX() / 16), bx1 = (int) Math.ceil(border.getMaxX() / 16) - 1;
+        int bz0 = (int) Math.floor(border.getMinZ() / 16), bz1 = (int) Math.ceil(border.getMaxZ() / 16) - 1;
+        canvas.beginOverlay(g);
+        if (cz0 < bz0) shadeBlocks(g, cx0, cz0, cx1, Math.min(cz1, bz0 - 1), LIMIT_SHADE);
+        if (cz1 > bz1) shadeBlocks(g, cx0, Math.max(cz0, bz1 + 1), cx1, cz1, LIMIT_SHADE);
+        int rowFrom = Math.max(cz0, bz0), rowTo = Math.min(cz1, bz1);
+        if (rowFrom <= rowTo) {
+            if (cx0 < bx0) shadeBlocks(g, cx0, rowFrom, Math.min(cx1, bx0 - 1), rowTo, LIMIT_SHADE);
+            if (cx1 > bx1) shadeBlocks(g, Math.max(cx0, bx1 + 1), rowFrom, cx1, rowTo, LIMIT_SHADE);
         }
         canvas.endOverlay(g);
     }
@@ -760,11 +1266,13 @@ public final class WorldMapScreen extends Screen {
         int left = select != null ? select.textLeft(TOP_H, height, 0) : 0;
         // On a large GUI scale the Markers button (80 wide) sits under the bar, top left, wider than the strip.
         if (width < 560) left = Math.max(left, 4 + 80 + 6);
-        int maxW = Math.min(width - left - 24, 380);
+        // and of the night and World buttons down the right edge
+        int right = width - 30;
+        int maxW = Math.min(right - left - 12, 380);
         List<FormattedCharSequence> lines = font.split(Component.literal(s), maxW);
         int w = 0;
         for (FormattedCharSequence l : lines) w = Math.max(w, font.width(l));
-        int x = left + (width - left - w) / 2, y = TOP_H + 16;
+        int x = left + (right - left - w) / 2, y = pregenPanel != null ? pregenPanel[3] + 8 : TOP_H + 16;
         g.fill(x - 6, y - 4, x + w + 6, y + lines.size() * 10 + 2, 0xD0000000);
         for (FormattedCharSequence l : lines) {
             g.text(font, l, x, y, statusError ? RED : WHITE);

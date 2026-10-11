@@ -150,7 +150,7 @@ public final class FeatureRasterizer {
         Elevation m = elevationMeters;
         if (m != null) return m.sample(x, z);
         double y = elevationAt(x, z);
-        return Double.isNaN(y) ? Double.NaN : (y - cfg.seaLevelY) * cfg.metersPerBlock;
+        return Double.isNaN(y) ? Double.NaN : (y - cfg.seaLevelY) * cfg.verticalMetersPerBlock();
     }
 
     public void setWorldCover(com.berg.orbis.landcover.WorldCoverProvider provider) {
@@ -307,7 +307,7 @@ public final class FeatureRasterizer {
         for (int lz = 0; lz < stride && !any; lz += 16) {
             for (int lx = 0; lx < stride && !any; lx += 16) {
                 double y = elevation.sample(r.originX + lx, r.originZ + lz);
-                any = !Double.isNaN(y) && y < cfg.seaLevelY;
+                any = !Double.isNaN(y) && y < cfg.waterLevelY();
             }
         }
         if (!any) return;
@@ -1085,8 +1085,8 @@ public final class FeatureRasterizer {
                     budget--;
                 }
             }
-            double surface = samples.isEmpty() ? cfg.seaLevelY : median(samples);
-            boolean atSea = kind == WaterFeature.Kind.SEA || isTidal(tags) || surface <= cfg.seaLevelY + 1.0;
+            double surface = samples.isEmpty() ? cfg.waterLevelY() : median(samples);
+            boolean atSea = kind == WaterFeature.Kind.SEA || isTidal(tags) || surface <= cfg.waterLevelY() + 1.0;
             if (atSea && kind != WaterFeature.Kind.SWIMMING_POOL && kind != WaterFeature.Kind.FOUNTAIN_BASIN
                     && kind != WaterFeature.Kind.BASIN) {
                 kind = WaterFeature.Kind.SEA;
@@ -1105,7 +1105,7 @@ public final class FeatureRasterizer {
                 case FOUNTAIN_BASIN, WETLAND_WATER -> 1;
             };
             WaterFeature wf = new WaterFeature(area.id(), kind, depth, atSea, OsmTags.isTrue(tags.get("intermittent")), tags.get("name"));
-            wf.surfaceY = atSea ? cfg.seaLevelY : (int) Math.round(surface);
+            wf.surfaceY = atSea ? cfg.waterLevelY() : (int) Math.round(surface);
             r.waters.add(wf);
             short code = (short) r.waters.size();
             fillArea(r, area, (idx, x, z) -> {
@@ -1314,7 +1314,7 @@ public final class FeatureRasterizer {
                 r.sea[i] = 1;
             } else if (seaVotes[p] == landVotes[p] && cfg.seaFromElevation) {
                 double y = elevation.sample(r.originX + i % stride, r.originZ + i / stride);
-                if (!Double.isNaN(y) && y < cfg.seaLevelY) r.sea[i] = 1;
+                if (!Double.isNaN(y) && y < cfg.waterLevelY()) r.sea[i] = 1;
             }
         }
     }
@@ -1557,7 +1557,7 @@ public final class FeatureRasterizer {
                 if (!Double.isNaN(e)) base = Math.min(base, e);
             }
             if (base == Double.MAX_VALUE) continue;
-            out.add(new Cover(a.id(), rings, minX, minZ, maxX, maxZ, (int) Math.round(Math.max(base, cfg.seaLevelY - 1))));
+            out.add(new Cover(a.id(), rings, minX, minZ, maxX, maxZ, (int) Math.round(Math.max(base, cfg.waterLevelY() - 1))));
         }
         return out;
     }
@@ -1821,7 +1821,7 @@ public final class FeatureRasterizer {
                 if (Double.isNaN(e0)) e0 = Double.isNaN(e1) ? cfg.seaLevelY : e1;
                 if (Double.isNaN(e1)) e1 = e0;
                 if (kind == RoadFeature.Kind.PIER) {
-                    double base = Math.max(cfg.seaLevelY, Math.min(e0, e1));
+                    double base = Math.max(cfg.waterLevelY(), Math.min(e0, e1));
                     yStart = yEnd = base + 1;
                 } else if (bridge) {
                     // Ends: a little above both banks, or level with a bridge
@@ -2354,7 +2354,7 @@ public final class FeatureRasterizer {
                 // Centreline only: clear the ground or the water surface.
                 WaterFeature wf = r.waterAt(idx);
                 if ((r.hasCoastline && r.isSea(idx)) || (wf != null && wf.atSeaLevel)) {
-                    req = cfg.seaLevelY + Math.max(2.5, groundClearance);
+                    req = cfg.waterLevelY() + Math.max(2.5, groundClearance);
                 } else if (wf != null && wf.surfaceY != WaterFeature.FOLLOW_TERRAIN) {
                     req = wf.surfaceY + Math.max(2.5, groundClearance);
                 } else {
@@ -2513,6 +2513,15 @@ public final class FeatureRasterizer {
             if (p != null && !"no".equals(p)) parts.add(a);
             else if (b != null && !"no".equals(b)) mains.add(a);
         }
+        // A part with no building outline around it is the building itself (mapped as parts only, like Nordahl Grieg
+        // school in Bergen): as a part it was never measured (atlas, databases, lidar) and stood at the storey guess.
+        for (java.util.Iterator<OsmArea> it = parts.iterator(); it.hasNext(); ) {
+            OsmArea p = it.next();
+            if (!insideAny(p, mains)) {
+                mains.add(p);
+                it.remove();
+            }
+        }
         Materials.Style style = Materials.styleForLatitude(mapper.originLat());
         BuildingDatabases dbs = buildingDbs;
         if (dbs != null && !mains.isEmpty()) {
@@ -2549,6 +2558,69 @@ public final class FeatureRasterizer {
         }
         for (OsmArea a : mains) rasterizeBuilding(r, a, false, style, atlas);
         for (OsmArea a : parts) rasterizeBuilding(r, a, true, style, atlas);
+        if (cfg.buildingDoors) placeDoors(r);
+    }
+
+    /**
+     * One door per building, chosen once every footprint and part is in place. Chosen while each building was drawn,
+     * a door often opened onto a neighbour drawn after it, or had the wall of a part drawn over the room behind it.
+     * A part standing on the ground is a room of its own (its walls close it off from the rest of the building), so
+     * it gets a door of its own where it reaches the outside.
+     */
+    private void placeDoors(RegionRaster r) {
+        int n = r.buildings.size();
+        int[] bestScore = new int[n + 1], bestIdx = new int[n + 1], bestSide = new int[n + 1];
+        java.util.Arrays.fill(bestScore, Integer.MAX_VALUE);
+        int[] spot = new int[2];
+        for (int lz = 0; lz < r.stride; lz++) {
+            for (int lx = 0; lx < r.stride; lx++) {
+                int idx = lz * r.stride + lx;
+                int code = r.building[idx];
+                if (code <= 0) continue;
+                int flags = r.buildingFlags[idx];
+                if ((flags & RegionRaster.FLAG_EDGE) == 0 || (flags & (RegionRaster.FLAG_ROOF_ONLY | RegionRaster.FLAG_MINARET)) != 0) continue;
+                BuildingFeature bf = r.buildings.get(code - 1);
+                if (bf.minHeightBlocks > 0 || bf.heightBlocks < 2) continue;
+                if (!doorScore(r, r.originX + lx, r.originZ + lz, (short) code, bf.baseY, spot)) continue;
+                int score = spot[0];
+                if ((flags & RegionRaster.FLAG_CORNER) != 0) score += 6; // prefer a wall, not a quoin
+                if (score < bestScore[code]) {
+                    bestScore[code] = score;
+                    bestIdx[code] = idx;
+                    bestSide[code] = spot[1];
+                }
+            }
+        }
+        for (int code = 1; code <= n; code++) {
+            if (bestScore[code] == Integer.MAX_VALUE) continue;
+            r.buildingFlags[bestIdx[code]] |= (byte) (RegionRaster.FLAG_DOOR | (bestSide[code] << RegionRaster.DOOR_SIDE_SHIFT));
+        }
+    }
+
+    /**
+     * Blocks for a building height in metres. True to scale, or one block a metre (three blocks a storey) where
+     * floors stay walkable (OrbisConfig.buildingHeights): at 1:2 a true-to-scale four-storey house is six blocks,
+     * two floors a player can walk, and the city looked half-size beside the player.
+     */
+    private double buildingBlocks(double metres) {
+        return cfg.walkableBuildings() ? metres : mapper.blocks(metres);
+    }
+
+    /** Whether the area's centre lies inside one of the buildings' outlines. */
+    private static boolean insideAny(OsmArea area, List<OsmArea> buildings) {
+        LatLon c = area.centroid();
+        for (OsmArea b : buildings) {
+            for (List<LatLon> ring : b.outers()) {
+                boolean in = false;
+                for (int i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+                    LatLon p = ring.get(i), q = ring.get(j);
+                    if ((p.lat() > c.lat()) != (q.lat() > c.lat())
+                            && c.lon() < (q.lon() - p.lon()) * (c.lat() - p.lat()) / (q.lat() - p.lat()) + p.lon()) in = !in;
+                }
+                if (in) return true;
+            }
+        }
+        return false;
     }
 
     private void rasterizeBuilding(RegionRaster r, OsmArea area, boolean part, Materials.Style style, HeightStore.Loaded atlas) {
@@ -2630,6 +2702,11 @@ public final class FeatureRasterizer {
         }
         RoofShape shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
         int roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
+        // A part that says nothing of its own height is measured like a building (lidar, registers, the atlas by its
+        // position) instead of falling to the storey guess: Nordahl Grieg school in Bergen is mapped as untagged
+        // parts inside a school outline, and every part stood two storeys high over the measured whole.
+        boolean measurable = !part || (!tags.containsKey("height") && !tags.containsKey("building:height")
+                && !tags.containsKey("building:levels") && !tags.containsKey("min_height") && !tags.containsKey("building:min_level"));
 
         // Base elevation = lowest sampled footprint vertex (walls start there,
         // uphill terrain inside the footprint is cut down to it).
@@ -2644,8 +2721,8 @@ public final class FeatureRasterizer {
         }
         double ec = elevationAt(cx, cz);
         if (!Double.isNaN(ec)) base = Math.min(base, ec);
-        if (base == Double.MAX_VALUE) base = cfg.seaLevelY;
-        int baseY = (int) Math.round(Math.max(base, cfg.seaLevelY - 1));
+        if (base == Double.MAX_VALUE) base = cfg.waterLevelY();
+        int baseY = (int) Math.round(Math.max(base, cfg.waterLevelY() - 1));
         if (r.hasCoastline) {
             int cidx = r.index((int) Math.floor(cx), (int) Math.floor(cz));
             if (cidx >= 0 && r.isSea(cidx) && baseY < cfg.seaLevelY) baseY = cfg.seaLevelY;
@@ -2658,7 +2735,7 @@ public final class FeatureRasterizer {
             heightSource = "tags";
         } else if (OsmTags.parseInt(tags.get("building:levels"), -1) > 0) {
             heightSource = "tags";
-        } else if (cfg.buildingHeightsFromSurfaceModel && surfaceModel != null && !part) {
+        } else if (cfg.buildingHeightsFromSurfaceModel && surfaceModel != null && measurable) {
             double[] roof = cfg.roofsFromSurfaceModel ? roofFromSurfaceModel(rings, cx, cz, ax, az, halfA, halfB, base) : null;
             if (roof != null) {
                 // The lidar profile gives the eave and the ridge: walls to the eave, the roof up to the ridge, and
@@ -2666,20 +2743,20 @@ public final class FeatureRasterizer {
                 double eave = roof[0], ridge = roof[1];
                 heightM = ridge * cfg.metersPerBlock;
                 heightSource = "surface-model";
-                levels = Math.max(1, (int) Math.round(eave / storey));
+                levels = Math.max(1, (int) Math.round(buildingBlocks(eave * cfg.metersPerBlock) / storey));
                 if (tags.get("roof:shape") == null) {
                     if (roof[2] == 0) shape = RoofShape.FLAT;
                     else if (roof[2] == 1) shape = RoofShape.GABLED;
                     else if (roof[2] == 2) shape = RoofShape.HIPPED;
                     else shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
                 }
-                roofHeight = shape == RoofShape.FLAT ? 0 : Math.max(1, Math.min(14, (int) Math.round(ridge - eave)));
+                roofHeight = shape == RoofShape.FLAT ? 0 : Math.max(1, Math.min(14, (int) Math.round(buildingBlocks((ridge - eave) * cfg.metersPerBlock))));
             } else {
                 double measured = heightFromSurfaceModel(rings, cx, cz, ax, az, halfA, halfB, base);
                 if (!Double.isNaN(measured) && measured >= 2.0 && measured <= cfg.maxBuildingHeightBlocks) {
                     heightM = measured * cfg.metersPerBlock;
                     heightSource = "surface-model";
-                    levels = Math.max(1, (int) Math.round(measured / storey));
+                    levels = Math.max(1, (int) Math.round(buildingBlocks(heightM) / storey));
                     if (tags.get("roof:shape") == null) {
                         shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
                         roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
@@ -2691,12 +2768,12 @@ public final class FeatureRasterizer {
         // A national or city building database (France, the Netherlands, Slovenia, Vienna, New York): the building's
         // own height or floors, at any scale.
         BuildingDatabases dbs = buildingDbs;
-        if ("default".equals(heightSource) && dbs != null && !part) {
+        if ("default".equals(heightSource) && dbs != null && measurable) {
             LatLon c = area.centroid();
             BuildingDatabases.Hit hit = dbs.lookup(c.lat(), c.lon());
             if (hit != null) {
                 double hm = !Double.isNaN(hit.heightM()) ? hit.heightM() : hit.floors() * storeyM;
-                if (hm >= 2.0 && mapper.blocks(hm) <= cfg.maxBuildingHeightBlocks) {
+                if (hm >= 2.0 && buildingBlocks(hm) <= cfg.maxBuildingHeightBlocks) {
                     heightSource = "database:" + hit.source();
                     levels = hit.floors() > 0 ? hit.floors() : Math.max(1, (int) Math.round(hm / storeyM));
                     if (tags.get("roof:shape") == null) {
@@ -2711,13 +2788,15 @@ public final class FeatureRasterizer {
 
         // Still nothing? The GlobalBuildingAtlas has a height for nearly every building on Earth (satellite-derived,
         // a metre or two of noise on small houses); matched by OSM id, else by position.
-        if ("default".equals(heightSource) && atlas != null && !part) {
+        if ("default".equals(heightSource) && atlas != null && measurable) {
             LatLon c = area.centroid();
             double h = atlas.heightFor(area.id(), c.lat(), c.lon());
-            if (!Double.isNaN(h) && h >= 2.0 && mapper.blocks(h) <= cfg.maxBuildingHeightBlocks) {
+            // Too far from any atlas point for a big building: the tallest atlas building inside its outline.
+            if (Double.isNaN(h)) h = atlas.heightWithin(area.outers());
+            if (!Double.isNaN(h) && h >= 2.0 && buildingBlocks(h) <= cfg.maxBuildingHeightBlocks) {
                 heightM = h;
                 heightSource = "atlas";
-                levels = Math.max(1, (int) Math.round(mapper.blocks(h) / storey));
+                levels = Math.max(1, (int) Math.round(buildingBlocks(h) / storey));
                 if (tags.get("roof:shape") == null) {
                     shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
                     roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
@@ -2728,7 +2807,7 @@ public final class FeatureRasterizer {
         int wallHeight;
         int realLevels = levels;
         if (!Double.isNaN(heightM) && heightM > 0) {
-            int totalBlocks = (int) Math.round(mapper.blocks(heightM));
+            int totalBlocks = (int) Math.round(buildingBlocks(heightM));
             wallHeight = Math.max(1, totalBlocks - (shape == RoofShape.FLAT ? 0 : roofHeight));
             if (wallHeight < 2 && totalBlocks >= 3) {
                 roofHeight = Math.max(1, totalBlocks - 2);
@@ -2738,8 +2817,8 @@ public final class FeatureRasterizer {
             // Only a floor count (the map's, or the type's usual one): the walls are that many real storeys high, scaled
             // like a measured height, with the roof on top. At 1:2 a four-storey house is 12 m, 6 blocks of wall, like
             // its measured neighbours (it used to get 4 x 3 = 12 blocks there, twice its height).
-            wallHeight = Math.max(1, (int) Math.round(mapper.blocks(levels * storeyM)));
-            if ("church".equals(type) || "cathedral".equals(type)) wallHeight = Math.max(wallHeight, (int) Math.round(mapper.blocks(10)));
+            wallHeight = Math.max(1, (int) Math.round(buildingBlocks(levels * storeyM)));
+            if ("church".equals(type) || "cathedral".equals(type)) wallHeight = Math.max(wallHeight, (int) Math.round(buildingBlocks(10)));
         }
         wallHeight = Math.min(wallHeight, cfg.maxBuildingHeightBlocks);
         // Floors inside, storey blocks apart: no more than the walls hold.
@@ -2747,10 +2826,10 @@ public final class FeatureRasterizer {
 
         int minHeight = 0;
         double minHeightM = OsmTags.parseLength(tags.get("min_height"), Double.NaN);
-        if (!Double.isNaN(minHeightM)) minHeight = (int) Math.round(mapper.blocks(minHeightM));
+        if (!Double.isNaN(minHeightM)) minHeight = (int) Math.round(buildingBlocks(minHeightM));
         else {
             int minLevel = OsmTags.parseInt(tags.get("building:min_level"), 0);
-            if (minLevel > 0) minHeight = (int) Math.round(mapper.blocks(minLevel * storeyM));
+            if (minLevel > 0) minHeight = (int) Math.round(buildingBlocks(minLevel * storeyM));
         }
         if (minHeight >= wallHeight) minHeight = 0;
         if (roofOnly) minHeight = Math.max(minHeight, Math.max(0, wallHeight - 1));
@@ -2812,8 +2891,6 @@ public final class FeatureRasterizer {
         }
         long hash = Materials.mix(area.id());
         boolean skillionFlip = (hash & 4) != 0;
-        int doorIdx = -1;
-        int doorScore = Integer.MAX_VALUE;
         for (int z = bbox[1]; z <= bbox[3]; z++) {
             for (int x = bbox[0]; x <= bbox[2]; x++) {
                 int idx = r.index(x, z);
@@ -2843,19 +2920,7 @@ public final class FeatureRasterizer {
                     flags |= RegionRaster.FLAG_MINARET;
                 }
                 r.buildingFlags[idx] = (byte) flags;
-
-                if (edge && cfg.buildingDoors && !part && !roofOnly && minHeight == 0) {
-                    int score = doorScore(r, x, z, code, baseY);
-                    if (score != Integer.MAX_VALUE && (flags & RegionRaster.FLAG_CORNER) != 0) score += 6; // prefer a wall, not a quoin
-                    if (score < doorScore) {
-                        doorScore = score;
-                        doorIdx = idx;
-                    }
-                }
             }
-        }
-        if (doorIdx >= 0 && doorScore < Integer.MAX_VALUE) {
-            r.buildingFlags[doorIdx] |= RegionRaster.FLAG_DOOR;
         }
 
         // Real roof colour from the orthophoto when OSM has no roof tags.
@@ -2882,22 +2947,31 @@ public final class FeatureRasterizer {
         return idx >= 0 && r.building[idx] == code;
     }
 
-    /** Lower is better: distance to the nearest road/path cell in the 4 outward directions, up to 4 blocks. */
+    /** The door sides in {@link RegionRaster#DOOR_SIDE_SHIFT} order: east, west, south, north. */
+    private static final int[][] DOOR_SIDES = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+
     /**
-     * How good a spot for the building's door this edge cell is (lower is better). The door must open onto
-     * land that is not another building or water, and a villager must be able to walk out of it: the walls
-     * start at the lowest corner of the footprint, so on a slope most edges face into the hillside and the
-     * ground outside has to be within a block or so of the base (the painter cuts a three-cell step in front
-     * of the door, so up to three blocks of difference are walkable, at a price). A road nearby is a bonus.
+     * How good a spot for the building's door this wall cell is (lower is better), into spot[0], and the side it
+     * opens to into spot[1]; false when no side will do. The door must lead from a room (the cell behind it inside
+     * the same building, not more wall) onto land that is not another building or water, and a villager must be
+     * able to walk out of it: the walls start at the lowest corner of the footprint, so on a slope most edges face
+     * into the hillside and the ground outside has to be within a block or so of the base (the painter cuts a
+     * three-cell step in front of the door, so up to three blocks of difference are walkable, at a price). A gap of
+     * one cell before the next building is a poor way in; a road nearby is a bonus.
      */
-    private int doorScore(RegionRaster r, int x, int z, short code, int baseY) {
+    private boolean doorScore(RegionRaster r, int x, int z, short code, int baseY, int[] spot) {
         int best = Integer.MAX_VALUE;
-        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-        for (int[] d : dirs) {
+        for (int side = 0; side < 4; side++) {
+            int[] d = DOOR_SIDES[side];
             int nx = x + d[0], nz = z + d[1];
             int nidx = r.index(nx, nz);
             if (nidx < 0 || r.building[nidx] != 0) continue; // not an outward direction, or straight into a neighbour
             if (r.water[nidx] != 0 || (r.hasCoastline && r.isSea(nidx))) continue;
+            int inside = r.index(x - d[0], z - d[1]);
+            if (inside < 0 || r.building[inside] != code
+                    || (r.buildingFlags[inside] & (RegionRaster.FLAG_EDGE | RegionRaster.FLAG_ROOF_ONLY | RegionRaster.FLAG_MINARET)) != 0) {
+                continue; // a wall (or another building's) right behind the door
+            }
             double e = elevationAt(nx, nz);
             int diff = Double.isNaN(e) ? 0 : Math.abs((int) Math.round(e) - baseY);
             int terrain = diff <= 1 ? 0 : diff <= 3 ? (diff - 1) * 12 : 100 + diff * 10;
@@ -2912,9 +2986,17 @@ public final class FeatureRasterizer {
                     break;
                 }
             }
-            best = Math.min(best, score);
+            int beyond = r.index(x + 2 * d[0], z + 2 * d[1]);
+            if (beyond >= 0 && (r.building[beyond] != 0 || r.water[beyond] != 0)) score += 40; // a one-cell gap
+            int deeper = r.index(x - 2 * d[0], z - 2 * d[1]);
+            if (deeper < 0 || r.building[deeper] != code) score += 10; // a room one cell deep
+            if (score < best) {
+                best = score;
+                spot[1] = side;
+            }
         }
-        return best;
+        spot[0] = best;
+        return best != Integer.MAX_VALUE;
     }
 
     private static int defaultLevels(String type, double halfA, double halfB, long id) {

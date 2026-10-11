@@ -202,12 +202,19 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                                  ResourceKey<Level> dimension) {
         WorldModel model = model();
         if (!model.cfg().vanillaStructures || HardLimit.blocks(chunk.getPos().x(), chunk.getPos().z())) return;
-        super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager, dimension);
+        ChunkPos chunkPos = chunk.getPos();
+        // The band first: the cave biomes vanilla checks a start against (an Ancient City's Deep Dark) are found by
+        // it, in the band's vanilla frame (RealWorldBiomeSource.VANILLA_FRAME).
+        int bandTop = model.band().top(chunkPos.getMinBlockX() >> 4, chunkPos.getMinBlockZ() >> 4);
+        com.berg.orbis.biome.RealWorldBiomeSource.VANILLA_FRAME.set(Boolean.TRUE);
+        try {
+            super.createStructures(registryAccess, structureState, structureManager, chunk, templateManager, dimension);
+        } finally {
+            com.berg.orbis.biome.RealWorldBiomeSource.VANILLA_FRAME.set(Boolean.FALSE);
+        }
         java.util.Map<Structure, StructureStart> starts = chunk.getAllStarts();
         if (starts.isEmpty()) return;
         java.util.Map<Structure, StructureStart> kept = new java.util.HashMap<>();
-        ChunkPos chunkPos = chunk.getPos();
-        int bandTop = model.band().top(chunkPos.getMinBlockX() >> 4, chunkPos.getMinBlockZ() >> 4);
         Registry<Structure> registry = registryAccess.lookupOrThrow(Registries.STRUCTURE);
         for (java.util.Map.Entry<Structure, StructureStart> e : starts.entrySet()) {
             StructureStart start = e.getValue();
@@ -219,7 +226,10 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
             // buries below the generator's sea level, i.e. below Y -1700 here), or anything vanilla already put
             // under the band top: all of it is moved into the band.
             String path = registry.getKey(e.getKey()).getPath();
-            boolean underground = !path.equals("trail_ruins") && (isUnderground(e.getKey()) || start.getBoundingBox().maxY() < bandTop);
+            // Buried treasure finds its own place when it is built (the first block over sandstone or stone under the
+            // beach), wherever its box is: it stays out of the band and its log lines.
+            boolean underground = !path.equals("trail_ruins") && !path.equals("buried_treasure")
+                    && (isUnderground(e.getKey()) || start.getBoundingBox().maxY() < bandTop);
             if (underground) {
                 BoundingBox before = start.getBoundingBox();
                 sinkBelowGround(model, start, bandTop);
@@ -233,8 +243,9 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
             } else if (isWaterStructure(registry.getKey(e.getKey()).getPath())
                     ? footprintIsOpenWater(model, start.getBoundingBox(), depthNeeded(registry.getKey(e.getKey()).getPath(), start.getBoundingBox()))
                     : footprintIsFree(model, start.getBoundingBox())) {
-                if (registry.getKey(e.getKey()).getPath().equals("monument")) moveMonumentToSeaLevel(start, getSeaLevel());
+                if (registry.getKey(e.getKey()).getPath().equals("monument")) moveMonumentToSeaLevel(start, model().cfg().waterLevelY());
                 if (path.equals("trail_ruins")) buryJustBelowGround(model, start);
+                if (path.equals("buried_treasure")) System.out.println("[orbis] buried treasure at chunk " + chunkPos);
                 kept.put(e.getKey(), start);
             } else {
                 kept.put(e.getKey(), StructureStart.INVALID_START);
@@ -327,7 +338,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
      */
     private static int waterDepth(WorldModel model, RegionRaster r, int idx, int x, int z) {
         com.berg.orbis.feature.WaterFeature wf = r.waterAt(idx);
-        int sea = model.cfg().seaLevelY;
+        int sea = model.cfg().waterLevelY();
         if ((r.hasCoastline && r.isSea(idx)) || (wf != null && wf.atSeaLevel)
                 || (wf == null && !r.hasCoastline && model.cfg().seaFromElevation && model.terrainHeight(x, z) < sea)) {
             return Math.max(0, sea - model.terrainHeight(x, z));
@@ -387,8 +398,22 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
      * here; the mod does its own).
      */
     private void placeStructures(WorldGenLevel level, ChunkAccess chunk, StructureManager structureManager) {
+        placeStructures(level, chunk.getPos(), structureManager);
+    }
+
+    /** The same for the chunk at chunkPos, through any level (a cubic world's decoration, see versions/26.3 cubic). */
+    public void placeStructures(WorldGenLevel level, ChunkPos chunkPos, StructureManager structureManager) {
+        placeStructures(level, chunkPos, structureManager, java.util.function.UnaryOperator.identity());
+    }
+
+    /**
+     * As {@link #placeStructures(WorldGenLevel, ChunkPos, StructureManager)}, each start placed as {@code toPlace} gives it: a cubic world's
+     * decoration places copies (a chunk's decoration can be worked out more than once there, and placing changes a start's pieces: a
+     * mineshaft corridor remembers it placed its spawner, so a second time came out differently).
+     */
+    public void placeStructures(WorldGenLevel level, ChunkPos chunkPos, StructureManager structureManager,
+                                java.util.function.UnaryOperator<StructureStart> toPlace) {
         if (!structureManager.shouldGenerateStructures()) return;
-        ChunkPos chunkPos = chunk.getPos();
         SectionPos sectionPos = SectionPos.of(chunkPos, level.getMinSectionY());
         BlockPos origin = sectionPos.origin();
         Registry<Structure> registry = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
@@ -398,6 +423,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         long seed = random.setDecorationSeed(level.getSeed(), origin.getX(), origin.getZ());
         BoundingBox writable = new BoundingBox(chunkPos.getMinBlockX(), level.getMinY(), chunkPos.getMinBlockZ(),
                 chunkPos.getMaxBlockX(), level.getMaxY(), chunkPos.getMaxBlockZ());
+        hollowForCities(level, structureManager, sectionPos, registry, writable);
         int steps = GenerationStep.Decoration.values().length;
         for (int step = 0; step < steps; step++) {
             int index = 0;
@@ -405,10 +431,49 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                 random.setFeatureSeed(seed, index++, step);
                 try {
                     for (StructureStart start : Mc.startsForStructure(structureManager, sectionPos.x(), sectionPos.z(), structure)) {
-                        start.placeInChunk(level, structureManager, this, random, writable, chunkPos);
+                        toPlace.apply(start).placeInChunk(level, structureManager, this, random, writable, chunkPos);
                     }
                 } catch (RuntimeException e) {
-                    System.err.println("[orbis] Structure " + registry.getKey(structure) + " failed in chunk " + chunkPos + ": " + e);
+                    StringBuilder at = new StringBuilder();
+                    StackTraceElement[] trace = e.getStackTrace();
+                    for (int i = 0; i < Math.min(8, trace.length); i++) at.append(System.lineSeparator()).append("    at ").append(trace[i]);
+                    System.err.println("[orbis] Structure " + registry.getKey(structure) + " failed in chunk " + chunkPos + ": " + e + at);
+                }
+            }
+        }
+    }
+
+    /**
+     * The hollow an Ancient City stands in. Vanilla digs it with its terrain noise around the pieces of structures
+     * with the "beard_box" terrain adaptation (the Beardifier), and the city's templates hold no air of their own:
+     * without it the first Ancient Cities (4 Oct 2026) were sealed in rock, only the bits that met a cave showing.
+     * Here each piece's box, from its floor up, is emptied in this chunk before the structure is placed; never within
+     * ten blocks of the real ground.
+     */
+    private void hollowForCities(WorldGenLevel level, StructureManager manager, SectionPos sectionPos, Registry<Structure> registry,
+                                 BoundingBox writable) {
+        BlockState air = Blocks.CAVE_AIR.defaultBlockState();
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        WorldModel model = model();
+        for (Structure structure : (Iterable<Structure>) registry.stream()::iterator) {
+            if (structure.terrainAdaptation() != TerrainAdjustment.BEARD_BOX) continue;
+            for (StructureStart start : Mc.startsForStructure(manager, sectionPos.x(), sectionPos.z(), structure)) {
+                if (start == null || !start.isValid()) continue;
+                for (StructurePiece piece : start.getPieces()) {
+                    BoundingBox b = piece.getBoundingBox();
+                    if (!b.intersects(writable)) continue;
+                    int floor = b.minY() + (piece instanceof net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece pe
+                            ? pe.getGroundLevelDelta() : 0);
+                    floor = Math.max(floor, level.getMinY() + 6);
+                    for (int x = Math.max(b.minX(), writable.minX()); x <= Math.min(b.maxX(), writable.maxX()); x++) {
+                        for (int z = Math.max(b.minZ(), writable.minZ()); z <= Math.min(b.maxZ(), writable.maxZ()); z++) {
+                            int top = Math.min(b.maxY(), model.terrainHeight(x, z) - 10);
+                            for (int y = floor; y <= top; y++) {
+                                p.set(x, y, z);
+                                if (!level.getBlockState(p).isAir()) level.setBlock(p, air, 2);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -424,8 +489,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
     private static CompletableFuture<RegionRaster> regionFuture(WorldModel model, ChunkAccess chunk) {
         if (model.regions() == null) return CompletableFuture.completedFuture(null);
         ChunkPos pos = chunk.getPos();
-        if (!model.cfg().waitForOsm || model.farFromPlayers(pos.getMinBlockX() + 8, pos.getMinBlockZ() + 8)) {
-            // Far from everyone (distant-horizon LOD generation): terrain only, right now.
+        if (!model.cfg().waitForOsm) {
             return CompletableFuture.completedFuture(model.rasterIfLoaded(pos.getMinBlockX(), pos.getMinBlockZ()));
         }
         return model.regions().futureForBlock(pos.getMinBlockX(), pos.getMinBlockZ());
@@ -438,8 +502,11 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         // Outside the hard limit: nothing to wait for (the biome source answers without the map there).
         if (HardLimit.blocks(chunk.getPos().x(), chunk.getPos().z())) return super.createBiomes(randomState, blender, structureManager, chunk);
         // Biomes depend on water / land cover, so wait (asynchronously) for the region first.
-        return regionFuture(model, chunk).thenComposeAsync(
-                raster -> super.createBiomes(randomState, blender, structureManager, chunk), Util.backgroundExecutor());
+        return regionFuture(model, chunk).thenComposeAsync(raster -> {
+            // Layout 2's cave biomes sit in the underground band: know its top before the biomes are filled in.
+            if (model.cfg().undergroundVersion >= 2) model.band().top(chunk.getPos().x(), chunk.getPos().z());
+            return super.createBiomes(randomState, blender, structureManager, chunk);
+        }, Util.backgroundExecutor());
     }
 
     @Override
@@ -593,13 +660,18 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         };
 
         ColumnPainter painter = model.painter();
+        // Layout 2: deepslate from the underground band's vanilla Y 0, so caves show vanilla's stone over deepslate.
+        boolean layout2 = cfg.undergroundVersion >= 2;
+        int deepslateBase = layout2 ? model.band().deepslateTop(minX >> 4, minZ >> 4) : cfg.seaLevelY - 60;
+        int[][] deepslateLine = layout2 ? model.band().deepslateLine(minX >> 4, minZ >> 4) : null;
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int x = minX + lx, z = minZ + lz;
                 int idx = raster == null ? -1 : raster.index(x, z);
                 BiomeClassifier.Climate climate = model.climateWithSnow(x, z, ok[lx][lz] ? raw[lx][lz] : Double.NaN);
                 try {
-                    painter.paint(sink, x, z, terrain[lx][lz], climate, raster, idx);
+                    int deepslate = layout2 ? deepslateLine[lx][lz] : deepslateBase;
+                    painter.paint(sink, x, z, terrain[lx][lz], climate, raster, idx, deepslate);
                 } catch (RuntimeException e) {
                     // One bad column must not lose the chunk; fall back to bare terrain.
                     System.err.println("[orbis] Column " + x + "," + z + " failed: " + e);
@@ -617,7 +689,9 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         for (int i = 0; i < touched.length; i++) if (touched[i]) sections[i].recalcBlockCounts();
         if (cfg.generateOres) {
             long seed = Double.doubleToLongBits(cfg.originLat) * 31 + Double.doubleToLongBits(cfg.originLon);
-            OreGenerator.place(chunk, terrain, cfg.seaLevelY - 60, cfg.minY, seed);
+            // Layout 2: the rock decides (stone takes plain ore, deepslate deepslate ore): the blended line can put
+            // stone a little below this chunk's own deepslate Y.
+            OreGenerator.place(chunk, terrain, layout2 ? Integer.MIN_VALUE : deepslateBase, cfg.minY, seed);
         }
         for (BlockPos p : postProcess) chunk.markPosForPostProcessing(p);
     }
@@ -660,13 +734,19 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         }
     }
 
-    private static boolean needsPostProcessing(BlockState state) {
+    /** Whether a block must be fitted to its neighbours once they exist (stairs, walls, fences, rails, doors). */
+    public static boolean needsPostProcessing(BlockState state) {
         Block b = state.getBlock();
         return b instanceof CrossCollisionBlock || b instanceof WallBlock || b instanceof BaseRailBlock
                 || b instanceof StairBlock || b instanceof DoorBlock;
     }
 
     private static void pasteLandmarks(WorldModel model, ChunkAccess chunk, int minX, int minZ, ColumnPainter.Sink sink) {
+        pasteLandmarks(model, minX, minZ, sink);
+    }
+
+    /** The landmark schematics over the 16 x 16 columns from minX, minZ, through the sink. */
+    public static void pasteLandmarks(WorldModel model, int minX, int minZ, ColumnPainter.Sink sink) {
         for (LandmarkRegistry.Placement pl : model.landmarks().placements()) {
             if (!pl.intersectsChunk(minX, minZ)) continue;
             int base = pl.baseY(model::terrainHeight);
@@ -685,7 +765,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
     }
 
     /** Replaces a reading that differs wildly from its neighbours' median (bad DEM pixel) with that median. */
-    private static double smoothed(double[][] raw, boolean[][] ok, int lx, int lz, double threshold, double fallback) {
+    public static double smoothed(double[][] raw, boolean[][] ok, int lx, int lz, double threshold, double fallback) {
         double[] neighbours = new double[8];
         int n = 0;
         for (int dx = -1; dx <= 1; dx++) {
@@ -725,6 +805,8 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
             try {
                 // Dungeons, geodes, fossils, springs, lichen: vanilla's own features, in the underground band.
                 UndergroundFeatures.place(model, level, this, chunk.getPos());
+                // Moss, azaleas, cave vines and spore blossoms, dripstone, sculk: the cave biomes' own decoration.
+                if (model.cfg().undergroundVersion >= 2) UndergroundBiomes.place(model, level, this, chunk.getPos());
             } catch (RuntimeException e) {
                 System.err.println("[orbis] Underground features failed for chunk " + chunk.getPos() + ": " + e);
             }
@@ -751,7 +833,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         WorldModel model = model();
         int terrain = model.terrainHeight(x, z);
         if (type != Heightmap.Types.OCEAN_FLOOR && type != Heightmap.Types.OCEAN_FLOOR_WG) {
-            terrain = Math.max(terrain, getSeaLevel());
+            terrain = Math.max(terrain, model().cfg().waterLevelY());
         }
         return Math.max(level.getMinY() + 1, Math.min(level.getMaxY(), terrain + 1));
     }
@@ -764,7 +846,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         for (int i = 0; i < states.length; i++) {
             int y = level.getMinY() + i;
             states[i] = y <= terrain ? Blocks.STONE.defaultBlockState()
-                    : y <= getSeaLevel() ? Blocks.WATER.defaultBlockState()
+                    : y <= model().cfg().waterLevelY() ? Blocks.WATER.defaultBlockState()
                     : Blocks.AIR.defaultBlockState();
         }
         return new NoiseColumn(level.getMinY(), states);

@@ -15,6 +15,8 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -111,6 +113,133 @@ public final class WorldHeight {
             }
         }
         return samples == 0 ? null : new Peak(best, bestY, bestX, bestZ, samples);
+    }
+
+    // ------------------------------------------------------------------ high-altitude window
+
+    /**
+     * Room under the window's low ground: its bottom squeeze (lower valleys ease down through it, keeping their shape)
+     * and the floor's 8, so the low ground itself stays 1:1, with the underground (band, caves, ores) below it.
+     */
+    public static final int WINDOW_FLOOR_ROOM = 8 + com.berg.orbis.dem.VerticalMapping.WINDOW_FLOOR_SQUEEZE + 8;
+    /** The window's squeeze range under the ceiling: small, so its highest mountain stays 1:1. */
+    public static final int WINDOW_SOFT_CEILING = 64;
+
+    /** A world's height range laid over its area's own heights: the sea level that puts it there. */
+    public record Window(int seaLevelY, double lowMeters, double highMeters) {}
+
+    /**
+     * For a world whose area has no sea and lies high (mountains, plateaus): its 4,064 blocks laid over the area's
+     * own heights instead of anchored to sea level, all of it 1:1. Anchored to sea level, a world around Everest
+     * spends some 1,300 blocks under its lowest valley and has to squeeze the mountain into the rest (the last
+     * 900 m from the South Col to the summit came out 139 blocks high). The lowest ground (but the lowest 5%)
+     * goes {@link #WINDOW_FLOOR_ROOM} above the floor; if the area is taller than the window, its highest point goes
+     * just under the ceiling instead and only the deepest valleys ease towards the floor. Sea level then lies under
+     * the floor: the world's heights above sea level stay real (1:1), there is simply no sea in it. Null where the
+     * usual mapping is right: any sea or coast in the area, or ground too low for the window to gain much.
+     */
+    public static Window window(WorldModel model) {
+        if (model == null || !model.cfg().highAltitudeWindow || model.cfg().uniformHeights) return null;
+        OrbisConfig cfg = model.cfg();
+        List<Double> e = areaHeights(model);
+        if (e == null) return null;
+        double lowest = e.get(0), low = e.get(e.size() / 20), high = e.get(e.size() - 1);
+        if (lowest <= 50) return null; // sea or coast: sea level must stay in the world
+        int floorY = cfg.minY + WINDOW_FLOOR_ROOM;
+        int topY = cfg.minY + OrbisConfig.DIMENSION_HEIGHT - 1 - 16 - WINDOW_SOFT_CEILING;
+        int seaForLow = floorY - (int) Math.round(low / cfg.metersPerBlock);
+        int seaForHigh = topY - (int) Math.ceil(high / cfg.metersPerBlock);
+        int sea = Math.min(seaForLow, seaForHigh);
+        if (sea > cfg.seaLevelY - 200 || sea >= cfg.minY) return null; // the usual world has room enough
+        System.out.println(String.format(Locale.ROOT, "[orbis] High-altitude window: the area's ground lies %.0f-%.0f m (lowest %.0f m, %d samples):"
+                        + " sea level Y %d instead of %d, %.0f m at Y %d, %.0f m at Y %d, all 1:1%s", low, high, lowest, e.size(), sea, cfg.seaLevelY,
+                low, sea + (int) Math.round(low / cfg.metersPerBlock), high, sea + (int) Math.round(high / cfg.metersPerBlock),
+                seaForHigh < seaForLow ? " (taller than the world: the lowest valleys ease towards the floor)" : ""));
+        return new Window(sea, low, high);
+    }
+
+    /**
+     * The ground heights (metres) the world's creation goes by, sorted: 30 km round the origin, the custom spawn's
+     * 10 km, the area selected on the map. Null with too few known.
+     */
+    static List<Double> areaHeights(WorldModel model) {
+        OrbisConfig cfg = model.cfg();
+        List<Double> e = new ArrayList<>();
+        int radius = (int) Math.round(FIT_RADIUS_M / cfg.metersPerBlock), step = Math.max(16, radius / 60);
+        for (int z = -radius; z <= radius; z += step) {
+            for (int x = -radius; x <= radius; x += step) {
+                if ((long) x * x + (long) z * z > (long) radius * radius) continue;
+                sample(model, x, z, e);
+            }
+        }
+        if (cfg.customSpawn) {
+            int[] c = model.mapper().toBlock(cfg.spawnLat, cfg.spawnLon);
+            int r = (int) Math.round(10_000 / cfg.metersPerBlock), st = Math.max(16, r / 30);
+            for (int z = -r; z <= r; z += st) for (int x = -r; x <= r; x += st) if ((long) x * x + (long) z * z <= (long) r * r) sample(model, c[0] + x, c[1] + z, e);
+        }
+        if (cfg.pregenShapes != null && !cfg.pregenShapes.isEmpty()) {
+            ChunkSelection sel = ChunkSelection.ofSettings(cfg.pregenShapes, model.mapper());
+            if (sel != null && !sel.isEmpty()) {
+                int st = (int) Math.max(1, Math.ceil(Math.sqrt(sel.count() / (double) PEAK_SAMPLES)));
+                for (int cz = sel.firstRow(); cz <= sel.lastRow(); cz += st) {
+                    int[] runs = sel.rawRuns(cz);
+                    if (runs == null) continue;
+                    for (int i = 0; i < runs.length; i += 2) for (int cx = runs[i]; cx <= runs[i + 1]; cx += st) sample(model, (cx << 4) + 8, (cz << 4) + 8, e);
+                }
+            }
+        }
+        if (e.size() < 16) return null;
+        java.util.Collections.sort(e);
+        return e;
+    }
+
+    // ------------------------------------------------------------------ uniform heights
+
+    /** A uniform-heights world: its one factor (real metres per block of height, over the scale) and the ground it fits. */
+    public record Uniform(double squash, double highMeters) {}
+
+    /**
+     * Every height of the world divided by one factor, just enough that the area's highest ground stays under the
+     * ceiling's short squeeze ({@link #WINDOW_SOFT_CEILING}): 1 (true heights) where it fits already, about 1.3
+     * for the Alps, 2.4 for Everest. Taller ground elsewhere is squeezed at the ceiling. {@code requested} is the
+     * world's fixed height, or 0 for the full height (then fitted to what the area needs).
+     */
+    public static Uniform uniform(WorldModel model, int requested) {
+        if (model == null || !model.cfg().uniformHeights) return null;
+        OrbisConfig cfg = model.cfg();
+        List<Double> e = areaHeights(model);
+        if (e == null) return null;
+        double high = e.get(e.size() - 1);
+        int height = requested > 0 ? snap(requested) : OrbisConfig.DIMENSION_HEIGHT;
+        int topY = cfg.minY + height - 1 - 16 - WINDOW_SOFT_CEILING;
+        double room = Math.max(1, topY - cfg.seaLevelY) * cfg.metersPerBlock;
+        double squash = Math.min(16, Math.max(1, high / room));
+        System.out.println(String.format(Locale.ROOT, "[orbis] Uniform heights: the area's highest ground is %.0f m (%d samples): 1 block up = %.2f m"
+                + " everywhere (%.2f times flatter than the scale), highest ground at Y %d", high, e.size(), cfg.metersPerBlock * squash, squash,
+                cfg.seaLevelY + (int) Math.ceil(high / (cfg.metersPerBlock * squash))));
+        return new Uniform(squash, high);
+    }
+
+    /** The height a uniform-heights world needs: its highest ground plus the usual room above, under the full height. */
+    public static int uniformHeight(WorldModel model, Uniform u) {
+        OrbisConfig cfg = model.cfg();
+        int maxY = cfg.seaLevelY + (int) Math.ceil(u.highMeters() / (cfg.metersPerBlock * u.squash()));
+        return snap(maxY + MARGIN_ABOVE - cfg.minY + 1);
+    }
+
+    private static void sample(WorldModel model, int x, int z, List<Double> out) {
+        try {
+            double v = model.coarseElevation(x, z);
+            if (!Double.isNaN(v)) out.add(v);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    /** The height a window world needs: its highest ground plus the usual room above, under the full height. */
+    public static int windowHeight(WorldModel model, Window w) {
+        OrbisConfig cfg = model.cfg();
+        int maxY = w.seaLevelY() + (int) Math.ceil(w.highMeters() / cfg.metersPerBlock);
+        return snap(maxY + MARGIN_ABOVE - cfg.minY + 1);
     }
 
     public static int resolve(int requested, WorldModel model) {
@@ -303,6 +432,7 @@ public final class WorldHeight {
             }
             Path level = gameDir.resolve(levelName);
             if (Files.exists(level.resolve("level.dat"))) {
+                StructureDensity.refresh(level.resolve("datapacks"));
                 // An existing world keeps its height; an Orbis one gets this month's season before it loads.
                 if (Files.isDirectory(level.resolve("datapacks").resolve(PACK_NAME))) {
                     double lat = com.berg.orbis.sky.Seasons.worldLatitude(level);
@@ -315,6 +445,7 @@ public final class WorldHeight {
             if (!isOrbisLevelType(props)) return;
             int height = resolve(cfg.worldHeight, model);
             writePack(level.resolve("datapacks"), height);
+            StructureDensity.writePack(level.resolve("datapacks"), cfg.undergroundStructureShare);
             System.out.println("[orbis] New world '" + levelName + "': height " + height + " written to datapacks/" + PACK_NAME);
         } catch (IOException | RuntimeException e) {
             System.err.println("[orbis] Could not prepare the world height for the server: " + e);

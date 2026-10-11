@@ -66,6 +66,24 @@ public class DemTileProvider implements TileSource {
     private final long pixelBudget;
     private long cachedPixels;
 
+    /** A change made to every tile of one zoom as it is handed out (the downloaded tile on disk stays as it came). */
+    public interface TileCorrection {
+        float[][] correct(int zoom, int x, int y, float[][] tile);
+    }
+
+    private volatile TileCorrection correction;
+    private volatile int correctionZoom = -1;
+
+    /** Applies a correction to the tiles of one zoom (the world's terrain zoom), from now on. */
+    public void setCorrection(int zoom, TileCorrection c) {
+        synchronized (memoryCache) {
+            memoryCache.clear();
+            cachedPixels = 0;
+        }
+        this.correctionZoom = zoom;
+        this.correction = c;
+    }
+
     public DemTileProvider(Path cacheDir, String urlTemplate, int memoryTiles) {
         this.urlTemplate = urlTemplate;
         this.legacyLayout = LEGACY_AWS_URL.equals(urlTemplate);
@@ -180,6 +198,8 @@ public class DemTileProvider implements TileSource {
         CompletableFuture<float[][]> f = loading.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> load(zoom, x, y, k), DOWNLOADS));
         try {
             float[][] tile = f.join();
+            TileCorrection c = correction;
+            if (c != null && zoom == correctionZoom) tile = c.correct(zoom, x, y, tile);
             remember(key, tile);
             recentFailures.remove(key);
             return tile;
@@ -190,6 +210,23 @@ public class DemTileProvider implements TileSource {
             throw e;
         } finally {
             loading.remove(key, f);
+        }
+    }
+
+    /**
+     * Puts a downloaded file in the cache through a temporary file of this thread's own. Two threads can load one tile
+     * at once (a parent tile for two missing children): with one shared temporary name the second move was refused on
+     * Windows and that tile's terrain fell to sea level (Everest far-view benchmark, 6 Oct 2026). When another thread
+     * has put the file there meanwhile, theirs stays.
+     */
+    static void writeCached(Path target, byte[] bytes) throws IOException {
+        Path tmp = target.resolveSibling(target.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
+        Files.write(tmp, bytes);
+        try {
+            Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            Files.deleteIfExists(tmp);
+            if (!Files.exists(target)) throw e;
         }
     }
 
@@ -217,9 +254,7 @@ public class DemTileProvider implements TileSource {
                     Files.write(missing, new byte[0]);
                     return fromParent(zoom, x, y);
                 }
-                Path tmp = cached.resolveSibling(cached.getFileName() + ".tmp");
-                Files.write(tmp, pngBytes);
-                Files.move(tmp, cached, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                writeCached(cached, pngBytes);
             }
             float[][] tile = decodeTerrarium(pngBytes);
             if (zoom > 0 && !plausible(tile)) {
@@ -293,6 +328,18 @@ public class DemTileProvider implements TileSource {
             if (tile != parent && tile.length == n) return tile[Math.floorMod(iy, n)][Math.floorMod(ix, n)];
         }
         return parent[Math.max(0, Math.min(n - 1, iy))][Math.max(0, Math.min(n - 1, ix))];
+    }
+
+    /**
+     * Whether the server itself has this tile, not one built from a coarser tile: Mapterhorn serves zoom 13 and finer
+     * only over national surveys. Loads the tile when that is not known yet (a 404 leaves its marker on disk).
+     */
+    public boolean hasNativeTile(int zoom, int x, int y) {
+        Path tile = cacheDir.resolve(zoom + "_" + x + "_" + y + (legacyLayout ? ".png" : ".tile"));
+        if (Files.exists(tile)) return true;
+        if (Files.exists(cacheDir.resolve(zoom + "_" + x + "_" + y + ".missing"))) return false;
+        load(zoom, x, y, zoom + "/" + x + "/" + y); // not kept in memory: at the corrected zoom it would be served uncorrected
+        return Files.exists(tile);
     }
 
     /** A tile through the memory cache, loading it here (not through the async path) so nested loads cannot wait on each other. */

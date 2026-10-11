@@ -123,7 +123,7 @@ public final class Residents {
                             for (int off = 0; off < 2 * width && ok; off++) {
                                 int x = x0 + d.getStepX() * c + p.getStepX() * side * off;
                                 int z = z0 + d.getStepZ() * c + p.getStepZ() * side * off;
-                                ok = interior(r, x, z, bf);
+                                ok = interior(r, x, z, bf) && !ColumnPainter.behindDoor(r, x, z);
                             }
                         }
                         if (ok) return new int[]{x0, z0, d.getStepX(), d.getStepZ(), p.getStepX() * side, p.getStepZ() * side, len, width};
@@ -228,11 +228,11 @@ public final class Residents {
                 for (int dz = -d; dz <= d; dz++) {
                     if (Math.max(Math.abs(dx), Math.abs(dz)) != d) continue;
                     int fx = ax + dx, fz = az + dz;
-                    if (!roomFor(level, r, bf, stairs, fx, fz, floorY)) continue;
+                    if (!roomFor(level, r, bf, stairs, fx, fz, floorY) || !bedHeadroom(level, fx, fz, floorY)) continue;
                     for (int i = 0; i < 4; i++) {
                         Direction dir = dirs[(start + i) & 3];
                         int hx = fx + dir.getStepX(), hz = fz + dir.getStepZ();
-                        if (!roomFor(level, r, bf, stairs, hx, hz, floorY)) continue;
+                        if (!roomFor(level, r, bf, stairs, hx, hz, floorY) || !bedHeadroom(level, hx, hz, floorY)) continue;
                         BlockState bed = BEDS[(int) Math.floorMod(h >> 16, (long) BEDS.length)]
                                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir);
                         level.set(fx, floorY + 1, fz, bed.setValue(BedBlock_PART, BedPart.FOOT));
@@ -245,11 +245,20 @@ public final class Residents {
         return null;
     }
 
+    /**
+     * A villager wakes standing on its bed when no cell beside it will do, and then reaches 3.5 blocks above the
+     * floor: a bed needs a third block of air over it. Low houses at 1:2 (Kathmandu, Oct 2026) had two, and their
+     * residents suffocated every morning.
+     */
+    private static boolean bedHeadroom(SettlementBuilder.Grid level, int x, int z, int floorY) {
+        return level.get(x, floorY + 3, z).isAir();
+    }
+
     private static final net.minecraft.world.level.block.state.properties.EnumProperty<BedPart> BedBlock_PART = BlockStateProperties.BED_PART;
 
     /** Interior cell off the staircase with a solid floor and two blocks of air above it. */
     private static boolean roomFor(SettlementBuilder.Grid level, RegionRaster r, BuildingFeature bf, int[] stairs, int x, int z, int floorY) {
-        if (!interior(r, x, z, bf) || onStrip(stairs, x, z)) return false;
+        if (!interior(r, x, z, bf) || onStrip(stairs, x, z) || ColumnPainter.behindDoor(r, x, z)) return false;
         BlockState floor = level.get(x, floorY, z);
         if (!floor.isSolid() || floor.getBlock() instanceof net.minecraft.world.level.block.BedBlock
                 || floor.getBlock() instanceof net.minecraft.world.level.block.StairBlock) return false;

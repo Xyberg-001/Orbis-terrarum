@@ -25,6 +25,8 @@ public final class RegionRaster {
     public static final int FLAG_GABLE_END = 8;
     public static final int FLAG_ROOF_ONLY = 16;
     public static final int FLAG_CORNER = 32;
+    /** A door's outward side, in the top two bits of its flags: 0 east, 1 west, 2 south, 3 north. */
+    public static final int DOOR_SIDE_SHIFT = 6;
 
     public static final short NO_Y = Short.MIN_VALUE;
 
