@@ -75,6 +75,8 @@ New
 - Far view with Voxy in singleplayer: land shown from the map data before it exists.
 - Mountains at 1:1: an area high above the sea (the Himalaya) gets the world's height
   laid over its own ground, 1:1 from the valleys to the summits.
+- True height (optional, Minecraft 26.3): with Cubic Worlds installed, a world can be
+  cubic: the Earth at 1:1 from the deepest sea floor to the top of Everest.
 - Lush Caves, Dripstone Caves and the Deep Dark underground.
 - Bare-earth terrain (GEDTM30) outside the lidar countries: no more forests and
   buildings baked into the ground.
