@@ -1361,8 +1361,20 @@ No extra software or DNS change is needed on the player's side.
   left the ruins 14 to 41 blocks deep.
   Surface ones (villages, temples, outposts, ruined portals, beached
   shipwrecks, igloos, mansions) are placed by vanilla's spread rules but a
-  start whose footprint touches a real building, road, rail or water body is
-  dropped, so they only appear on empty land. Sea ones (shipwrecks, ocean
+  start whose footprint touches a real building, road, rail, lake, river or
+  the sea is dropped, so they only appear on open land. Footpaths, hiking
+  trails, steps, forest tracks, streams and ditches do not count (since
+  11 Oct 2026: the map has them on nearly every hillside, and around Bergen
+  at 1:2 they had left 6 villages in the whole pregenerated area;
+  `blocksStructure`). Vanilla shapes the ground under and in the pieces of
+  "beard_thin" structures (villages, pillager outposts, abandoned camps)
+  with its terrain noise, and their templates hold no air, so here each
+  rigid piece (a house, a tower; not the paths) has the ground cleared from
+  its floor up, to the hill's top where it is cut into a slope, and a gap
+  under its floor filled, topped with the ground's own block
+  (`groundForPiece`; before this, houses on a slope were up to half full of
+  dirt). Ancient Cities ("beard_box") get their hollow the same way
+  (`hollowForCity`). Sea ones (shipwrecks, ocean
   ruins, monuments; vanilla still asks for ocean biomes) need 90% of the
   footprint to be open water at least as deep as they are tall: 8 blocks for
   a wreck, the ruin's height (5..12) for a ruin, 24 for a monument

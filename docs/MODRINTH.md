@@ -87,6 +87,8 @@ Fixed
 - Terrain walls along tile edges where only 30 m terrain data exists (most of the world
   outside the lidar countries, e.g. the Himalaya).
 - Dry sea floor and water walls along some coasts; villages and outposts on open sea.
+- Village houses, pillager outposts and abandoned camps no longer filled with earth on
+  slopes; villages also appear where only footpaths, tracks or streams cross the land.
 - Trail ruins buried deep underground; buried treasure on mountainsides.
 - Road steps at tunnel junctions and uneven bridge decks.
 - /locate, eyes of ender, explorer maps and dolphins no longer freeze the server: the
@@ -124,6 +126,8 @@ Fixed
 3. Every other world type stays plain vanilla — the mod stays out of those worlds.
 
 **Servers:** install the mod on the server and set `level-type=orbisterrarum\:earth` in `server.properties` before the world is first created. Players can join with plain vanilla clients; the mod on the client only adds the world map and settings screens. Pre-generating the area you want to play in is strongly recommended — generation needs internet access and is much slower than vanilla.
+
+**True height (optional, beta, Minecraft 26.3):** add [Cubic Chunks (Orbis fork)](https://github.com/Xyberg-001/CubicChunks3/releases) and switch on its **Cubic Chunks** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest, with nothing squeezed. Every player in a cubic world needs it; with it installed you can still join other servers as usual.
 
 ### Internet access and privacy (please read)
 Orbis Terrarum downloads map data while you play. It sends **no personal data and no telemetry**; what the services receive is the location of the area being generated (tile numbers or a bounding box), the text you type into a place search, and your IP address as with any download. Downloads are cached on disk under `config/orbisterrarum/`.

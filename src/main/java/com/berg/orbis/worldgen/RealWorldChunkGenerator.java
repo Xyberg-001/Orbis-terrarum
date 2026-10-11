@@ -379,12 +379,35 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                 if (r == null) continue;
                 int idx = r.index(x, z);
                 if (idx < 0) continue;
-                if (r.buildingAt(idx) != null || r.roadAt(idx) != null || r.waterAt(idx) != null || (r.hasCoastline && r.isSea(idx))) {
+                if (r.buildingAt(idx) != null || blocksStructure(r.roadAt(idx)) || blocksStructure(r.waterAt(idx))
+                        || (r.hasCoastline && r.isSea(idx))) {
                     return false;
                 }
             }
         }
         return true;
+    }
+
+    /**
+     * Whether a way keeps a surface structure off: roads, railways, runways and piers do. Footpaths, hiking trails, steps and forest tracks
+     * do not: the map has one on nearly every hillside (around Bergen at 1:2 they left room for 6 villages in the whole pregenerated area, 11 Oct 2026), and a
+     * village or a camp on one looks no stranger than vanilla's.
+     */
+    private static boolean blocksStructure(com.berg.orbis.feature.RoadFeature road) {
+        if (road == null) return false;
+        return switch (road.kind) {
+            case PATH, STEPS, TRACK -> false;
+            default -> true;
+        };
+    }
+
+    /** Whether water keeps a surface structure off: lakes, rivers, the sea do; a stream or a ditch does not (the houses are built over it). */
+    private static boolean blocksStructure(com.berg.orbis.feature.WaterFeature water) {
+        if (water == null) return false;
+        return switch (water.kind) {
+            case STREAM, DITCH -> false;
+            default -> true;
+        };
     }
 
     @Override
@@ -423,7 +446,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         long seed = random.setDecorationSeed(level.getSeed(), origin.getX(), origin.getZ());
         BoundingBox writable = new BoundingBox(chunkPos.getMinBlockX(), level.getMinY(), chunkPos.getMinBlockZ(),
                 chunkPos.getMaxBlockX(), level.getMaxY(), chunkPos.getMaxBlockZ());
-        hollowForCities(level, structureManager, sectionPos, registry, writable);
+        shapeGroundForStructures(level, structureManager, sectionPos, registry, writable);
         int steps = GenerationStep.Decoration.values().length;
         for (int step = 0; step < steps; step++) {
             int index = 0;
@@ -444,36 +467,84 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
     }
 
     /**
-     * The hollow an Ancient City stands in. Vanilla digs it with its terrain noise around the pieces of structures
-     * with the "beard_box" terrain adaptation (the Beardifier), and the city's templates hold no air of their own:
-     * without it the first Ancient Cities (4 Oct 2026) were sealed in rock, only the bits that met a cave showing.
-     * Here each piece's box, from its floor up, is emptied in this chunk before the structure is placed; never within
-     * ten blocks of the real ground.
+     * The ground vanilla shapes with its terrain noise around the pieces of some structures (the Beardifier), which
+     * this world's terrain does not do. Their templates hold no air of their own, so without it they came out filled
+     * with earth or rock. Done in this chunk before the structures are placed:
+     * <ul>
+     *   <li>"beard_box" (Ancient Cities): the hollow a city stands in. The first ones (4 Oct 2026) were sealed in rock,
+     *   only the bits that met a cave showing.</li>
+     *   <li>"beard_thin" (villages, pillager outposts, abandoned camps): the ground each solid piece (a house, a tower)
+     *   stands on. Village houses on a slope were full of dirt (Bergen, 11 Oct 2026).</li>
+     * </ul>
      */
-    private void hollowForCities(WorldGenLevel level, StructureManager manager, SectionPos sectionPos, Registry<Structure> registry,
-                                 BoundingBox writable) {
-        BlockState air = Blocks.CAVE_AIR.defaultBlockState();
-        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
-        WorldModel model = model();
+    private void shapeGroundForStructures(WorldGenLevel level, StructureManager manager, SectionPos sectionPos, Registry<Structure> registry,
+                                          BoundingBox writable) {
         for (Structure structure : (Iterable<Structure>) registry.stream()::iterator) {
-            if (structure.terrainAdaptation() != TerrainAdjustment.BEARD_BOX) continue;
+            TerrainAdjustment adaptation = structure.terrainAdaptation();
+            if (adaptation != TerrainAdjustment.BEARD_BOX && adaptation != TerrainAdjustment.BEARD_THIN) continue;
             for (StructureStart start : Mc.startsForStructure(manager, sectionPos.x(), sectionPos.z(), structure)) {
                 if (start == null || !start.isValid()) continue;
                 for (StructurePiece piece : start.getPieces()) {
-                    BoundingBox b = piece.getBoundingBox();
-                    if (!b.intersects(writable)) continue;
-                    int floor = b.minY() + (piece instanceof net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece pe
-                            ? pe.getGroundLevelDelta() : 0);
-                    floor = Math.max(floor, level.getMinY() + 6);
-                    for (int x = Math.max(b.minX(), writable.minX()); x <= Math.min(b.maxX(), writable.maxX()); x++) {
-                        for (int z = Math.max(b.minZ(), writable.minZ()); z <= Math.min(b.maxZ(), writable.maxZ()); z++) {
-                            int top = Math.min(b.maxY(), model.terrainHeight(x, z) - 10);
-                            for (int y = floor; y <= top; y++) {
-                                p.set(x, y, z);
-                                if (!level.getBlockState(p).isAir()) level.setBlock(p, air, 2);
-                            }
-                        }
+                    if (!piece.getBoundingBox().intersects(writable)) continue;
+                    if (adaptation == TerrainAdjustment.BEARD_BOX) {
+                        hollowForCity(level, piece, writable);
+                    } else if (piece instanceof net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece pe
+                            && pe.getElement().getProjection() == net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool.Projection.RIGID) {
+                        groundForPiece(level, pe, writable); // the paths between (terrain matching) lie on the ground as it is
                     }
+                }
+            }
+        }
+    }
+
+    /** An Ancient City piece's box, from its floor up, emptied; never within ten blocks of the real ground. */
+    private void hollowForCity(WorldGenLevel level, StructurePiece piece, BoundingBox writable) {
+        BlockState air = Blocks.CAVE_AIR.defaultBlockState();
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        WorldModel model = model();
+        BoundingBox b = piece.getBoundingBox();
+        int floor = b.minY() + (piece instanceof net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece pe
+                ? pe.getGroundLevelDelta() : 0);
+        floor = Math.max(floor, level.getMinY() + 6);
+        for (int x = Math.max(b.minX(), writable.minX()); x <= Math.min(b.maxX(), writable.maxX()); x++) {
+            for (int z = Math.max(b.minZ(), writable.minZ()); z <= Math.min(b.maxZ(), writable.maxZ()); z++) {
+                int top = Math.min(b.maxY(), model.terrainHeight(x, z) - 10);
+                for (int y = floor; y <= top; y++) {
+                    p.set(x, y, z);
+                    if (!level.getBlockState(p).isAir()) level.setBlock(p, air, 2);
+                }
+            }
+        }
+    }
+
+    /**
+     * The ground under and in a solid surface piece (a village house): within its footprint the ground ends just under
+     * its floor. Earth above the floor is cleared, up to the ground's top where the piece is cut into a slope (no
+     * hillside left lying on its roof); a gap under the floor is filled, topped with the ground's own top block (grass).
+     */
+    private void groundForPiece(WorldGenLevel level, net.minecraft.world.level.levelgen.structure.PoolElementStructurePiece piece,
+                                BoundingBox writable) {
+        BlockState air = Blocks.AIR.defaultBlockState();
+        BlockState dirt = Blocks.DIRT.defaultBlockState();
+        BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+        BoundingBox b = piece.getBoundingBox();
+        int floor = b.minY() + piece.getGroundLevelDelta(); // the first block above the ground, as vanilla placed it
+        if (floor <= level.getMinY() + 1 || floor >= level.getMaxY()) return;
+        for (int x = Math.max(b.minX(), writable.minX()); x <= Math.min(b.maxX(), writable.maxX()); x++) {
+            for (int z = Math.max(b.minZ(), writable.minZ()); z <= Math.min(b.maxZ(), writable.maxZ()); z++) {
+                int top = level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
+                for (int y = floor; y <= Math.max(b.maxY(), top); y++) {
+                    p.set(x, y, z);
+                    if (!level.getBlockState(p).isAir()) level.setBlock(p, air, 2);
+                }
+                if (top < floor - 1 && top > level.getMinY()) {
+                    BlockState surface = level.getBlockState(p.set(x, top, z));
+                    boolean soil = surface.is(Blocks.GRASS_BLOCK) || surface.is(Blocks.PODZOL) || surface.is(Blocks.MYCELIUM)
+                            || surface.is(Blocks.SNOW_BLOCK) || surface.is(Blocks.SAND) || surface.is(Blocks.RED_SAND);
+                    BlockState under = soil ? (surface.is(Blocks.SAND) || surface.is(Blocks.RED_SAND) ? surface : dirt) : surface;
+                    if (soil && !surface.is(Blocks.SAND) && !surface.is(Blocks.RED_SAND)) level.setBlock(p, dirt, 2);
+                    for (int y = top + 1; y < floor - 1; y++) level.setBlock(p.set(x, y, z), under, 2);
+                    level.setBlock(p.set(x, floor - 1, z), surface, 2);
                 }
             }
         }
