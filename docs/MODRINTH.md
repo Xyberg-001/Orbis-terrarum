@@ -87,6 +87,8 @@ Fixed
 - Terrain walls along tile edges where only 30 m terrain data exists (most of the world
   outside the lidar countries, e.g. the Himalaya).
 - Dry sea floor and water walls along some coasts; villages and outposts on open sea.
+- Village houses, pillager outposts and abandoned camps no longer filled with earth on
+  slopes; villages also appear where only footpaths, tracks or streams cross the land.
 - Trail ruins buried deep underground; buried treasure on mountainsides.
 - Road steps at tunnel junctions and uneven bridge decks.
 - /locate, eyes of ender, explorer maps and dolphins no longer freeze the server: the
