@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import io.github.opencubicchunks.cubicchunks.api.CubeTerrain;
+import io.github.xyberg001.cubicworlds.api.CubeTerrain;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
 import net.minecraft.core.BlockPos;

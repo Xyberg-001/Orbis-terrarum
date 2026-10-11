@@ -19,9 +19,9 @@ import com.berg.orbis.worldgen.PregenTask;
 import com.berg.orbis.worldgen.WorldModel;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import io.github.opencubicchunks.cubicchunks.api.CubeGenerator;
-import io.github.opencubicchunks.cubicchunks.api.CubeTerrain;
-import io.github.opencubicchunks.cubicchunks.api.CubicApi;
+import io.github.xyberg001.cubicworlds.api.CubeGenerator;
+import io.github.xyberg001.cubicworlds.api.CubeTerrain;
+import io.github.xyberg001.cubicworlds.api.CubicApi;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.network.chat.Component;
@@ -40,7 +40,7 @@ import net.minecraft.world.level.storage.LevelResource;
  * sampled across the column gives them.
  * <p>
  * The area is walked in tiles of 8 x 8 cube columns (16 x 16 chunks, as the chunk sweeps), tile rows north to south, each tile row
- * alternately west to east and back. Each cube is loaded as full with the sweep's ticket (Cubic Chunks generates it, and the cubes around
+ * alternately west to east and back. Each cube is loaded as full with the sweep's ticket (Cubic Worlds generates it, and the cubes around
  * it as far as it needs), held while the next cubes are made (they share their neighbours), then let go: it unloads and is saved.
  * Progress (the columns done in walking order) is kept beside the world every 10 s, so the same sweep started again resumes.
  */

@@ -508,7 +508,7 @@ public class TeleportCommands {
         int blockX = block[0], blockZ = block[1];
         net.minecraft.world.level.border.WorldBorder border = source.getLevel().getWorldBorder();
         if (!border.isWithinBounds(blockX, blockZ)) {
-            // a cubic world's border is nearer than vanilla's (Cubic Chunks packs positions with more bits for height), so far places
+            // a cubic world's border is nearer than vanilla's (Cubic Worlds packs positions with more bits for height), so far places
             // can lie beyond it; a smaller scale (more metres a block) brings more of the Earth inside
             source.sendFailure(Component.literal(String.format(Locale.ROOT,
                     "%s (block %d, %d) is beyond the world border (x %.0f..%.0f, z %.0f..%.0f).%s", target.name(), blockX, blockZ,
