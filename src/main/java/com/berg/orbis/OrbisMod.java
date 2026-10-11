@@ -569,7 +569,7 @@ public class OrbisMod implements ModInitializer {
             for (OrbisConfig.ElevationSource es : cfg.surfaceModelSources) {
                 if (es == null || !es.enabled) continue;
                 // Kartverket's: always with its switch on, else by itself while it answers from this network (new
-                // worlds; worlds made before 1.1.1 keep their heights from the other sources).
+                // worlds; worlds made before 1.1.0 keep their heights from the other sources).
                 boolean auto = es.needsSwitch && !(cfg.useHighResElevation || cfg.lidarSurfaceModel);
                 if (auto && !cfg.kartverketWhenReachable) continue;
                 if (es.stacSearch != null && !es.stacSearch.isBlank()) {

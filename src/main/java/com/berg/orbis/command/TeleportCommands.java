@@ -228,7 +228,7 @@ public class TeleportCommands {
     }
 
     /**
-     * A command whose work moved onto the world map in 1.1.1: it still runs for this release, and says where it went (it goes in the
+     * A command whose work moved onto the world map in 1.1.0: it still runs for this release, and says where it went (it goes in the
      * next one).
      */
     private static int moved(CommandContext<CommandSourceStack> ctx, String where) {

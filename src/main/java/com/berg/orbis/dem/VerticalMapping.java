@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   the ceiling and floor: 1:1 throughout where the world has room; in a uniform-heights world every
  *   height divided by one factor first ({@code heightSquash}). New worlds get it at
  *   scales that fit Everest ({@link #modeForNewWorld}) and in a high-altitude window.</li>
- *   <li><b>clamp</b>: worlds made before 1.1.1 only. Plain 1:1, cut off at the dimension limits (the old
+ *   <li><b>clamp</b>: worlds made before 1.1.0 only. Plain 1:1, cut off at the dimension limits (the old
  *   behaviour: Everest becomes a mesa).</li>
  * </ul>
  *
@@ -38,7 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class VerticalMapping {
 
-    /** CLAMP only for worlds made with it before 1.1.1: no new world gets it. */
+    /** CLAMP only for worlds made with it before 1.1.0: no new world gets it. */
     public enum Mode { RELATIVE, COMPRESS, CLAMP }
 
     private final OrbisConfig cfg;

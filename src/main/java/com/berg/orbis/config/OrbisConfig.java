@@ -148,7 +148,7 @@ public class OrbisConfig {
     public boolean bareEarthTerrain = true;
     /**
      * How vanilla's underground is laid out (worldgen/UndergroundBand). 1: the band 100 blocks under the lowest
-     * ground everywhere, deepslate from a fixed Y, no cave biomes (worlds before 1.1.1). 2: the band 30 blocks under
+     * ground everywhere, deepslate from a fixed Y, no cave biomes (worlds before 1.1.0). 2: the band 30 blocks under
      * wild ground and 100 under towns, roads and tunnels; deepslate from the band's vanilla Y 0; Deep Dark (with
      * Ancient Cities), Lush Caves and Dripstone Caves in the band; buried treasure under the beach sand. New worlds
      * take this value; a world keeps the one it was made with (WorldSettings).
