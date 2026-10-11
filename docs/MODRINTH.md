@@ -127,7 +127,7 @@ Fixed
 
 **Servers:** install the mod on the server and set `level-type=orbisterrarum\:earth` in `server.properties` before the world is first created. Players can join with plain vanilla clients; the mod on the client only adds the world map and settings screens. Pre-generating the area you want to play in is strongly recommended — generation needs internet access and is much slower than vanilla.
 
-**True height (optional, beta, Minecraft 26.3):** add [Cubic Chunks (Orbis fork)](https://github.com/Xyberg-001/CubicChunks3/releases) and switch on its **Cubic Chunks** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest, with nothing squeezed. Every player in a cubic world needs it; with it installed you can still join other servers as usual.
+**True height (optional, beta, Minecraft 26.3):** add [Cubic Chunks Fabric Port](https://github.com/Xyberg-001/CubicChunks-Fabric-Port/releases) and switch on its **Cubic Chunks** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest, with nothing squeezed. Every player in a cubic world needs it; with it installed you can still join other servers as usual.
 
 ### Internet access and privacy (please read)
 Orbis Terrarum downloads map data while you play. It sends **no personal data and no telemetry**; what the services receive is the location of the area being generated (tile numbers or a bounding box), the text you type into a place search, and your IP address as with any download. Downloads are cached on disk under `config/orbisterrarum/`.
