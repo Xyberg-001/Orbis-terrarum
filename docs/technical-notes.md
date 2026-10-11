@@ -34,6 +34,13 @@ read by the world generator map). **Mod Menu** stays optional: without it the
 Mod Menu settings are reached only through `config/orbisterrarum/orbisterrarum.json`
 (or `/orbis settings` on a server).
 
+**Data folder on another drive.** The downloads (terrain, photos, map data, country
+extracts, lidar) can take many gigabytes. Mod Menu → Orbis Terrarum → Storage →
+**Data folder**: **Choose folder…** (or type a path such as `D:/OrbisData`), then
+**Move downloads** moves everything already downloaded there (from the main menu,
+not while a world is open) and the new folder is used from then on; **Open** shows
+it in the file manager. Point the import tools' `--out` at the new folder too.
+
 ## Choosing a place: the world settings screen
 
 Orbis Terrarum is a world type of its own; every other world type (Default,
@@ -2567,7 +2574,8 @@ vanilla world and the mod stays out of it. What a server needs:
 
 Best approach for a shared world: **generate at home, upload the result.**
 Explore the area you want with friends in singleplayer first (everything you
-walk through is saved in the world), then upload the world folder *and*
+walk through is saved in the world), then upload the world folder (the world's
+`voxy` folder can be left out: it is the client's far-view cache) *and*
 `config/orbisterrarum/` (the `osm-cache`, `dem-cache` and `imagery-cache`
 folders) to the server. Chunks you visited need no network at all; regions
 whose data is cached rasterise in a second without any download; only truly
