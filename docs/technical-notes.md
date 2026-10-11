@@ -1904,6 +1904,16 @@ place you asked about, and landmark names only when zoomed in or hovered.
 - The World window is a screen of its own over the map: the map keeps its tiles
   while it is open (`keepCanvas`) and draws dimmed behind it.
 
+### Shop display frames
+
+Shops used to hang a locked item frame over every barrel; Bergen's shops held about 17,000. Each one in
+range is an entity the server tracks for every player (vanilla sends item frames 160 blocks out) and the
+game draws with its item, and from a street thousands were in view through the shop windows. New shops and
+fishmongers hang one on a third of their barrels (`render/Interiors`), and locked frames in an Orbis world
+are sent to players only within `displayFrameRange` blocks (48 by default; `mixin/DisplayFrameRangeMixin`
+on `ChunkMap.TrackedEntity.getEffectiveRange`). Frames players hang are not locked and keep vanilla's reach.
+It works on the server, so it also helps players without the mod, and in worlds furnished before.
+
 The replaced commands still run in 1.1.1 and say where their work went; they go
 in the next release. `/orbis landmarks` and `/orbis import-places` became
 operator-only (a data pack reload; a file on the server's disk).

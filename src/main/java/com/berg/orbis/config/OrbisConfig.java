@@ -720,6 +720,11 @@ public class OrbisConfig {
     public boolean parallelChunkCompression = true;
     /** The world stands still (as with /tick freeze) while a pre-generation runs; see PregenTask.syncWorldPause. */
     public boolean pregenPauseWorld = true;
+    /**
+     * Shop display frames (locked item frames in an Orbis world) are sent to players within this many blocks (vanilla: 160); 0 = as vanilla.
+     * See mixin.DisplayFrameRangeMixin.
+     */
+    public int displayFrameRange = 48;
     /** Square region edge, in blocks, that is fetched/rasterised as one unit. Must be a multiple of 16. */
     public int regionSizeBlocks = 512;
     /** Extra border rasterised around each region so features straddling the edge join up. */
@@ -1012,6 +1017,7 @@ public class OrbisConfig {
         if (softCeilingBlocks < 50) softCeilingBlocks = 50;
         if (regionPrefetchRadius < 0) regionPrefetchRadius = 0;
         if (regionPrefetchRadius > 6) regionPrefetchRadius = 6;
+        if (displayFrameRange < 0) displayFrameRange = 0;
         if (overpassConcurrentRequests > 8) overpassConcurrentRequests = 8;
         if (imageryTileCacheSize < 64) imageryTileCacheSize = 64;
         if (demTileCacheSize < 32) demTileCacheSize = 32;

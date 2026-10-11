@@ -66,7 +66,7 @@ Nothing here changes a world; it is about the mod on this computer.
 |---|---|
 | **Overview** | The mod's version, the data folder and how much it holds, the OpenStreetMap extracts and other data you imported, and your last pre-generations (chunks, time, chunks per second). |
 | **Storage** | **Downloads by country**: how much each source keeps on disk, the countries around your last world first, with **Re-import data** (delete it so it downloads again, fresh) and **Delete** (free the space). Then the data folder. |
-| **Performance** | Fast pre-generation, pausing the world while pre-generating, fast chunk writes, how far ahead map data is fetched and kept. |
+| **Performance** | Fast pre-generation, pausing the world while pre-generating, fast chunk writes, how far ahead map data is fetched and kept, how far away shop display frames are shown (48 blocks by default, which keeps cities smooth). |
 | **Network** | Parallel downloads, how long to wait for map data, tile caches, debug logging. |
 
 **Short of space?** The mod's downloads (terrain, photos, map data, country extracts, lidar) can take many gigabytes. Set **Storage → Data folder** to another drive with **Choose folder…** (or type a path such as `D:/OrbisData`), then press **Move downloads**: everything already downloaded moves there (from the main menu, not while a world is open) and the new folder is used from then on. The field always shows the folder in use, and **Open** shows it in your file manager. Point the import tools' `--out` at the new folder too.

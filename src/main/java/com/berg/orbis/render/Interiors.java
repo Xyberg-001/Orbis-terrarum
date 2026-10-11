@@ -299,7 +299,7 @@ public final class Interiors {
                     }
                 }
                 case FISH -> {
-                    lineWalls(0, 1, 1, Blocks.BARREL.defaultBlockState(), Items.COD, true);
+                    lineWalls(0, 1, 1, Blocks.BARREL.defaultBlockState(), Items.COD, false);
                     placeNearAnchor(0, Blocks.SMOKER.defaultBlockState());
                 }
                 case PHARMACY -> {
@@ -356,7 +356,8 @@ public final class Interiors {
                 }
                 case SHOP -> {
                     Item goods = goodsFor(use);
-                    lineWalls(0, 1, 1, Blocks.BARREL.defaultBlockState(), goods, true);
+                    // a frame on a third of the barrels (on every one, a city held some 17,000 frames, each drawn with its item)
+                    lineWalls(0, 1, 1, Blocks.BARREL.defaultBlockState(), goods, false);
                     if (((h >>> 20) & 3) == 0) lootChest(0, lootFor(use));
                 }
                 case OFFICE -> {
