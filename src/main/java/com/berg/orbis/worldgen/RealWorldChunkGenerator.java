@@ -379,12 +379,35 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                 if (r == null) continue;
                 int idx = r.index(x, z);
                 if (idx < 0) continue;
-                if (r.buildingAt(idx) != null || r.roadAt(idx) != null || r.waterAt(idx) != null || (r.hasCoastline && r.isSea(idx))) {
+                if (r.buildingAt(idx) != null || blocksStructure(r.roadAt(idx)) || blocksStructure(r.waterAt(idx))
+                        || (r.hasCoastline && r.isSea(idx))) {
                     return false;
                 }
             }
         }
         return true;
+    }
+
+    /**
+     * Whether a way keeps a surface structure off: roads, railways, runways and piers do. Footpaths, hiking trails, steps and forest tracks
+     * do not: the map has one on nearly every hillside (around Bergen at 1:2 they left room for 6 villages in the whole pregenerated area, 11 Oct 2026), and a
+     * village or a camp on one looks no stranger than vanilla's.
+     */
+    private static boolean blocksStructure(com.berg.orbis.feature.RoadFeature road) {
+        if (road == null) return false;
+        return switch (road.kind) {
+            case PATH, STEPS, TRACK -> false;
+            default -> true;
+        };
+    }
+
+    /** Whether water keeps a surface structure off: lakes, rivers, the sea do; a stream or a ditch does not (the houses are built over it). */
+    private static boolean blocksStructure(com.berg.orbis.feature.WaterFeature water) {
+        if (water == null) return false;
+        return switch (water.kind) {
+            case STREAM, DITCH -> false;
+            default -> true;
+        };
     }
 
     @Override
