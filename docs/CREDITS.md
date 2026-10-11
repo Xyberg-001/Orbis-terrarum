@@ -1,6 +1,6 @@
 # Orbis Terrarum: data sources and credits
 
-Orbis Terrarum builds the world from open data, downloaded as you play and kept under `config/orbisterrarum/`. It sends **no personal data and no telemetry**: the services see the area being generated (tile numbers or a bounding box), the text you type into a place search, and your IP address, as with any download. A country's own services are only asked about places inside that country. Which service gets what is listed in [MODRINTH.md](MODRINTH.md#internet-access-and-privacy-please-read); the **Data Sources** tab and Mod Menu → Storage show and delete what each one keeps.
+Orbis Terrarum builds the world from open data, downloaded as you play and kept under `config/orbisterrarum/`. It sends **no personal data and no telemetry**: the services see the area being generated (tile numbers or a bounding box), the text you type into a place search, and your IP address, as with any download. A country's own services are only asked about places inside that country. Which service gets what is listed in [PRIVACY.md](PRIVACY.md); the **Data Sources** tab and Mod Menu → Storage show and delete what each one keeps.
 
 - **Map data:** © OpenStreetMap contributors (ODbL); street map tiles from OpenFreeMap (openfreemap.org) in the OpenMapTiles schema.
 - **Terrain:** Mapterhorn and its sources (https://mapterhorn.com/attribution), including Copernicus GLO-30 © DLR/ESA/Airbus; outside the national surveys, bare-earth GEDTM30 v1.2 (OpenLandMap / OpenGeoHub Foundation, CC BY 4.0).

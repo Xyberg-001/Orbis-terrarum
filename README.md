@@ -74,4 +74,4 @@ disk, 150–260 FPS.
 
 ---
 
-[Data sources and credits](docs/CREDITS.md) · [How it works and every setting](docs/technical-notes.md)
+[Data sources and credits](docs/CREDITS.md) · [Internet and privacy](docs/PRIVACY.md) · [How it works and every setting](docs/technical-notes.md)
