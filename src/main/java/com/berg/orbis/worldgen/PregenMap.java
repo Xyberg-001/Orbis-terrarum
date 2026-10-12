@@ -45,7 +45,7 @@ import java.util.zip.Inflater;
  * the outline of the area being swept, the row the sweep has reached, the origin and a 100-chunk grid.
  * Written as {@code orbis-pregen/map.png} in the world folder next to {@code map.html}, which shows the picture
  * with the lists of places done, partly done and not yet done and reloads both every 30 s.
- * {@code /orbis pregen map} writes it on demand; a running sweep writes it every ten minutes.
+ * A running sweep writes it every ten minutes.
  *
  * <p>Reading the status of every chunk means inflating every chunk of every region file (a few tens of
  * microseconds each), so region files are cached by size and modification time and only the ones the sweep
@@ -94,72 +94,6 @@ public final class PregenMap {
 
     public static Path outputDir(ServerLevel level) {
         return level.getServer().getWorldPath(LevelResource.ROOT).resolve("orbis-pregen");
-    }
-
-    /** Writes the map in the background (one at a time); the reply names the file. */
-    public static Component writeNow(ServerLevel level) {
-        return writeNow(level, null);
-    }
-
-    /** As above, with an outline to draw instead of the running or last sweep's. */
-    public static Component writeNow(ServerLevel level, AreaSweep outline) {
-        if (!BUSY.compareAndSet(false, true)) return Component.literal("The map is being written already.");
-        Path out = outputDir(level).resolve("map.html").toAbsolutePath().normalize();
-        MinecraftServer server = level.getServer();
-        Thread t = new Thread(() -> {
-            try {
-                Result r = write(level, outline);
-                System.out.println("[orbis] Pregen map written: " + out + " (" + r.summary() + ")");
-                Component done = chatSummary(r, !server.isDedicatedServer());
-                server.execute(() -> server.getPlayerList().broadcastSystemMessage(done, false));
-            } catch (Exception e) {
-                System.err.println("[orbis] Pregen map failed: " + e);
-                e.printStackTrace();
-            } finally {
-                BUSY.set(false);
-            }
-        }, "Orbis-Pregen-Map");
-        t.setDaemon(true);
-        t.start();
-        MutableComponent msg = Component.literal("Drawing the map... ").withStyle(ChatFormatting.GRAY);
-        if (!server.isDedicatedServer()) {
-            // Singleplayer / LAN host: the button opens it in the browser (see client.OpenMapCommand).
-            msg.append(Component.literal("it opens with the button when ready. File: ").withStyle(ChatFormatting.GRAY));
-        } else {
-            msg.append(Component.literal("open this file in a browser on the server's computer: ").withStyle(ChatFormatting.GRAY));
-        }
-        msg.append(Component.literal(out.toString()).withStyle(style -> style.withColor(ChatFormatting.AQUA)
-                .withClickEvent(new ClickEvent.CopyToClipboard(out.toString()))
-                .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(Component.literal("Click to copy the path")))));
-        return msg;
-    }
-
-    /** A chat button that runs the client command opening map.html in the player's own browser. */
-    private static MutableComponent openButton() {
-        return Component.literal("[Open map]").withStyle(style -> style.withColor(ChatFormatting.AQUA).withBold(true)
-                .withClickEvent(new ClickEvent.RunCommand("orbismap"))
-                .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(Component.literal("Open the map in your browser"))));
-    }
-
-    /** Three short lines for chat: counts, the open button (for the host) and the biggest places not done yet. */
-    private static Component chatSummary(Result r, boolean button) {
-        MutableComponent m = Component.literal("Map ready: ").withStyle(ChatFormatting.GOLD);
-        m.append(Component.literal(r.done().size() + " places done").withStyle(ChatFormatting.GREEN));
-        m.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-        m.append(Component.literal(r.partly().size() + " partly").withStyle(ChatFormatting.YELLOW));
-        m.append(Component.literal(", ").withStyle(ChatFormatting.GRAY));
-        m.append(Component.literal(r.notYet().size() + " not yet").withStyle(ChatFormatting.RED));
-        if (button) m.append(Component.literal("  ")).append(openButton());
-        if (!r.notYet().isEmpty()) {
-            StringBuilder names = new StringBuilder();
-            int shown = 0;
-            for (MapPlaces.Place p : r.notYet()) {
-                if (p.rank() > 4 || shown >= 10) break;
-                names.append(shown++ == 0 ? "" : ", ").append(p.name());
-            }
-            if (shown > 0) m.append(Component.literal("\n  Not yet: " + names + (r.notYet().size() > shown ? ", ..." : "")).withStyle(ChatFormatting.GRAY));
-        }
-        return m;
     }
 
     /** Called from the sweep's tick; writes in the background if no write is running. */

@@ -58,7 +58,7 @@ public final class AutoPregen {
                 say(server, "Pre-generation of the world's area is complete.");
             } else {
                 writeState(server, "paused");
-                say(server, "Automatic pre-generation paused; /orbis pregen resume carries on from where it stopped.");
+                say(server, "Automatic pre-generation paused; Resume in the world map's pre-generation panel (B) carries on from where it stopped.");
             }
         }
     }
@@ -69,7 +69,7 @@ public final class AutoPregen {
         return cfg != null && cfg.pregenOnCreate && "paused".equals(readState(server)) && !PregenTask.isRunning();
     }
 
-    /** /orbis pregen resume: carry on with the world's own area after a stop. */
+    /** The world map's Resume: carry on with the world's own area after a stop. */
     public static Component resume(MinecraftServer server) {
         OrbisConfig cfg = cfg();
         if (cfg == null || !cfg.pregenOnCreate) {
@@ -94,7 +94,7 @@ public final class AutoPregen {
         String state = readState(server);
         if ("done".equals(state) && !asked) return Component.empty();
         if ("paused".equals(state)) {
-            System.out.println("[orbis] Automatic pre-generation is paused (stopped by hand); /orbis pregen resume carries on");
+            System.out.println("[orbis] Automatic pre-generation is paused (stopped by hand); Resume on the world map carries on");
             return Component.empty();
         }
         if (PregenTask.isRunning() || looking) return Component.literal("A pre-generation is already running.");
@@ -135,7 +135,7 @@ public final class AutoPregen {
                 return;
             }
             if (PregenTask.isRunning()) {
-                say(server, "Automatic pre-generation waits: another pre-generation is running (/orbis pregen resume once it is done).");
+                say(server, "Automatic pre-generation waits: another pre-generation is running (Resume on the world map once it is done).");
                 return;
             }
             AreaOutline main = outline.largestOnly();

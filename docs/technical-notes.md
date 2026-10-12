@@ -235,8 +235,8 @@ in step with this section whenever a source is added or changes.
   rasteriser the order is: OSM height or level tags, then the lidar
   surface model, then the atlas (matched by OSM way id, else the nearest
   atlas building within 20 m of the centroid, so buildings the atlas took
-  from Microsoft or Google count too), then the storey guess. `/orbis here`
-  reports `atlas` as the height source. In Bergen 90 % of the atlas
+  from Microsoft or Google count too), then the storey guess. What's here (world
+  map) reports `atlas` as the height source. In Bergen 90 % of the atlas
   buildings carry an OSM id, so nearly every untagged building gets a
   measured height.
 - **Surface models** (`surfaceModelSources`): where a lidar surface model
@@ -359,7 +359,7 @@ in step with this section whenever a source is added or changes.
   trees are read off the surface model at every open column. The region's
   tiles are now fetched together first (`FeatureRasterizer.setCanopyPrefetch`);
   before, each column waited for its tile in turn, up to a minute a region in
-  the Netherlands. `/orbis here` shows whether a building's height came from tags,
+  the Netherlands. What's here (world map) shows whether a building's height came from tags,
   the surface model, or a default.
 
 ### Vertical mapping (`dem/VerticalMapping`)
@@ -447,7 +447,7 @@ back through the factor). Uniform heights take the window's place. A world
 made from `server.properties` gets factor 1 (no creation screen to sample the
 area from).
 
-`/orbis here` and the F3 screen show the relief shift applied at a column.
+What's here (world map) and the F3 screen show the relief shift applied at a column.
 Because vanilla paints the sky black below the horizon whenever the camera
 is under Y 63 (unless the world is flat), the server flags every Orbis Terrarum
 world as "flat" in the login/respawn packet: that moves the horizon to the
@@ -979,8 +979,8 @@ an andesite. Generic world-map units ("sedimentary rocks") stay plain stone.
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
 the installation (Mod Menu, or a server's config file) has it off. A running
-world's own value can be switched by `/orbis daylight|weather|seasons|snow|clockhours
-on|off` (`SkySwitches`): kept in `orbis-sky.json` in the world folder, put over the
+world's own value can be switched in the world map's World window (**i**), operators only
+(`SkySwitches`): kept in `orbis-sky.json` in the world folder, put over the
 world's settings whenever its model is made, and set on the live model's config
 at once (snow on also attaches the snow-cover source; seasons only take effect at
 the next opening, as the season pack is written then). Run by the
@@ -1149,8 +1149,8 @@ worlds pick it up for the regions they load next, and the file is deleted
 unless `keepDownloadedMapFiles`. Measured: Malta end to end in under a
 minute (8 MB file, 6 MB kept); Geofabrik gave 165 KB/s from India, so Norway
 (1.3 GB) takes over two hours there, shown as time left in the toast.
-`/orbis mapdata` does the same for the land around an operator (servers have
-no Create screen); `/orbis mapdata stop` stops it (the part is continued
+The world map's **Download map data** (World window) does the same for the
+selection or the land around the middle of the map, for operators; its Stop stops it (the part is continued
 next time, or started again when 12 h old).
 
 ### Pre-generation bar (`PregenTask.showBar`)
@@ -1209,19 +1209,20 @@ stuck one.
 - Landmark schematics are pasted per chunk as an override layer.
 
 ## Commands
-- `/orbis tpll <place or lat, lon>` — teleport to a place name ("Kathmandu",
-  "Eiffel Tower", "Bergen, Norway") or a coordinate ("27.7172, 85.3240").
-  Names are resolved through Nominatim, Photon or an Overpass place lookup,
-  whichever answers. `/tpll` is a short alias. Both need operator permission (level 2, like `/tp`).
-- `/orbis where` — your position as lat/lon (`/wherell` is an alias).
-- `/orbis here` also prints the place name of the column ("Place: Thamel,
-  Kathmandu, Nepal") a moment later, from a reverse lookup.
-- `/orbis pregen …` — see "Pre-generating an area".
-- `/wherell` — your position as lat/lon.
-- `/orbis info` — origin, scale, cache statistics.
-- `/orbis here` — everything the mod knows about the column you stand on
-  (elevation, climate, land cover, road, water, building, decor).
-- `/orbis prefetch <radius>` — pre-download OSM regions around you.
+Only the commands with no world map equivalent remain (since 1.1.0; the map (B) does What's here, the
+world's facts, the real sky switches, the hard limit, Draw all, Download map data, Resume and the
+generated-area haze, and the landmarks rebuild themselves).
+- `/tpll <place or lat, lon>` (also `/orbis tpll`) — teleport to a place name ("Kathmandu",
+  "Eiffel Tower", "Bergen, Norway") or a coordinate ("27.7172, 85.3240"). Names are resolved
+  through Nominatim, Photon or an Overpass place lookup, whichever answers. Operator permission
+  (level 2, like `/tp`); the world map's Teleport runs it.
+- `/wherell` (also `/orbis where`) — your position as lat/lon.
+- `/orbis pregen <km>`, `pregen at <lat> <lon> <km>`, `pregen area [all] <place>`,
+  `pregen status`, `pregen stop` — see "Pre-generating an area" (for server consoles; the map's
+  Select area does the same).
+- `/orbis export aternos [orbis] [zip]` — see "Playing with friends".
+- `/orbis import <file.osm.pbf>`, `/orbis import-places <file.geojson>` — local map and place data.
+- `/orbis settings [name] [value]` — the performance and network settings, for servers.
 
 ## Configuration — `config/orbisterrarum/orbisterrarum.json`
 Written with defaults on first start. Key settings:
@@ -1623,8 +1624,7 @@ No extra software or DNS change is needed on the player's side.
   funicular stations. Each is a vanilla location trigger over a small area
   around the place (60 m for peaks, 30 m otherwise), and a "Grand Tour"
   challenge wants all of them. Places with a Wikipedia entry rank first.
-  `/orbis landmarks` rebuilds the pack (for example after changing the
-  origin or the extract). Vanilla clients get all of it from the server.
+  The pack rebuilds itself when new map data arrives (`Landmarks.rebuildSoon`). Vanilla clients get all of it from the server.
 - **Caves and dungeons** (`vanillaCaves`): vanilla's cave tunnels (the
   worm carver with rooms, branches and lava below vanilla Y -56) are
   re-implemented inside the same underground band as the structures: per
@@ -1739,7 +1739,7 @@ Norwegian peaks stand about 75 blocks above the sea.
    minutes on a 3 GB heap and becomes `config/orbisterrarum/extracts/norway/`
    (11,600 cells of 0.1°, about 1 GB: 1.8 million ways, 490,000 water
    polygons, 89 million points).
-   `/orbis extracts` lists what is imported. The "map" profile keeps coast,
+   Mod Menu → Orbis Terrarum → Overview lists what is imported. The "map" profile keeps coast,
    water, glaciers, wetlands, rivers, motorway..secondary roads, railways and
    runways, and is used automatically by any world at 8 m per block or
    coarser whose regions it covers; 1:1 worlds keep using Overpass unless
@@ -1873,7 +1873,7 @@ the region files the first time each region is looked at. Chunks are drawn in as
 pre-generation fills it for free and building shows up once the area
 unloads. A region generated before this existed is drawn from its region
 file the first time someone looks at it (about 250 chunks a second), or all
-at once with `/orbis map render` (`/orbis map status` for progress); for
+at once with **Draw all** in the world map's World window (progress shown there); for
 Bergen at 1:2, roughly half an hour and 60 MB, so run it in singleplayer
 before uploading the world. Players' games ask only for the regions on
 screen at the detail the zoom needs (1, 2, 4, 8 or 16 blocks per pixel), in
@@ -1935,9 +1935,8 @@ are sent to players only within `displayFrameRange` blocks (48 by default; `mixi
 on `ChunkMap.TrackedEntity.getEffectiveRange`). Frames players hang are not locked and keep vanilla's reach.
 It works on the server, so it also helps players without the mod, and in worlds furnished before.
 
-The replaced commands still run in 1.1.0 and say where their work went; they go
-in the next release. `/orbis landmarks` and `/orbis import-places` became
-operator-only (a data pack reload; a file on the server's disk).
+The commands the map replaced are gone in 1.1.0 (see Commands); `/orbis import-places`
+is operator-only (it reads a file on the server's disk).
 
 ## Choosing the spawn point
 
@@ -2142,8 +2141,8 @@ world: 482,509 chunks in 120 s, a 113 MB base zip and 12 batches (every
 chunk readable), generator, border and name as the hand-made upload of
 2026-09-28; `zip` gave 832 MB with the 213,935 chunks nearest the spawn.
 
-**Hard limit** (`worldgen/HardLimit`, `pregenHardLimit`, `/orbis hardlimit
-on|off`, the override in `orbis-pregen/hard-limit.txt`). The allowed area is the
+**Hard limit** (`worldgen/HardLimit`, `pregenHardLimit`, the World window's switch,
+the override in `orbis-pregen/hard-limit.txt`). The allowed area is the
 creation selection (projected with the world's mapper) plus every sweep started
 since: radius circles, area sweeps (their own rows) and map selections go into
 `orbis-pregen/allowed-extra.json` (ChunkSelection rows as JSON) whether the
@@ -2184,7 +2183,7 @@ round block 0, 0, else the place (or, empty, the municipality at the origin,
 `Geocoder.areaAt`) as an area sweep. Both resume from their progress files.
 `orbis-pregen/auto-state.txt` says `done` once the sweep finishes
 (`PregenTask.lastFinished`), or `paused` when it was stopped by hand; a paused
-world waits for `/orbis pregen resume`. On server stop the running task is put
+world waits for **Resume** on the world map (or opens it again next time). On server stop the running task is put
 aside with its progress saved (`PregenTask.serverStopping`, which also stops
 a stale task from looking "running" in the next world of the session), and
 the automatic sweep starts again when the world opens. Tested offline: 300 random
@@ -2199,34 +2198,21 @@ and on disk; chunks with the current and the average rate; loaded chunks,
 disk queue and heap), with "waiting for ..." in yellow when the sweep is
 throttled and a red FAILED count if anything fails; `/orbis pregen status`
 adds a line with the map-region and in-flight details, and the full report
-goes to the log. `/orbis pregen stop` ends it. `/orbis pregen map` draws
+goes to the log. `/orbis pregen stop` ends it. The pre-generation map draws
 what the world has on disk, one pixel per chunk (green complete, amber a
 partly generated ring or an interrupted sweep, dark nothing) with the
 area's outline, the rows generated (blue) and on disk (white), the origin
 and a 100-chunk grid, into `orbis-pregen/map.png` in the world folder;
 `map.html` next to it reloads the picture every 30 s, so a browser tab
 shows the sweep advancing. A running sweep writes the map every ten
-minutes and when it finishes. It works with no sweep running too; the
-outline then comes from the last sweep of the session, or from a place
-named on the command (`/orbis pregen map Bergen`), which draws that
-place's outline over whatever the world has. Place names are drawn the way
+minutes and when it finishes. Place names are drawn the way
 a street map shows them (the city largest, neighbourhoods smallest, fewer
 where they would crowd), taken from the local map extract's `place=*`
 points and areas, and coloured by status: green where the place's chunk is
 complete, amber where complete chunks are close by, red where nothing is
 generated yet, grey for places outside the area's outline (orientation
 only). `map.html` shows the picture (click to zoom) beside the lists of
-places generated, partly and not yet, and chat gets a one-line count with
-the most important places still missing.
-
-In singleplayer (and for the host of a LAN world) the chat message has an
-**[Open map]** button that opens `map.html` in your browser. It runs
-`/orbismap`, a client-side command in your own game that opens that one
-file of the world you are playing (Minecraft refuses file links in chat
-sent by a server, and the command takes no path from the server, so a
-server cannot make anyone open anything else). You can also type
-`/orbismap` yourself. On a dedicated server the message shows the file's
-path instead; click it to copy it.
+places generated, partly and not yet.
 
 `map.html` is an interactive map: the generated chunks are laid over a real
 map (street map, or satellite with or without labels, all from Esri; the

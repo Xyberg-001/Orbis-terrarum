@@ -22,7 +22,6 @@ public class OrbisClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientTickEvents.END_CLIENT_TICK.register(SpawnGate::tick);
-        OpenMapCommand.register();
         net.minecraft.client.KeyMapping.Category category = net.minecraft.client.KeyMapping.Category.register(
                 net.minecraft.resources.Identifier.fromNamespaceAndPath("orbisterrarum", "keys"));
         MAP_KEY = net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper.registerKeyMapping(
