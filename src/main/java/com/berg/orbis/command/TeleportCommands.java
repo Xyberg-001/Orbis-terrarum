@@ -18,7 +18,8 @@ import java.util.Locale;
 
 /**
  * The commands with no world map equivalent (the map does the rest since 1.1.0): /tpll and /wherell (also /orbis tpll, /orbis where),
- * /orbis pregen (for server consoles), /orbis export aternos, /orbis import, /orbis import-places and /orbis settings.
+ * /orbis pregen (for server consoles), /orbis export aternos and /orbis settings. Map data from Geofabrik is Download map data on the
+ * world map (and the offer when a world is created), at every scale.
  */
 public class TeleportCommands {
 
@@ -48,15 +49,6 @@ public class TeleportCommands {
                             .then(Commands.argument("target", StringArgumentType.greedyString())
                                     .executes(TeleportCommands::teleportToTarget)))
                     .then(Commands.literal("where").executes(TeleportCommands::reportLatLon))
-                    .then(Commands.literal("import")
-                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
-                            .then(Commands.argument("file", StringArgumentType.greedyString())
-                                    .executes(TeleportCommands::importExtract)))
-                    // Reads a file on the server's disk: operators only, as /orbis import.
-                    .then(Commands.literal("import-places")
-                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
-                            .then(Commands.argument("file", StringArgumentType.greedyString())
-                                    .executes(TeleportCommands::importPlaces)))
                     .then(Commands.literal("export")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.literal("aternos")
@@ -187,76 +179,6 @@ public class TeleportCommands {
             source.sendSuccess(() -> msg, false);
         }));
         return 1;
-    }
-
-    /** /orbis import <file.osm.pbf>: turn a country extract into the local map-data store. */
-    private static int importExtract(CommandContext<CommandSourceStack> ctx) {
-        CommandSourceStack source = ctx.getSource();
-        String file = StringArgumentType.getString(ctx, "file").trim().replace("\"", "");
-        java.nio.file.Path pbf = java.nio.file.Path.of(file);
-        if (!java.nio.file.Files.isRegularFile(pbf)) {
-            source.sendFailure(Component.literal("No such file: " + pbf.toAbsolutePath()));
-            return 0;
-        }
-        java.nio.file.Path extracts = OrbisMod.dataDir().resolve("extracts");
-        var server = source.getServer();
-        final long freeMb = (Runtime.getRuntime().maxMemory() - (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())) >> 20;
-        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                "Importing %s (%,d MB) in the background; %,d MB of heap free. A whole country needs 2-3 GB: if the game runs out of memory, run the importer outside the game instead (README, 'Country map worlds').",
-                pbf.getFileName(), fileSizeMb(pbf), freeMb)), false);
-        Thread t = new Thread(() -> {
-            try {
-                com.berg.orbis.osm.extract.ExtractImporter.Summary s = com.berg.orbis.osm.extract.ExtractImporter.importFile(
-                        pbf, extracts, com.berg.orbis.osm.extract.ExtractImporter.Profile.MAP,
-                        msg -> server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] " + msg))));
-                com.berg.orbis.osm.extract.LocalExtractStore.get(extracts).rescan();
-                server.execute(() -> {
-                    source.sendSystemMessage(Component.literal("[Orbis Terrarum] Import finished. " + s.describe()
-                            + " New worlds at 8 m per block or coarser use it automatically; a running world uses it for regions it has not loaded yet."));
-                    com.berg.orbis.worldgen.Landmarks.rebuildSoon(server);
-                });
-            } catch (Throwable e) {
-                server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Import failed: " + e)));
-            }
-        }, "Orbis-Import");
-        t.setDaemon(true);
-        t.start();
-        return 1;
-    }
-
-    /** /orbis import-places <file.geojson>: Overture Places into the places store, merged with OSM from now on. */
-    private static int importPlaces(CommandContext<CommandSourceStack> ctx) {
-        CommandSourceStack source = ctx.getSource();
-        String file = StringArgumentType.getString(ctx, "file").trim().replace("\"", "");
-        java.nio.file.Path geojson = java.nio.file.Path.of(file);
-        if (!java.nio.file.Files.isRegularFile(geojson)) {
-            source.sendFailure(Component.literal("No such file: " + geojson.toAbsolutePath()));
-            return 0;
-        }
-        java.nio.file.Path places = OrbisMod.dataDir().resolve("places");
-        var server = source.getServer();
-        source.sendSuccess(() -> Component.literal("Importing places from " + geojson.getFileName() + " in the background..."), false);
-        Thread t = new Thread(() -> {
-            try {
-                com.berg.orbis.osm.PlacesImporter.Summary s = com.berg.orbis.osm.PlacesImporter.importFile(geojson, places,
-                        msg -> server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] " + msg))));
-                server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Places import finished. " + s.describe()
-                        + " Regions loaded from now on include them; already generated chunks keep what they have.")));
-            } catch (Throwable e) {
-                server.execute(() -> source.sendSystemMessage(Component.literal("[Orbis Terrarum] Places import failed: " + e)));
-            }
-        }, "Orbis-Places");
-        t.setDaemon(true);
-        t.start();
-        return 1;
-    }
-
-    private static long fileSizeMb(java.nio.file.Path p) {
-        try {
-            return java.nio.file.Files.size(p) >> 20;
-        } catch (java.io.IOException e) {
-            return 0;
-        }
     }
 
     private static int pregenHere(CommandContext<CommandSourceStack> ctx) {

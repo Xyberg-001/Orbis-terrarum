@@ -11,14 +11,15 @@ import java.util.Locale;
 /**
  * A world's map data from Geofabrik, so generation reads the map from disk instead of the public Overpass servers
  * (two to six minutes a region in Nepal, with timeouts): the smallest region file that holds the world's area is
- * downloaded, only that area is imported at full detail ({@link ExtractImporter}, memory by area), and the big file
- * is deleted afterwards unless the player keeps such files. One job at a time, on its own thread; the world goes on
+ * downloaded and imported ({@link ExtractImporter}): for worlds finer than 8 m per block only that area, at full detail (memory by
+ * area); for coarser ones (country maps) the whole region with the "map" profile (coast, water, glaciers, rivers, main roads,
+ * railways, runways), which takes far less room and memory. The big file is deleted afterwards unless the player keeps such files. One job at a time, on its own thread; the world goes on
  * generating from the online servers until the import is done, then the store is picked up by itself.
  */
 public final class MapDataJob {
 
-    /** What would be downloaded for an area: the region, its file size, the area, and the name of the store. */
-    public record Plan(Geofabrik.Region region, long bytes, double[] box, String storeName) {
+    /** What would be downloaded for an area: the region, its file size, the area, the name of the store and what is kept of it. */
+    public record Plan(Geofabrik.Region region, long bytes, double[] box, String storeName, ExtractImporter.Profile profile) {
         public String sizeText() {
             return bytes < 0 ? "unknown size" : bytes >= 1L << 30
                     ? String.format(Locale.ROOT, "%.1f GB", bytes / (double) (1L << 30))
@@ -55,11 +56,10 @@ public final class MapDataJob {
 
     /**
      * Whether this area at this scale would gain from a download, and what it would be: null when a store on disk
-     * covers it already, when the scale is coarse (8 m per block or more: the whole-country "map" import is for
-     * those, run by hand), or when no single region holds the area (across a border). Asks the network.
+     * covers it already, or when no single region holds the area (across a border). Asks the network.
      */
     public static Plan plan(Path dataDir, double[] box, double metersPerBlock) throws IOException, InterruptedException {
-        if (metersPerBlock >= 8.0) return null;
+        boolean coarse = metersPerBlock >= 8.0;
         LocalExtractStore store = LocalExtractStore.get(dataDir.resolve("extracts"));
         store.rescan();
         for (LocalExtractStore.Extract e : store.extracts()) {
@@ -68,13 +68,22 @@ public final class MapDataJob {
         List<Geofabrik.Region> all = Geofabrik.regions(dataDir.resolve("extracts-src"));
         Geofabrik.Region region = Geofabrik.smallestContaining(all, box);
         if (region == null) return null;
+        String name = coarse ? region.id() + "-map" // the whole region
+                : String.format(Locale.ROOT, "%s-area-%d_%d", region.id(), Math.round(box[0] * 100), Math.round(box[1] * 100));
+        // Done already: the store's bounds are where its data ends, so an area reaching out to sea is never "covered" by them
+        for (LocalExtractStore.Extract e : store.extracts()) {
+            if (e.name().equals(name) && e.usableAt(metersPerBlock)) return null;
+        }
         long bytes = OrbisHttp.size(region.url(), Geofabrik.HEADERS);
         if (bytes > MAX_BYTES) return null;
-        String name = String.format(Locale.ROOT, "%s-area-%d_%d", region.id(), Math.round(box[0] * 100), Math.round(box[1] * 100));
-        return new Plan(region, bytes, box.clone(), name);
+        if (coarse) return new Plan(region, bytes, null, name, ExtractImporter.Profile.MAP);
+        return new Plan(region, bytes, box.clone(), name, ExtractImporter.Profile.FULL);
     }
 
-    /** The area box {south, west, north, east} around a spawn: about 4,000 blocks each way, at least 8 km, at most 40 km. */
+    /**
+     * The area box {south, west, north, east} around a spawn: about 4,000 blocks each way, at least 8 km, at most 40 km (for a coarse
+     * world it only finds the region, which is kept whole).
+     */
     public static double[] boxAround(double lat, double lon, double metersPerBlock) {
         double km = Math.max(8, Math.min(40, 4000 * metersPerBlock / 1000));
         double dLat = km / 111.32, dLon = km / (111.32 * Math.max(0.05, Math.cos(Math.toRadians(lat))));
@@ -117,8 +126,9 @@ public final class MapDataJob {
                             : String.format(Locale.ROOT, "%,d MB downloaded", done >> 20), f);
                 }, () -> stop);
             }
-            listener.progress("Keeping this world's area...", -1f);
-            ExtractImporter.Summary s = ExtractImporter.importFile(pbf, dataDir.resolve("extracts"), ExtractImporter.Profile.FULL,
+            listener.progress(plan.profile() == ExtractImporter.Profile.MAP ? "Keeping the main features of " + place + "..."
+                    : "Keeping this world's area...", -1f);
+            ExtractImporter.Summary s = ExtractImporter.importFile(pbf, dataDir.resolve("extracts"), plan.profile(),
                     plan.storeName(), plan.box(), msg -> listener.progress(msg, -1f));
             LocalExtractStore.get(dataDir.resolve("extracts")).rescan();
             long kept = folderBytes(s.dir());
@@ -127,6 +137,9 @@ public final class MapDataJob {
                     place, kept >> 20, keepFile ? "" : "; the downloaded file was deleted"), true);
         } catch (java.util.concurrent.CancellationException e) {
             listener.finished("The map data download stopped; it continues next time.", false);
+        } catch (OutOfMemoryError e) {
+            listener.finished("Map data for " + place + " needs more memory than the game has (give Minecraft more, or select a smaller"
+                    + " area); the online map servers are used instead.", false);
         } catch (Throwable e) {
             listener.finished("Map data for " + place + " could not be fetched (" + e.getMessage()
                     + "); the online map servers are used instead.", false);
