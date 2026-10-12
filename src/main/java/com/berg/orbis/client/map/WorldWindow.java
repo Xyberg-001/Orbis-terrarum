@@ -21,10 +21,10 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The world map's World window (its i button): the world's facts on the left (/orbis info, /wherell), and on the right its real sky
- * switches (/orbis sky ...) and, for operators, the hard limit (/orbis hardlimit), Draw all for the Blocks layer (/orbis map render) and
- * Download map data (/orbis mapdata, /orbis prefetch). Shown over the dimmed map and gone with Esc, its x or a click beside it, so the
- * map itself keeps only its one button. Asks the server again every two seconds while open, for progress.
+ * The world map's World window (its i button): the world's facts on the left, and on the right its real sky switches and, for
+ * operators, the hard limit, Draw all for the Blocks layer, Download map data and, for the operator hosting the world (singleplayer
+ * or a LAN world), Export for Aternos. Shown over the dimmed map and gone with Esc, its x or a click beside it, so the map itself keeps
+ * only its one button. Asks the server again every two seconds while open, for progress.
  */
 public final class WorldWindow extends Screen implements MapAnswerSink {
     private static final int TOP_H = 24, PAD = 8, LABEL_W = 74;
@@ -48,7 +48,7 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
     private long messageUntil;
 
     private final Map<String, Button> skyButtons = new LinkedHashMap<>();
-    private Button limit, draw, download;
+    private Button limit, draw, download, export;
     private int[] box, close;
 
     WorldWindow(WorldMapScreen parent, WorldInfoPayload info) {
@@ -97,8 +97,18 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
             String arg = sel == null ? "" : String.format(Locale.ROOT, "%.6f,%.6f,%.6f,%.6f", sel[0], sel[1], sel[2], sel[3]);
             ClientPlayNetworking.send(new MapRequestPayload("mapdata", arg, mid[0], mid[1]));
         }).bounds(0, 0, 60, 20).build());
+        export = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.export.button"), b -> {
+            returning = true; // to the export window and back: the map's tiles stay
+            minecraft.setScreenAndShow(new ExportWindow(this));
+        }).bounds(0, 0, 60, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.export.button.tip"))).build());
+        returning = false;
         layoutAndLabel();
         if (!answered) ask();
+    }
+
+    /** Export for Aternos writes into the game folder of the computer hosting the world: shown to an operator who hosts it. */
+    private boolean exportOffered() {
+        return op && answered && minecraft != null && minecraft.getSingleplayerServer() != null;
     }
 
     @Override
@@ -258,6 +268,9 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
                 ? Component.literal(downloadLine.isEmpty() ? "" : downloadLine + " - ").append(Component.translatable("orbisterrarum.map.world.download.stop.tip"))
                 : Component.translatable("orbisterrarum.map.world.download.tip")));
         download.setPosition(x, y + 44);
+        export.visible = exportOffered();
+        export.setWidth(cw);
+        export.setPosition(x, y + 66);
     }
 
     private String fit(String s, int w) {
@@ -296,6 +309,11 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
         minecraft.setScreenAndShow(parent);
     }
 
+    /** The map's tiles go (a window opened from this one closed some other way than back here: a disconnect). */
+    void releaseMap() {
+        parent.release();
+    }
+
     @Override
     public void removed() {
         if (!returning) parent.release(); // closed some other way (a disconnect): the map's tiles go too
@@ -318,7 +336,7 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
         int[] at = controlsAt();
         int controlsBottom = at[1] + 12;
         boolean controls = op && answered;
-        if (controls) controlsBottom += ((sky.size() + 1) / 2) * 22 + 14 + 3 * 22;
+        if (controls) controlsBottom += ((sky.size() + 1) / 2) * 22 + 14 + (exportOffered() ? 4 : 3) * 22;
         else if (!sky.isEmpty()) controlsBottom += sky.size() * 10 + 4;
         else controlsBottom = at[1];
         int factsBottom = y0 + PAD + 14 + factsHeight();

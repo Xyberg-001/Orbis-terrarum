@@ -1204,18 +1204,17 @@ stuck one.
 - Landmark schematics are pasted per chunk as an override layer.
 
 ## Commands
-Only the commands with no world map equivalent remain (since 1.1.0; the map (B) does What's here, the
-world's facts, the real sky switches, the hard limit, Draw all, Download map data, Resume and the
-generated-area haze, and the landmarks rebuild themselves).
-- `/tpll <place or lat, lon>` (also `/orbis tpll`) — teleport to a place name ("Kathmandu",
+Only the commands the world map cannot do for everyone remain (since 1.1.0; the map (B) does What's
+here, the world's facts, the real sky switches, the hard limit, Draw all, Download map data, Export
+for Aternos, Resume and the generated-area haze, and the landmarks rebuild themselves).
+- `/tpll <place or lat, lon>` — teleport to a place name ("Kathmandu",
   "Eiffel Tower", "Bergen, Norway") or a coordinate ("27.7172, 85.3240"). Names are resolved
   through Nominatim, Photon or an Overpass place lookup, whichever answers. Operator permission
   (level 2, like `/tp`); the world map's Teleport runs it.
-- `/wherell` (also `/orbis where`) — your position as lat/lon.
+- `/wherell` — your position as lat/lon (for players without the mod).
 - `/orbis pregen <km>`, `pregen at <lat> <lon> <km>`, `pregen area [all] <place>`,
   `pregen status`, `pregen stop` — see "Pre-generating an area" (for server consoles; the map's
   Select area does the same).
-- `/orbis export aternos [orbis] [zip]` — see "Playing with friends".
 - `/orbis settings [name] [value]` — the performance and network settings, for servers.
 
 ## Configuration — `config/orbisterrarum/orbisterrarum.json`
@@ -2091,8 +2090,8 @@ Kartverket requests. The tool is always
 on there, with a hand tool for panning; creating a world (the new-world settings saved) clears the
 preview selection after copying it into the world.
 
-**Aternos export** (`export/AternosExport`, `/orbis export aternos [orbis] [zip]`,
-op). Saves the world, then on a background thread: every fully generated
+**Aternos export** (`export/AternosExport`, **Export for Aternos** in the World window: plain or
+Orbis server, one zip or split; the operator hosting the world). Saves the world, then on a background thread: every fully generated
 overworld chunk (PregenMap.regionState == full; with the hard limit on, only
 its allowed area; its empty chunks never), nearest the spawn first, until the
 budget: one zip of at most 900 MB in all (the world's other files counted; a
@@ -2437,7 +2436,7 @@ server neither ticks the sweep nor unloads and saves its chunks.
 ## Exploring a whole country
 
 Pre-generation is only needed for a *server* that must not download. For
-your own play, the world already streams: you can walk, fly or `/orbis tpll`
+your own play, the world already streams: you can walk, fly or `/tpll`
 across an entire country at 1:1 and only the places you actually visit are
 ever generated or stored. Nothing has to be prepared in advance.
 
