@@ -102,7 +102,7 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         r.start();
         return Component.literal(String.format(Locale.ROOT,
                 "Pre-generating %s (cubic world): %,d cube columns, each from %d blocks under its ground to %d over it.%s Progress every 30 s; "
-                        + "Stop on the world map (B) ends it (it resumes later).",
+                        + "Pause on the world map (B) pauses it (Resume carries on).",
                 label, r.total, BELOW, ABOVE, r.resumedFrom > 0 ? String.format(Locale.ROOT, " Resuming after %,d columns done before.", r.resumedFrom) : ""));
     }
 

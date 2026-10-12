@@ -41,23 +41,18 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Pre-generates chunks so a world can be explored (or uploaded to a server)
- * without waiting for downloads. Two shapes:
- * <ul>
- *   <li>a radius around a point, nearest chunks first;</li>
- *   <li>an area outline (a country, region or city from the geocoder), swept
- *   chunk row by chunk row from north to south like a scanner. Open-sea
- *   chunks are skipped, progress is written to
- *   {@code config/orbisterrarum/pregen/<name>.json} every ten seconds, and
- *   running the same command again after a stop, crash or restart resumes
- *   at the last completed row.</li>
- * </ul>
+ * without waiting for downloads: the sweep of one task of the world map's
+ * list ({@link PregenTasks}), its area swept chunk row by chunk row from north
+ * to south like a scanner. Open-sea chunks can be skipped; the rows on disk
+ * go to the task every ten seconds, so a pause, crash or restart carries on
+ * at the last completed row. (A radius around a point, nearest chunks first,
+ * is the older shape, no longer started from anywhere.)
  * Chunk requests are issued from the task's own thread: asked from the
  * server thread, vanilla's chunk request blocks that thread until the chunk
  * is done, which would serialise everything; asked from another thread it is
  * queued and every worker thread generates in parallel. A semaphore keeps a
- * few dozen chunks in flight; they are saved when they unload. Progress is
- * reported in chat every ten seconds. One task at a time; {@code /orbis
- * pregen stop} ends it.
+ * few dozen chunks in flight; they are saved when they unload. One sweep at a
+ * time.
  */
 public final class PregenTask {
 
@@ -104,6 +99,8 @@ public final class PregenTask {
     private WorldModel model;
     /** A drawn area's own Skip open sea button; null: the world's setting (automatic pre-generation from a place or radius). */
     private Boolean skipSeaChoice;
+    /** The world map's entry for this sweep (PregenTasks), which keeps its progress. */
+    private PregenTasks.Task task;
     /** The region cache size before the sweep widened it, or -1. */
     private int cacheSizeBefore = -1;
     /** Chunks whose five elevation samples are all below this many metres are open sea and skipped. */
@@ -149,45 +146,12 @@ public final class PregenTask {
     public record Snapshot(String label, float fraction, String detail, String waiting) {
     }
 
-    /** How to start the last sweep again (areas and selections resume from their saved progress), and its name; set as each starts. */
-    private static volatile java.util.function.Function<ServerLevel, Component> restart;
-    private static volatile String restartLabel;
-    /** The last sweep was stopped by an operator (not finished): the map offers to resume it. */
-    private static volatile boolean stoppedByHand;
-
-    private static void startedBy(String label, java.util.function.Function<ServerLevel, Component> again) {
-        restart = again;
-        restartLabel = label;
-        stoppedByHand = false;
-    }
-
     /** The running sweep's progress, or null when none runs. */
     public static Snapshot snapshot() {
         PregenTask t = active;
         if (t != null) return t.snap();
         CubicSweeper c = cubicSweeper;
         return c != null && c.running() ? c.snapshot() : null;
-    }
-
-    /** After a restart, a stopped sweep left in the world (PendingPregen) to offer for Resume; null: none. */
-    static synchronized void offerResume(String label, java.util.function.Function<ServerLevel, Component> again) {
-        restart = again;
-        restartLabel = label;
-        stoppedByHand = again != null;
-    }
-
-    /** The name of the sweep an operator stopped and can resume, or null. */
-    public static String resumable() {
-        return stoppedByHand && restart != null && !isRunning() ? restartLabel : null;
-    }
-
-    /** Starts the stopped sweep again (an area or selection carries on from its saved progress). */
-    public static Component resume(ServerLevel level) {
-        java.util.function.Function<ServerLevel, Component> again = restart;
-        if (!stoppedByHand || again == null) return Component.literal("No stopped pre-generation to resume.");
-        if (isRunning()) return Component.literal("A pre-generation is already running.");
-        stoppedByHand = false;
-        return again.apply(level);
     }
 
     /** The cubic sweeper when the level is cubic, else null. */
@@ -202,11 +166,7 @@ public final class PregenTask {
     private final long[] chunks;
     // area mode
     private final AreaSweep sweep;
-    private final Path progressFile;
     private final int startRow;
-    private boolean mainlandOnly = true;
-    /** The fingerprint of a drawn selection (resume only the same one), or null. */
-    private String selectionId;
     private long estimatedChunks;
     private final ConcurrentHashMap<Integer, AtomicInteger> outstanding = new ConcurrentHashMap<>();
     private final AtomicLong skippedSea = new AtomicLong();
@@ -250,18 +210,16 @@ public final class PregenTask {
         this.label = label;
         this.chunks = chunks;
         this.sweep = null;
-        this.progressFile = null;
         this.startRow = 0;
         this.baselineLoaded = level.getChunkSource().getLoadedChunksCount();
         this.maxLoaded = loadedLimitFor(level);
     }
 
-    private PregenTask(ServerLevel level, String label, AreaSweep sweep, Path progressFile, int startRow) {
+    private PregenTask(ServerLevel level, String label, AreaSweep sweep, int startRow) {
         this.level = level;
         this.label = label;
         this.chunks = null;
         this.sweep = sweep;
-        this.progressFile = progressFile;
         this.startRow = startRow;
         this.completedRow = startRow - 1;
         this.unloadedRow = startRow - 1;
@@ -285,9 +243,6 @@ public final class PregenTask {
 
     /** Starts a radius task; returns a message for the player. */
     public static synchronized Component start(ServerLevel level, int centerX, int centerZ, int radiusBlocks) {
-        if (active == null && (cubicSweeper == null || !cubicSweeper.running())) {
-            startedBy(String.format(Locale.ROOT, "%d blocks around %d, %d", radiusBlocks, centerX, centerZ), l -> start(l, centerX, centerZ, radiusBlocks));
-        }
         if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); stop it on the world map (B) first.\n" + active.progress());
         CubicSweeper cubic = cubic(level);
         if (cubic != null) {
@@ -392,156 +347,114 @@ public final class PregenTask {
 
     // ---- area -------------------------------------------------------------------------
 
-    /** Starts (or resumes) an area sweep; returns a message for the player. */
-    public static synchronized Component startArea(ServerLevel level, AreaOutline outline, boolean mainlandOnly) {
-        if (active == null && (cubicSweeper == null || !cubicSweeper.running())) {
-            startedBy(outline.name(), l -> startArea(l, outline, mainlandOnly));
-        }
-        if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); stop it on the world map (B) first.\n" + active.progress());
+    /**
+     * A place's outline as a pre-generation (the automatic one of a world made with a place name): its rows, each widened by a chunk so
+     * coasts are complete, become the task's area. An older progress file of the same place (1.1.0) gives the rows already done.
+     */
+    public static synchronized Component startArea(ServerLevel level, AreaOutline outline, boolean mainlandOnly, String kind, boolean paused) {
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
         AreaSweep sweep = AreaSweep.of(outline, model.mapper());
         lastSweep = sweep;
         if (sweep.rowCount() == 0) return Component.literal("The outline of " + outline.name() + " is empty.");
-        String slug = slug(outline.name());
-        // Progress belongs to the world: a new world must not resume where another one stopped (it once skipped
-        // its first 126 rows that way). The file used to live in the config folder; the first world to run a
-        // sweep with this version adopts it.
-        String fileName = slug + (mainlandOnly ? "" : "-all") + ".json";
-        CubicSweeper cubic = cubic(level);
-        if (cubic != null) {
-            if (cubic.running()) return Component.literal("A pre-generation is already running; stop it on the world map (B) first.\n" + cubic.status().getString());
-            return cubic.start(level, outline.name(), sweep, model.cfg().pregenSkipOpenSea, "cubic-" + fileName);
-        }
-        Path file = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-pregen").resolve(fileName);
-        Path legacy = OrbisMod.configDir().resolve("pregen").resolve(fileName);
-        if (!Files.exists(file) && Files.exists(legacy)) {
-            try {
-                Files.createDirectories(file.getParent());
-                Files.move(legacy, file);
-            } catch (IOException e) {
-                System.err.println("[orbis] Could not move the pregen progress file into the world: " + e);
-            }
-        }
-        int startRow = sweep.firstRow();
-        String resumed = "";
-        JsonObject saved = readProgress(file);
-        if (saved != null && matches(saved, model, mainlandOnly)) {
-            int completed = saved.get("completedRow").getAsInt();
-            if (completed >= sweep.firstRow() && completed < sweep.lastRow()) {
-                startRow = completed + 1;
-                resumed = String.format(Locale.ROOT, " Resuming at row %,d of %,d (%,d chunks were done before).",
-                        startRow - sweep.firstRow() + 1, sweep.rowCount(), saved.has("done") ? saved.get("done").getAsLong() : 0);
-            }
-        }
-        String label = outline.name().split(",")[0] + (mainlandOnly ? " (largest part)" : " (all parts)");
-        PregenTask t = new PregenTask(level, label, sweep, file, startRow);
-        t.mainlandOnly = mainlandOnly;
-        t.model = model;
-        // One pass over the rows for the estimate and the width (a country at 1:1 has a quarter of a million).
-        long estimate = 0;
-        int spanMin = Integer.MAX_VALUE, spanMax = Integer.MIN_VALUE;
         ChunkSelection area = new ChunkSelection();
         for (int row = sweep.firstRow(); row <= sweep.lastRow(); row++) {
             List<int[]> ranges = sweep.rowRanges(row);
             int[] flat = new int[ranges.size() * 2];
             int k = 0;
             for (int[] range : ranges) {
-                estimate += range[1] - range[0] + 1;
-                spanMin = Math.min(spanMin, range[0]);
-                spanMax = Math.max(spanMax, range[1]);
                 flat[k++] = range[0];
                 flat[k++] = range[1];
             }
             area.addRow(row, flat);
         }
+        if (area.isEmpty()) return Component.literal("The outline of " + outline.name() + " is empty.");
         HardLimit.extend(level.getServer(), area);
-        t.estimatedChunks = estimate;
-        if (spanMin <= spanMax) t.widenRegionCache((spanMax - spanMin + 1) * 16);
-        t.startAreaProducer(model);
-        active = t;
-        PendingPregen.begin(level, label, PendingPregen.AREA, area, null, startRow - 1);
-        tellNeeds(level);
+        Path file = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-pregen")
+                .resolve(slug(outline.name()) + (mainlandOnly ? "" : "-all") + ".json");
+        int doneRow = area.firstRow() - 1;
+        JsonObject saved = readProgress(file);
+        if (saved != null && matches(saved, model, mainlandOnly)) doneRow = Math.max(doneRow, saved.get("completedRow").getAsInt());
 
         String extractNote;
         LocalExtractStore store = LocalExtractStore.get(OrbisMod.dataDir().resolve("extracts"));
         double midLat = (outline.south() + outline.north()) / 2, midLon = (outline.west() + outline.east()) / 2;
         LocalExtractStore.Extract ex = store.covering(midLat, midLon, midLat, midLon, model.cfg().metersPerBlock);
         if (model.regions() == null) {
-            extractNote = " Map data is off for this world (terrain only).";
+            extractNote = "\n  Map data is off for this world (terrain only).";
         } else if (ex != null) {
             boolean whole = ex.covers(outline.south(), outline.west(), outline.north(), outline.east());
-            extractNote = " Map data comes from the local extract '" + ex.name() + "'"
+            extractNote = "\n  Map data comes from the local extract '" + ex.name() + "'"
                     + (whole ? "." : String.format(Locale.ROOT, " (it covers lat %.1f..%.1f, lon %.1f..%.1f; the few regions outside that come from Overpass).",
                     ex.south(), ex.north(), ex.west(), ex.east()));
         } else {
-            extractNote = " WARNING: no local extract covers this area, so every map region will be fetched from Overpass one by one -- slow, and the public servers throttle. Download map data first (world map, World window).";
+            extractNote = "\n  No downloaded map data covers this area, so every map region is fetched from Overpass one by one: slow, and the public "
+                    + "servers throttle. Download map data first (world map, World window).";
         }
-        double km2 = outline.totalKm2();
-        return Component.literal(String.format(Locale.ROOT,
-                "Pre-generating %s\n  about %,d km², %,d chunk rows north to south, up to %,d chunks before open sea is skipped.%s\n %s%s\n  Progress every 30 s; Stop on the world map (B) ends it (it resumes later).",
-                label, (long) km2, sweep.rowCount(), t.estimatedChunks, resumed.isEmpty() ? "" : "\n " + resumed, extractNote, t.loadNote() + syncNote(level)));
+        String label = outline.name().split(",")[0] + (mainlandOnly ? "" : " (all parts)");
+        return PregenTasks.submit(level, label, kind, area, null, doneRow, paused, extractNote);
     }
 
     /**
-     * Starts (or resumes) a sweep over a selection drawn on the world map: exactly its chunks, north to south, sea
-     * included. Progress is kept per selection; drawing the same selection again and pressing Generate resumes.
+     * A selection drawn on the world map as a pre-generation: exactly its chunks, north to south, sea included. The same selection again
+     * picks up its task (or an older progress file of it, from 1.1.0).
      */
-    public static Component startSelection(ServerLevel level, ChunkSelection selection) {
-        return startSelection(level, selection, null);
+    public static Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea) {
+        return startSelection(level, selection, skipSea, PregenTasks.SELECTION, false);
     }
 
-    /** A drawn area, with its own Skip open sea choice (null: the world's setting). */
-    public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea) {
-        if (active == null && (cubicSweeper == null || !cubicSweeper.running())) {
-            startedBy("the selection drawn on the map", l -> startSelection(l, selection, skipSea));
-        }
-        if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); stop it on the world map (B) first.\n" + active.progress());
+    /** A drawn area, with its own Skip open sea choice (null: the world's setting); {@code paused}: listed, not started. */
+    public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea, String kind, boolean paused) {
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
         if (selection.isEmpty()) return Component.literal("The selection is empty.");
+        HardLimit.extend(level.getServer(), selection);
+        String id = selection.fingerprint();
+        Path file = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-pregen").resolve("selection-" + id + ".json");
+        int doneRow = selection.firstRow() - 1;
+        JsonObject saved = readProgress(file);
+        if (saved != null && matches(saved, model, true) && saved.has("selection") && id.equals(saved.get("selection").getAsString())) {
+            doneRow = Math.max(doneRow, saved.get("completedRow").getAsInt());
+        }
+        double km2 = selection.count() * 256.0 * model.cfg().metersPerBlock * model.cfg().metersPerBlock / 1e6;
+        String label = String.format(Locale.ROOT, "%s (%s km²)", PregenTasks.AUTO.equals(kind) ? "World area" : "Selection", km2 < 10 ? String.format(Locale.ROOT, "%.1f", km2) : String.format(Locale.ROOT, "%,.0f", km2));
+        Component reply = PregenTasks.submit(level, label, kind, selection, skipSea, doneRow, paused, "");
+        warnIfTooLow(level, model, selection);
+        return reply;
+    }
+
+    /** Runs a task's sweep (PregenTasks: nothing else runs): from the row after its last one done to the end of its area. */
+    static synchronized Component runTask(ServerLevel level, PregenTasks.Task task) {
+        if (isRunning()) return Component.literal("A pre-generation is already running.");
+        WorldModel model = OrbisMod.model();
+        if (model == null) return Component.literal("The world model is not ready yet.");
+        ChunkSelection selection = task.area;
         List<double[][]> outline = new ArrayList<>();
         int[] xr = selection.xRange();
         outline.add(new double[][]{{xr[0] * 16.0, selection.firstRow() * 16.0}, {(xr[1] + 1) * 16.0, selection.firstRow() * 16.0},
                 {(xr[1] + 1) * 16.0, (selection.lastRow() + 1) * 16.0}, {xr[0] * 16.0, (selection.lastRow() + 1) * 16.0}});
         AreaSweep sweep = new AreaSweep(selection, outline);
         lastSweep = sweep;
-        HardLimit.extend(level.getServer(), selection);
-        String id = selection.fingerprint();
+        boolean skip = task.skipSea != null ? task.skipSea : model.cfg().pregenSkipOpenSea;
         CubicSweeper cubic = cubic(level);
-        if (cubic != null) {
-            if (cubic.running()) return Component.literal("A pre-generation is already running; stop it on the world map (B) first.\n" + cubic.status().getString());
-            return cubic.start(level, "the selection", sweep, skipSea != null ? skipSea : model.cfg().pregenSkipOpenSea, "cubic-selection-" + id + ".json");
-        }
-        Path file = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).resolve("orbis-pregen").resolve("selection-" + id + ".json");
-        int startRow = sweep.firstRow();
-        String resumed = "";
-        JsonObject saved = readProgress(file);
-        if (saved != null && matches(saved, model, true) && saved.has("selection") && id.equals(saved.get("selection").getAsString())) {
-            int completed = saved.get("completedRow").getAsInt();
-            if (completed >= sweep.firstRow() && completed < sweep.lastRow()) {
-                startRow = completed + 1;
-                resumed = String.format(Locale.ROOT, " Resuming at row %,d of %,d (%,d chunks were done before).",
-                        startRow - sweep.firstRow() + 1, sweep.rowCount(), saved.has("done") ? saved.get("done").getAsLong() : 0);
-            }
-        }
+        if (cubic != null) return cubic.start(level, task.label, sweep, skip, "cubic-selection-" + task.id + ".json");
+        int startRow = Math.max(sweep.firstRow(), task.doneRow() + 1);
+        String resumed = startRow > sweep.firstRow()
+                ? String.format(Locale.ROOT, "\n  Carrying on at row %,d of %,d.", startRow - sweep.firstRow() + 1, sweep.rowCount()) : "";
         long chunks = selection.count();
         double km2 = chunks * 256.0 * model.cfg().metersPerBlock * model.cfg().metersPerBlock / 1e6;
-        String label = String.format(Locale.ROOT, "Selection (%,.0f km²)", km2);
-        PregenTask t = new PregenTask(level, label, sweep, file, startRow);
+        PregenTask t = new PregenTask(level, task.label, sweep, startRow);
         t.model = model;
-        t.skipSeaChoice = skipSea;
-        t.selectionId = id;
+        t.skipSeaChoice = task.skipSea;
+        t.task = task;
         t.estimatedChunks = chunks;
         t.widenRegionCache((xr[1] - xr[0] + 1) * 16);
         t.startAreaProducer(model);
         active = t;
-        PendingPregen.begin(level, "the selection drawn on the map", PendingPregen.SELECTION, selection, skipSea, startRow - 1);
-        warnIfTooLow(level, model, selection);
         tellNeeds(level);
         return Component.literal(String.format(Locale.ROOT,
-                "Pre-generating the selection drawn on the map\n  %,d chunks, about %,.0f km², %,d chunk rows north to south.%s\n  Progress every 30 s; Stop on the world map (B) ends it (Generate the same selection again to resume).%s",
-                chunks, km2, sweep.rowCount(), resumed.isEmpty() ? "" : "\n " + resumed, t.loadNote() + syncNote(level)));
+                "Pre-generating %s\n  %,d chunks, about %,.0f km², %,d chunk rows north to south.%s\n  Progress on the world map (B), where Pause and Stop are.%s",
+                task.label, chunks, km2, sweep.rowCount(), resumed, t.loadNote() + syncNote(level)));
     }
 
     /** The game's "sync chunk writes" option makes every chunk write a separate synchronous disk write. */
@@ -903,28 +816,11 @@ public final class PregenTask {
         }
     }
 
+    /** The sweep's progress to its task (the world map's list, kept in the world): rows on disk, or that it is done. */
     private void saveProgress(boolean finished) {
-        if (progressFile == null) return;
-        try {
-            if (finished) {
-                PendingPregen.finished();
-                Files.deleteIfExists(progressFile);
-                return;
-            }
-            PendingPregen.progress(flushedRow);
-            WorldModel model = OrbisMod.model();
-            if (model == null) return;
-            Files.createDirectories(progressFile.getParent());
-            String json = String.format(Locale.ROOT,
-                    "{\n  \"label\": \"%s\",\n  \"originLat\": %.7f,\n  \"originLon\": %.7f,\n  \"metersPerBlock\": %s,\n  \"mainlandOnly\": %s,\n"
-                            + "  \"firstRow\": %d,\n  \"lastRow\": %d,\n  \"completedRow\": %d,\n  \"done\": %d,\n  \"skippedSea\": %d,\n%s  \"saved\": \"%s\"\n}\n",
-                    label.replace("\"", "'"), model.cfg().originLat, model.cfg().originLon, model.cfg().metersPerBlock,
-                    mainlandOnly, sweep.firstRow(), sweep.lastRow(), flushedRow, done, skippedSea.get(),
-                    selectionId == null ? "" : "  \"selection\": \"" + selectionId + "\",\n", java.time.Instant.now());
-            Files.writeString(progressFile, json, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            System.err.println("[orbis] Could not save pregen progress: " + e.getMessage());
-        }
+        if (task == null) return;
+        if (finished) PregenTasks.finished(task);
+        else PregenTasks.progress(task, flushedRow);
     }
 
     // ---- control ---------------------------------------------------------------------
@@ -932,12 +828,8 @@ public final class PregenTask {
     public static synchronized Component stop() {
         PregenTask t = active;
         CubicSweeper cubic = cubicSweeper;
-        if (t == null && cubic != null && cubic.running()) {
-            stoppedByHand = true;
-            return cubic.stop();
-        }
+        if (t == null && cubic != null && cubic.running()) return cubic.stop();
         if (t == null) return Component.literal("No pre-generation is running.");
-        stoppedByHand = true;
         t.stopRequested = true;
         t.stopFast();
         if (t.producer != null) t.producer.interrupt();
@@ -949,9 +841,7 @@ public final class PregenTask {
         t.pending.clear();
         while (!t.held.isEmpty()) t.level.getChunkSource().removeTicketWithRadius(PREGEN_TICKET, t.held.pollFirst(), 0);
         return Component.literal("Stopped " + t.label + "\n" + t.progress()
-                + "\n  Chunks still queued for the disk are written in the background."
-                + (t.selectionId != null ? " Generate the same selection from the map again to resume from the last row on disk."
-                : t.sweep != null ? " Run the same command again to resume from the last row on disk." : ""));
+                + "\n  Chunks still queued for the disk are written in the background.");
     }
 
     // ---- history (the mod's Overview tab) --------------------------------------------------

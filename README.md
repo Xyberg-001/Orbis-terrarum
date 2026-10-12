@@ -38,7 +38,7 @@ where you want to spawn, and create the world. The other tabs (Features, Look & 
 | Teleport / mark / copy coordinates | Right-click |
 | Map style | Street, satellite or elevation; day / night |
 | See the blocks | **Blocks** shows the world from above |
-| Pre-generate | **Select area**, draw it (green), **Generate**; what is left to do shows purple, even after a restart (**Resume**) |
+| Pre-generate | **Select area**, draw it (green), **Generate**. Unfinished ones are listed at the top (also after a restart): click to choose, then **Resume**, **Pause** or **Stop**; what is left shows purple |
 | World info and switches | The **i** button (real sky, hard limit, download map data) |
 
 ## Commands

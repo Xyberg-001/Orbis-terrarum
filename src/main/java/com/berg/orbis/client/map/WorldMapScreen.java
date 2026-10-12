@@ -38,7 +38,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     private static MapTiles.Layer lastLayer = MapTiles.Layer.STREET;
     private net.minecraft.client.gui.components.Button nightButton;
     /** The pre-generation's Stop and Resume (in its panel): operators only. */
-    private Button pregenStop, pregenResume;
+    private Button pregenStop, pregenResume, pregenPause;
     /** The World window's button, under the night button: the one button for everything about the world. */
     private Button worldButton;
     /** The card on a place (searched, What's here, a landmark), made with the screen's font. */
@@ -175,12 +175,23 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         }
         if (select != null) select.addWidgets(this::addRenderableWidget, 4, markersInBar ? TOP_H + 4 : TOP_H + 28, width, height);
         markersUnderBar = !markersInBar;
-        pregenStop = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.stop"),
-                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.STOP))
-                .bounds(0, 0, 52, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.stop.tip"))).build());
         pregenResume = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.resume"),
-                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.RESUME))
-                .bounds(0, 0, 52, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.resume.tip"))).build());
+                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.RESUME, pregenTargets()))
+                .bounds(0, 0, 56, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.resume.tip"))).build());
+        pregenPause = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.pause"),
+                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.PAUSE, pregenTargets()))
+                .bounds(0, 0, 56, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.pause.tip"))).build());
+        pregenStop = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.pregen.stop"), b -> {
+                    // Stop ends and removes: a second click within a few seconds confirms it.
+                    if (System.currentTimeMillis() < stopArmedUntil) {
+                        stopArmedUntil = 0;
+                        control(com.berg.orbis.net.PregenControlPayload.Action.STOP, pregenTargets());
+                    } else {
+                        stopArmedUntil = System.currentTimeMillis() + 4000;
+                        b.setMessage(Component.translatable("orbisterrarum.map.pregen.stop.sure"));
+                    }
+                })
+                .bounds(0, 0, 56, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.stop.tip"))).build());
         // Everything about the world (and its switches) is behind this one button, under the night button.
         worldButton = addRenderableWidget(Button.builder(Component.literal("i"), b -> openWorldWindow())
                 .bounds(width - 24, TOP_H + 38, 20, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.world.tip"))).build());
@@ -215,9 +226,9 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
                 && net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(com.berg.orbis.net.PregenControlPayload.TYPE);
     }
 
-    private void control(com.berg.orbis.net.PregenControlPayload.Action action) {
-        if (!canControlPregen()) return;
-        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new com.berg.orbis.net.PregenControlPayload(action));
+    private void control(com.berg.orbis.net.PregenControlPayload.Action action, List<String> tasks) {
+        if (!canControlPregen() || tasks.isEmpty()) return;
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new com.berg.orbis.net.PregenControlPayload(action, tasks));
     }
 
     /** Whether the Markers button sits under the bar, top left (a large GUI scale), where the panel keeps clear of it. */
@@ -239,61 +250,161 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         return new int[]{x, top, x + w};
     }
 
-    /** Shows the buttons that fit what the server's pre-generation is doing now. */
-    private void refreshPregenControls() {
-        if (pregenStop == null) return;
-        com.berg.orbis.net.PregenStatusPayload st = com.berg.orbis.client.OrbisClient.pregenStatus;
-        boolean ops = canControlPregen() && (minecraft.level == null || minecraft.level.dimension() == Level.OVERWORLD);
-        pregenStop.visible = ops && st.running();
-        pregenResume.visible = ops && !st.running() && !st.resumable().isEmpty();
-        if (mapper == null || (minecraft.level != null && minecraft.level.dimension() != Level.OVERWORLD)) {
-            pregenStop.visible = pregenResume.visible = false;
-        }
+    // ---- the list of pre-generations not finished yet (PregenTasks on the server)
+
+    /** The pre-generations ticked in the list (kept while the game runs): their areas are shaded, the buttons act on them. */
+    private static final java.util.Set<String> chosenTasks = new java.util.LinkedHashSet<>();
+    /** Rows of the list shown at once; more scroll. */
+    private static final int LIST_ROWS = 5, ROW_H = 13;
+    private int pregenScroll;
+    /** Each row as last drawn: top, bottom, and its task's id (for clicks). */
+    private final List<int[]> rowBoxes = new ArrayList<>();
+    private final List<String> rowIds = new ArrayList<>();
+    /** Until when a second click on Stop confirms it. */
+    private long stopArmedUntil;
+    private static final int RUNNING_GREEN = 0xFF4ADE80, QUEUED_YELLOW = 0xFFFACC15, PAUSED_GREY = 0xFFB0B8C0;
+
+    private static List<com.berg.orbis.net.PregenTasksPayload.Entry> pregenTasks() {
+        return com.berg.orbis.client.OrbisClient.pregenTasks;
     }
 
-    /** What the server's pre-generation is doing: its name, a bar, and how far it has got; or that a stopped one can be resumed. */
+    /** What the buttons act on: the ticked pre-generations, or the only one when the list has just one. */
+    private List<String> pregenTargets() {
+        List<com.berg.orbis.net.PregenTasksPayload.Entry> list = pregenTasks();
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (var e : list) ids.add(e.id());
+        chosenTasks.retainAll(ids);
+        if (!chosenTasks.isEmpty()) return new ArrayList<>(chosenTasks);
+        return list.size() == 1 ? List.of(list.get(0).id()) : List.of();
+    }
+
+    /** Shows Resume, Pause and Stop to operators while anything is listed, each active when it fits what is ticked. */
+    private void refreshPregenControls() {
+        if (pregenStop == null) return;
+        boolean ops = canControlPregen() && mapper != null && (minecraft.level == null || minecraft.level.dimension() == Level.OVERWORLD);
+        List<com.berg.orbis.net.PregenTasksPayload.Entry> list = pregenTasks();
+        List<String> targets = pregenTargets();
+        boolean paused = false, going = false;
+        for (var e : list) {
+            if (!targets.contains(e.id())) continue;
+            if (e.state() == com.berg.orbis.net.PregenTasksPayload.PAUSED) paused = true;
+            else going = true;
+        }
+        boolean show = ops && !list.isEmpty();
+        pregenResume.visible = pregenPause.visible = pregenStop.visible = show;
+        pregenResume.active = paused;
+        pregenPause.active = going;
+        pregenStop.active = !targets.isEmpty();
+        if (System.currentTimeMillis() >= stopArmedUntil) pregenStop.setMessage(Component.translatable("orbisterrarum.map.pregen.stop"));
+    }
+
+    /**
+     * The pre-generations not finished yet, top centre (only while there are any): each with a tick box, its name, its state and how far
+     * it has got, the running one with its live detail; Resume, Pause and Stop under them for operators. Click a row to tick it (its
+     * area alone is shaded purple, or the ticked ones together); double-click to bring its area into view.
+     */
     private void drawPregenPanel(GuiGraphicsExtractor g) {
         pregenPanel = null;
+        rowBoxes.clear();
+        rowIds.clear();
+        List<com.berg.orbis.net.PregenTasksPayload.Entry> list = pregenTasks();
+        if (list.isEmpty()) return;
         com.berg.orbis.net.PregenStatusPayload st = com.berg.orbis.client.OrbisClient.pregenStatus;
-        if (!st.running() && st.resumable().isEmpty()) return;
         int[] room = pregenPanelRoom();
-        Button button = pregenStop.visible ? pregenStop : pregenResume.visible ? pregenResume : null;
-        int pad = 5, textW = room[2] - room[0] - 2 * pad - (button != null ? button.getWidth() + pad : 0);
-        if (textW < 60) return; // no room on this screen
-        int x = room[0] + pad, y = room[1] + pad;
-        List<String> rows = new ArrayList<>();
-        List<FormattedCharSequence> body;
-        if (st.running()) {
-            String title = Component.translatable("orbisterrarum.map.pregen.running", st.label()).getString()
-                    + (st.waiting().isEmpty() ? "" : " (" + st.waiting() + ")");
-            rows.add(fit(title, textW));
-            body = font.split(Component.literal(st.detail()), textW);
-            if (body.size() > 2) body = body.subList(0, 2);
-        } else {
-            body = font.split(Component.translatable("orbisterrarum.map.pregen.stopped", st.resumable()), textW);
-        }
-        int barH = st.running() ? 12 : 0;
-        int textH = rows.size() * 10 + barH + body.size() * 10;
-        int height = Math.max(textH, button != null ? 20 : 0) + 2 * pad;
+        int pad = 5, x = room[0] + pad, w = room[2] - room[0] - 2 * pad;
+        if (w < 140) return; // no room on this screen
+        pregenScroll = Math.max(0, Math.min(pregenScroll, list.size() - LIST_ROWS));
+        int shown = Math.min(LIST_ROWS, list.size());
+        boolean running = false;
+        for (int i = 0; i < shown; i++) running |= list.get(pregenScroll + i).state() == com.berg.orbis.net.PregenTasksPayload.RUNNING && st.running();
+        boolean buttons = pregenStop.visible;
+        int height = pad + 12 + shown * ROW_H + (running ? 10 : 0) + (list.size() > LIST_ROWS ? 10 : 0) + (buttons ? 24 : 0) + pad - 2;
         int[] p = {room[0], room[1], room[2], room[1] + height};
         g.fill(p[0], p[1], p[2], p[3], 0xD0000000);
-        for (String r : rows) {
-            g.text(font, r, x, y, WHITE);
+        int y = p[1] + pad;
+        String title = Component.translatable("orbisterrarum.map.pregen.title").getString() + (list.size() > 1 ? " (" + list.size() + ")" : "");
+        g.text(font, title, x, y, WHITE);
+        if (list.size() > 1) {
+            String hint = Component.translatable(chosenTasks.isEmpty() ? "orbisterrarum.map.pregen.hint" : "orbisterrarum.map.pregen.chosen", chosenTasks.size()).getString();
+            hint = fit(hint, w - font.width(title) - 10);
+            g.text(font, hint, x + w - font.width(hint), y, PAUSED_GREY);
+        }
+        y += 12;
+        for (int i = 0; i < shown; i++) {
+            var e = list.get(pregenScroll + i);
+            boolean ticked = chosenTasks.contains(e.id());
+            if (ticked) g.fill(p[0] + 2, y - 1, p[2] - 2, y + ROW_H - 1, 0x40A855F7);
+            g.outline(x, y + 1, 8, 8, ticked ? PENDING_EDGE : 0xFF8890A0);
+            if (ticked) g.fill(x + 2, y + 3, x + 6, y + 7, PENDING_EDGE);
+            int state = e.state();
+            boolean live = state == com.berg.orbis.net.PregenTasksPayload.RUNNING && st.running();
+            int pct = e.total() <= 0 ? 0 : (int) Math.min(100, Math.round(100.0 * e.done() / e.total()));
+            String right = Component.translatable(state == com.berg.orbis.net.PregenTasksPayload.RUNNING ? "orbisterrarum.map.pregen.state.running"
+                    : state == com.berg.orbis.net.PregenTasksPayload.QUEUED ? "orbisterrarum.map.pregen.state.queued"
+                    : "orbisterrarum.map.pregen.state.paused", pct).getString();
+            int colour = state == com.berg.orbis.net.PregenTasksPayload.RUNNING ? RUNNING_GREEN
+                    : state == com.berg.orbis.net.PregenTasksPayload.QUEUED ? QUEUED_YELLOW : PAUSED_GREY;
+            int rightW = font.width(right);
+            g.text(font, fit(e.label(), w - 12 - rightW - 8), x + 12, y, WHITE);
+            g.text(font, right, x + w - rightW, y, colour);
+            // How far it has got, as a thin bar under the name.
+            int barW = w - 12;
+            g.fill(x + 12, y + 10, x + 12 + barW, y + 11, 0xFF404850);
+            g.fill(x + 12, y + 10, x + 12 + barW * pct / 100, y + 11, colour);
+            rowBoxes.add(new int[]{y - 1, y + ROW_H - 1});
+            rowIds.add(e.id());
+            y += ROW_H;
+            if (live) {
+                String detail = st.detail() + (st.waiting().isEmpty() ? "" : " (" + st.waiting() + ")");
+                g.text(font, fit(detail, w - 12), x + 12, y, PAUSED_GREY);
+                y += 10;
+            }
+        }
+        if (list.size() > LIST_ROWS) {
+            g.text(font, Component.translatable("orbisterrarum.map.pregen.more", list.size() - LIST_ROWS).getString(), x + 12, y, PAUSED_GREY);
             y += 10;
         }
-        if (st.running()) {
-            g.fill(x, y + 1, x + textW, y + 9, 0xFF404850);
-            g.fill(x, y + 1, x + Math.round(textW * Math.max(0f, Math.min(1f, st.fraction()))), y + 9, 0xFF4ADE80);
-            String pct = Math.round(st.fraction() * 100) + "%";
-            g.text(font, pct, x + (textW - font.width(pct)) / 2, y + 1, WHITE);
-            y += barH;
+        if (buttons) {
+            y += 4;
+            int bx = p[2] - pad;
+            for (Button b : new Button[]{pregenStop, pregenPause, pregenResume}) {
+                bx -= b.getWidth();
+                b.setPosition(bx, y);
+                bx -= 4;
+            }
         }
-        for (FormattedCharSequence l : body) {
-            g.text(font, l, x, y, st.running() ? 0xFFB0B8C0 : WHITE);
-            y += 10;
-        }
-        if (button != null) button.setPosition(p[2] - pad - button.getWidth(), p[1] + (height - 20) / 2);
         pregenPanel = p;
+    }
+
+    /** A click on the list: a row ticks or unticks its pre-generation, a double-click brings its area into view. */
+    private boolean pregenListClick(MouseButtonEvent e, boolean doubleClick) {
+        int[] p = pregenPanel;
+        if (p == null || e.x() < p[0] || e.x() >= p[2] || e.y() < p[1] || e.y() >= p[3]) return false;
+        for (int i = 0; i < rowBoxes.size(); i++) {
+            int[] r = rowBoxes.get(i);
+            if (e.y() < r[0] || e.y() >= r[1]) continue;
+            String id = rowIds.get(i);
+            if (doubleClick) {
+                chosenTasks.add(id);
+                showTaskArea(id);
+            } else if (!chosenTasks.remove(id)) {
+                chosenTasks.add(id);
+            }
+            break;
+        }
+        return true; // the panel takes the click, never the map under it
+    }
+
+    /** Moves and zooms the map to a pre-generation's area. */
+    private void showTaskArea(String id) {
+        com.berg.orbis.worldgen.ChunkSelection a = com.berg.orbis.client.OrbisClient.pregenAreas.get(id);
+        if (a == null || a.isEmpty() || mapper == null) return;
+        int[] xr = a.xRange();
+        double midX = (xr[0] + xr[1] + 1) * 8.0, midZ = (a.firstRow() + a.lastRow() + 1) * 8.0;
+        double[] ll = mapper.toLatLonExact(midX, midZ);
+        double across = Math.max(xr[1] - xr[0] + 1, a.lastRow() - a.firstRow() + 1) * 16.0 * info.metersPerBlock() * 1.4;
+        canvas.centerOn(ll[0], ll[1]);
+        canvas.showMetresAcross(ll[0], across);
     }
 
     /** The text, cut with "..." to fit the width. */
@@ -672,6 +783,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             return true;
         }
         if (super.mouseClicked(e, doubleClick)) return true;
+        if (pregenListClick(e, doubleClick)) return true;
         if (card != null && card.click(e.x(), e.y())) return true;
         if (mapper == null || !canvas.contains(e.x(), e.y())) return false;
         setFocused(null);
@@ -740,6 +852,10 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
 
     @Override
     public boolean mouseScrolled(double x, double y, double sx, double sy) {
+        if (pregenPanel != null && sy != 0 && x >= pregenPanel[0] && x < pregenPanel[2] && y >= pregenPanel[1] && y < pregenPanel[3]) {
+            pregenScroll -= (int) Math.signum(sy);
+            return true;
+        }
         if (mapper != null && sy != 0 && canvas.contains(x, y)) {
             canvas.zoomAt(x, y, Math.pow(2, sy * 0.5));
             return true;
@@ -1028,14 +1144,44 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         canvas.endOverlay(g);
     }
 
+    /** The rows left of the pre-generations shown (the ticked ones, or all when none is ticked), as one area; and what it was made from. */
+    private com.berg.orbis.worldgen.ChunkSelection pendingShown;
+    private String pendingKey = "";
+
+    /** The area still to do of the pre-generations shown, rebuilt when the list, the ticks or their progress change. */
+    private com.berg.orbis.worldgen.ChunkSelection pendingArea() {
+        List<com.berg.orbis.net.PregenTasksPayload.Entry> list = pregenTasks();
+        StringBuilder key = new StringBuilder();
+        List<com.berg.orbis.net.PregenTasksPayload.Entry> shown = new ArrayList<>();
+        for (var e : list) {
+            if (!chosenTasks.isEmpty() && !chosenTasks.contains(e.id())) continue;
+            if (!com.berg.orbis.client.OrbisClient.pregenAreas.containsKey(e.id())) continue;
+            shown.add(e);
+            key.append(e.id()).append(':').append(e.doneRow()).append(';');
+        }
+        if (!key.toString().equals(pendingKey)) {
+            pendingKey = key.toString();
+            com.berg.orbis.worldgen.ChunkSelection all = new com.berg.orbis.worldgen.ChunkSelection();
+            for (var e : shown) {
+                com.berg.orbis.worldgen.ChunkSelection a = com.berg.orbis.client.OrbisClient.pregenAreas.get(e.id());
+                if (a == null) continue;
+                for (int cz = Math.max(a.firstRow(), e.doneRow() + 1); cz <= a.lastRow(); cz++) {
+                    int[] r = a.rawRuns(cz);
+                    if (r != null) all.addRow(cz, r);
+                }
+            }
+            pendingShown = all;
+        }
+        return pendingShown;
+    }
+
     /**
-     * The pre-generation the server has not finished (running, stopped, or left when it closed): the rows of its area after the
-     * last one done, in purple, with an edge when zoomed in far enough to see chunks.
+     * The pre-generations the server has not finished (running, queued or paused): what each has left, in purple (the ticked ones only,
+     * or all when none is ticked), with an edge when zoomed in far enough to see chunks.
      */
     private void drawPending(GuiGraphicsExtractor g) {
-        com.berg.orbis.net.PendingAreaPayload pending = com.berg.orbis.client.OrbisClient.pendingArea;
-        com.berg.orbis.worldgen.ChunkSelection a = pending.area();
-        if (a == null || a.isEmpty() || pending.doneRow() >= a.lastRow()) return;
+        com.berg.orbis.worldgen.ChunkSelection a = pendingArea();
+        if (a == null || a.isEmpty()) return;
         double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
         for (double[] c : new double[][]{{canvas.left(), canvas.top()}, {canvas.right(), canvas.top()}, {canvas.left(), canvas.bottom()}, {canvas.right(), canvas.bottom()}}) {
             double[] ll = canvas.latLonAt(c[0], c[1]);
@@ -1046,9 +1192,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             maxZ = Math.max(maxZ, b[1]);
         }
         int cx0 = (int) Math.floor(minX / 16) - 1, cx1 = (int) Math.floor(maxX / 16) + 1;
-        int firstLeft = Math.max(a.firstRow(), pending.doneRow() + 1);
-        int from = Math.max((int) Math.floor(minZ / 16) - 1, firstLeft);
-        int to = Math.min((int) Math.floor(maxZ / 16) + 1, a.lastRow());
+        int from = Math.max((int) Math.floor(minZ / 16) - 1, a.firstRow()), to = Math.min((int) Math.floor(maxZ / 16) + 1, a.lastRow());
         if (from > to) return;
         double rowPx = Math.abs(physOfBlock(0, 16)[1] - physOfBlock(0, 0)[1]);
         int step = Math.max(1, (int) Math.ceil(1.0 / Math.max(1e-6, rowPx)));
@@ -1072,8 +1216,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
                     edgeLine(g, (runs[i + 1] + 1) * 16.0, cz * 16.0, (runs[i + 1] + 1) * 16.0, (cz + 1) * 16.0, t, PENDING_EDGE);
                 }
                 for (int side = 0; side < 2; side++) {
-                    // the first row left has an edge on its north side even where the area goes on (those rows are done)
-                    int[] other = side == 0 && cz == firstLeft && firstLeft > a.firstRow() ? null : a.rawRuns(side == 0 ? cz - 1 : cz + 1);
+                    int[] other = a.rawRuns(side == 0 ? cz - 1 : cz + 1);
                     int[] open = other == null ? runs : com.berg.orbis.worldgen.ChunkSelection.difference(runs, other);
                     double ez = (side == 0 ? cz : cz + 1) * 16.0;
                     for (int i = 0; i < open.length; i += 2) {
@@ -1232,8 +1375,8 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
         boolean red = limit != null && limit.on() && !limit.area().isEmpty();
         boolean grey = greyOut && BlockMapClient.available();
-        com.berg.orbis.net.PendingAreaPayload pending = com.berg.orbis.client.OrbisClient.pendingArea;
-        boolean purple = pending.area() != null && !pending.area().isEmpty() && pending.doneRow() < pending.area().lastRow();
+        com.berg.orbis.worldgen.ChunkSelection pending = pendingArea();
+        boolean purple = pending != null && !pending.isEmpty();
         if (!red && !grey && !purple) return;
         String redText = Component.translatable("orbisterrarum.map.hardlimit").getString();
         String greyText = Component.translatable("orbisterrarum.map.notyet").getString();

@@ -76,7 +76,7 @@ public final class AternosExport {
     private AternosExport() {}
 
     public static Component start(MinecraftServer server, boolean forOrbis, boolean zipOnly) {
-        if (PregenTask.isRunning()) return Component.literal("A pre-generation is running: export once it is done (or stop it on the world map).");
+        if (PregenTask.isRunning()) return Component.literal("A pre-generation is running: export once it is done (or pause it on the world map).");
         if (!RUNNING.compareAndSet(false, true)) return Component.literal("An export is already running.");
         ServerLevel ow = server.overworld();
         server.saveEverything(true, true, true);

@@ -79,7 +79,7 @@ public record AllowedAreaPayload(boolean on, ChunkSelection area) implements Cus
         writeArea(buf, area);
     }
 
-    /** An area as rows of runs, each a zigzag-encoded difference from the one before (also {@link PendingAreaPayload}). */
+    /** An area as rows of runs, each a zigzag-encoded difference from the one before (also {@link PregenTasksPayload}). */
     public static void writeArea(RegistryFriendlyByteBuf buf, ChunkSelection area) {
         int rows = 0;
         for (int z = area.firstRow(); z <= area.lastRow(); z++) if (area.rawRuns(z) != null) rows++;
