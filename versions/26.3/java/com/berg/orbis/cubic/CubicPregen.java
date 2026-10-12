@@ -314,6 +314,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
                 walk((index, x, z) -> {
                     if (this.stopRequested) throw new InterruptedException();
                     if (index < this.resumedFrom) return;
+                    awaitMapData(x, z);
+                    if (this.stopRequested) throw new InterruptedException();
                     int[] band = band(x, z);
                     if (band == null) {
                         this.columnsSkipped.incrementAndGet();
@@ -331,6 +333,31 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
             } finally {
                 this.producerDone = true;
             }
+        }
+
+        /**
+         * Waits until the map regions under a cube column (its four corners) are ready, before any of its cubes is asked for. The cube
+         * generator waits for them too, but inside Cubic Worlds' queue: with an Overpass server not answering, the sweep's cubes held
+         * that queue for minutes and a player joining waited behind them for the cubes around them (12 Oct 2026). The chunk sweeps
+         * wait the same way, before Minecraft is asked (fast pre-generation's builders).
+         */
+        void awaitMapData(int cubeX, int cubeZ) throws InterruptedException {
+            WorldModel m = this.model;
+            if (m == null || m.regions() == null) return;
+            int size = CubeTerrain.SIZE, x0 = cubeX * size, z0 = cubeZ * size;
+            // The regions one and two region rows ahead (south) download meanwhile, as the chunk sweeps queue theirs.
+            int ahead = m.regions().regionSize();
+            m.regions().futureForBlock(x0, z0 + ahead);
+            m.regions().futureForBlock(x0, z0 + 2 * ahead);
+            int[][] corners = {{x0, z0}, {x0 + size - 1, z0}, {x0, z0 + size - 1}, {x0 + size - 1, z0 + size - 1}};
+            for (int[] c : corners) {
+                java.util.concurrent.CompletableFuture<?> region = m.regions().futureForBlock(c[0], c[1]);
+                while (!this.stopRequested && !region.isDone()) {
+                    this.waiting = "waiting for map data";
+                    Thread.sleep(100);
+                }
+            }
+            this.waiting = null;
         }
 
         /** The cube-Y band of a column, or null to leave it out (beyond the world border or limit, or open sea when that is skipped). */
