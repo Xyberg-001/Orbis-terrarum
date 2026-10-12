@@ -50,6 +50,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
     /** Blocks generated under a column's lowest ground and over its highest ground or water. */
     private static final int BELOW = 64;
     private static final int ABOVE = 64;
+    /** Blocks around a cube column whose map data its generation reads (the cave band's 96, and room for structures' footprints). */
+    private static final int MAP_REACH = 160;
     /** Cube columns across a tile. */
     private static final int TILE = 8;
     /** Cubes asked for and not full yet. */
@@ -336,26 +338,31 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         }
 
         /**
-         * Waits until the map regions under a cube column (its four corners) are ready, before any of its cubes is asked for. The cube
-         * generator waits for them too, but inside Cubic Worlds' queue: with an Overpass server not answering, the sweep's cubes held
-         * that queue for minutes and a player joining waited behind them for the cubes around them (12 Oct 2026). The chunk sweeps
-         * wait the same way, before Minecraft is asked (fast pre-generation's builders).
+         * Waits until every map region the generation of a cube column reads is ready, before any of its cubes is asked for: the regions
+         * within {@link #MAP_REACH} blocks of it (the cave band looks 96 blocks around a chunk for roads and buildings, and a structure's
+         * footprint reaches further). The generator waits for them too, but on Minecraft's shared worker threads, inside Cubic Worlds'
+         * queue: with an Overpass server not answering, the sweep's cubes held those threads for minutes and a player joining waited
+         * behind them for the cubes around them (12 Oct 2026). The chunk sweeps wait the same way, before Minecraft is asked.
          */
         void awaitMapData(int cubeX, int cubeZ) throws InterruptedException {
             WorldModel m = this.model;
             if (m == null || m.regions() == null) return;
-            int size = CubeTerrain.SIZE, x0 = cubeX * size, z0 = cubeZ * size;
+            int size = CubeTerrain.SIZE, region = m.regions().regionSize();
+            int x0 = cubeX * size - MAP_REACH, x1 = cubeX * size + size - 1 + MAP_REACH;
+            int z0 = cubeZ * size - MAP_REACH, z1 = cubeZ * size + size - 1 + MAP_REACH;
             // The regions one and two region rows ahead (south) download meanwhile, as the chunk sweeps queue theirs.
-            int ahead = m.regions().regionSize();
-            m.regions().futureForBlock(x0, z0 + ahead);
-            m.regions().futureForBlock(x0, z0 + 2 * ahead);
-            int[][] corners = {{x0, z0}, {x0 + size - 1, z0}, {x0, z0 + size - 1}, {x0 + size - 1, z0 + size - 1}};
-            for (int[] c : corners) {
-                java.util.concurrent.CompletableFuture<?> region = m.regions().futureForBlock(c[0], c[1]);
-                while (!this.stopRequested && !region.isDone()) {
-                    this.waiting = "waiting for map data";
-                    Thread.sleep(100);
+            m.regions().futureForBlock(cubeX * size, z1 + region);
+            m.regions().futureForBlock(cubeX * size, z1 + 2 * region);
+            for (int x = x0; ; x = Math.min(x1, x + region)) {
+                for (int z = z0; ; z = Math.min(z1, z + region)) {
+                    java.util.concurrent.CompletableFuture<?> f = m.regions().futureForBlock(x, z);
+                    while (!this.stopRequested && !f.isDone()) {
+                        this.waiting = "waiting for map data";
+                        Thread.sleep(100);
+                    }
+                    if (z == z1) break;
                 }
+                if (x == x1) break;
             }
             this.waiting = null;
         }
