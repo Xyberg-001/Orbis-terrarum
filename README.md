@@ -52,12 +52,11 @@ where you want to spawn, and create the world. The other tabs (Features, Look & 
 | `/orbis pregen area [all] <place>` | Pre-generate a town or country by its outline (`all`: islands and overseas parts too) | op |
 | `/orbis pregen status` / `stop` | Progress, or stop it | op |
 | `/orbis export aternos [orbis] [zip]` | Make an upload of this world for an Aternos server | op |
-| `/orbis import <file.osm.pbf>` | Use a downloaded OpenStreetMap file instead of the online servers | op |
 | `/orbis import-places <file.geojson>` | Add Overture place data | op |
 | `/orbis settings [name] [value]` | The mod's performance and network settings, for servers | op |
 
 Everything else is on the world map (B): What's here, the World window (**i**) with the real sky and hard limit switches, Download
-map data, Draw all, and Resume.
+map data, Import map file (country-scale worlds), Draw all, and Resume.
 
 ## Servers
 

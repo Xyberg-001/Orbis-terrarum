@@ -1216,7 +1216,7 @@ generated-area haze, and the landmarks rebuild themselves).
   `pregen status`, `pregen stop` — see "Pre-generating an area" (for server consoles; the map's
   Select area does the same).
 - `/orbis export aternos [orbis] [zip]` — see "Playing with friends".
-- `/orbis import <file.osm.pbf>`, `/orbis import-places <file.geojson>` — local map and place data.
+- `/orbis import-places <file.geojson>` — extra places from Overture (see Imported places).
 - `/orbis settings [name] [value]` — the performance and network settings, for servers.
 
 ## Configuration — `config/orbisterrarum/orbisterrarum.json`
@@ -1729,8 +1729,9 @@ Norwegian peaks stand about 75 blocks above the sea.
    java -Xmx4g -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf"
    ```
 
-   or in game with `/orbis import E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf`
-   (progress in chat). Three passes over the file; Norway takes about three
+   or in game with **Import map file...** in the world map's World window (**i**), shown to the
+   operator hosting a world at 8 m per block or coarser: it opens the system's file dialog and
+   shows the import's progress on the button. Three passes over the file; Norway takes about three
    minutes on a 3 GB heap and becomes `config/orbisterrarum/extracts/norway/`
    (11,600 cells of 0.1°, about 1 GB: 1.8 million ways, 490,000 water
    polygons, 89 million points).

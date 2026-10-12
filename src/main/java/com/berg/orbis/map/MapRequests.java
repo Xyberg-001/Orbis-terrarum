@@ -42,6 +42,9 @@ public final class MapRequests {
     /** The map data download started from a map: its last progress line and fraction (-1: unknown), for every World window. */
     private static volatile String mapDataLine = "";
     private static volatile float mapDataFraction = -1;
+    /** A map file being imported from the World window (worlds at 8 m per block or coarser), and its last progress line. */
+    private static volatile boolean importing;
+    private static volatile String importLine = "";
 
     private MapRequests() {}
 
@@ -83,7 +86,7 @@ public final class MapRequests {
             case "here" -> here(player, req);
             case "about" -> answer(player, "about", req.arg(), about(server, player));
             case "landmarks" -> answer(player, "landmarks", req.arg(), landmarks(server, player));
-            case "sky", "drawall", "mapdata", "mapdata-stop" -> {
+            case "sky", "drawall", "mapdata", "mapdata-stop", "import" -> {
                 if (!op(player)) {
                     say(player, Component.literal("Only operators can change this world."));
                     return;
@@ -92,6 +95,7 @@ public final class MapRequests {
                     case "sky" -> sky(server, req.arg());
                     case "drawall" -> BlockMapService.renderAll(server);
                     case "mapdata" -> mapData(server, player, req);
+                    case "import" -> importMapFile(server, player, req.arg());
                     default -> {
                         MapDataJob.stop();
                         yield Component.literal("Stopping the map data download (it carries on next time).");
@@ -142,6 +146,8 @@ public final class MapRequests {
         Component draw = BlockMapService.status();
         out.add("draw\t" + (BlockMapService.rendering() ? "1" : "0") + "\t" + draw.getString());
         out.add("mapdata\t" + (MapDataJob.busy() ? "1" : "0") + "\t" + mapDataFraction + "\t" + mapDataLine);
+        out.add("coarse\t" + (cfg.metersPerBlock >= 8.0 ? "1" : "0"));
+        out.add("import\t" + (importing ? "1" : "0") + "\t" + importLine);
         return out;
     }
 
@@ -198,7 +204,7 @@ public final class MapRequests {
             }
             if (plan == null) {
                 mapDataLine = "";
-                String note = mpb >= 8.0 ? "At 8 m per block or coarser a country's map file is imported with /orbis import; "
+                String note = mpb >= 8.0 ? "At 8 m per block or coarser, a country's map file is read with Import map file; "
                         : why != null ? "The map data look-up failed (" + why + "); " : "Map data on disk covers this area already, or no single file holds it; ";
                 server.execute(() -> tell(server, who, note + prefetch(model, area)));
                 return;
@@ -229,6 +235,46 @@ public final class MapRequests {
         t.setDaemon(true);
         t.start();
         return Component.literal("Looking up map data for the area...");
+    }
+
+    /**
+     * Import map file (World window, worlds at 8 m per block or coarser): an OpenStreetMap file on the host's disk (a whole country from
+     * Geofabrik) read into the local store with the "map" profile (coast, water, rivers, main roads, railways), which such worlds use
+     * instead of the online servers; regions not loaded yet use it at once. A whole country needs 2-3 GB of heap.
+     */
+    private static Component importMapFile(MinecraftServer server, ServerPlayer player, String file) {
+        WorldModel model = OrbisMod.model();
+        if (model.cfg().metersPerBlock < 8.0) return Component.literal("Map files are for worlds at 8 m per block or coarser; use Download map data here.");
+        if (importing) return Component.literal("A map file is being imported already.");
+        java.nio.file.Path pbf = java.nio.file.Path.of(file.trim().replace("\"", ""));
+        if (!java.nio.file.Files.isRegularFile(pbf)) return Component.literal("No such file: " + pbf.toAbsolutePath());
+        java.nio.file.Path extracts = OrbisMod.dataDir().resolve("extracts");
+        UUID who = player.getUUID();
+        importing = true;
+        importLine = "Starting...";
+        Thread t = new Thread(() -> {
+            try {
+                var s = com.berg.orbis.osm.extract.ExtractImporter.importFile(pbf, extracts, com.berg.orbis.osm.extract.ExtractImporter.Profile.MAP,
+                        msg -> importLine = msg);
+                com.berg.orbis.osm.extract.LocalExtractStore.get(extracts).rescan();
+                server.execute(() -> {
+                    tell(server, who, "Map file imported. " + s.describe() + " Regions not loaded yet use it from now on.");
+                    Landmarks.rebuildSoon(server);
+                });
+            } catch (Throwable e) {
+                String why = e instanceof OutOfMemoryError
+                        ? "the game ran out of memory (a whole country needs 2-3 GB; the technical notes show the importer outside the game)"
+                        : e.toString();
+                server.execute(() -> tell(server, who, "The map file import failed: " + why));
+            } finally {
+                importing = false;
+                importLine = "";
+            }
+        }, "Orbis-Import");
+        t.setDaemon(true);
+        t.start();
+        System.out.println("[orbis] Importing map file " + pbf.toAbsolutePath());
+        return Component.literal("Importing " + pbf.getFileName() + " in the background...");
     }
 
     /** The online servers' regions over the box, fetched ahead (at most 13 x 13 around its middle); the message to say. */
