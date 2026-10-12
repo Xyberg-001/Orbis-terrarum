@@ -1208,7 +1208,8 @@ public final class PregenTask {
         long remaining = rowsFromStart > 0 ? (long) (elapsed * (double) rowsLeft / rowsFromStart) : -1;
         return new Snapshot(label, rowsDone / (float) Math.max(1, sweep.rowCount()),
                 String.format(Locale.ROOT, "row %,d of %,d, %,d chunks%s, %.0f chunks/s, %s left", rowsDone, sweep.rowCount(), finished, failedNote, rate, eta(remaining)),
-                waiting);
+                // Barely moving: what it waits for, as the boss bar says it (downloading terrain (4), aerial photos (2); preparing map data; ...).
+                barRate >= 0.5 ? (waiting == null ? "" : waiting) : barActivity());
     }
 
     private void updateRateNow() {
