@@ -22,7 +22,8 @@ public record PregenTasksPayload(List<Entry> tasks) implements CustomPacketPaylo
     public static final int RUNNING = 0, QUEUED = 1, PAUSED = 2, DOWNLOADING = 3;
     private static final int MAX_TASKS = 256;
 
-    public record Entry(String id, String label, int state, long total, long done, int doneRow, ChunkSelection area) {
+    /** {@code download}: its map data comes from a Geofabrik download (else Live); {@code mapPercent}: that download's progress, -1 when none runs. */
+    public record Entry(String id, String label, int state, long total, long done, int doneRow, ChunkSelection area, boolean download, int mapPercent) {
     }
 
     private void write(RegistryFriendlyByteBuf buf) {
@@ -36,6 +37,8 @@ public record PregenTasksPayload(List<Entry> tasks) implements CustomPacketPaylo
             buf.writeVarInt(AllowedAreaPayload.zig(e.doneRow()));
             buf.writeBoolean(e.area() != null);
             if (e.area() != null) AllowedAreaPayload.writeArea(buf, e.area());
+            buf.writeBoolean(e.download());
+            buf.writeVarInt(e.mapPercent() + 1);
         }
     }
 
@@ -49,7 +52,9 @@ public record PregenTasksPayload(List<Entry> tasks) implements CustomPacketPaylo
             long total = buf.readVarLong(), done = buf.readVarLong();
             int doneRow = AllowedAreaPayload.unzig(buf.readVarInt());
             ChunkSelection area = buf.readBoolean() ? AllowedAreaPayload.readArea(buf) : null;
-            list.add(new Entry(id, label, state, total, done, doneRow, area));
+            boolean download = buf.readBoolean();
+            int mapPercent = buf.readVarInt() - 1;
+            list.add(new Entry(id, label, state, total, done, doneRow, area, download, mapPercent));
         }
         return new PregenTasksPayload(list);
     }

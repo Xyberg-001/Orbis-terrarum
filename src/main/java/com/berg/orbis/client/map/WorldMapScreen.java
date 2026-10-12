@@ -38,7 +38,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     private static MapTiles.Layer lastLayer = MapTiles.Layer.STREET;
     private net.minecraft.client.gui.components.Button nightButton;
     /** The pre-generation's Stop and Resume (in its panel): operators only. */
-    private Button pregenStop, pregenResume, pregenPause, pregenButton;
+    private Button pregenStop, pregenResume, pregenPause, pregenButton, pregenSource;
     /** The World window's button, under the night button: the one button for everything about the world. */
     private Button worldButton;
     /** The card on a place (searched, What's here, a landmark), made with the screen's font. */
@@ -185,6 +185,9 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         pregenPause = addRenderableWidget(Button.builder(Component.empty(),
                         b -> control(com.berg.orbis.net.PregenControlPayload.Action.PAUSE, pregenTargets()))
                 .bounds(0, 0, 20, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.pause.tip"))).build());
+        pregenSource = addRenderableWidget(Button.builder(Component.empty(),
+                        b -> control(com.berg.orbis.net.PregenControlPayload.Action.SOURCE, pregenTargets()))
+                .bounds(0, 0, 20, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.pregen.source.tip"))).build());
         pregenStop = addRenderableWidget(Button.builder(Component.empty(), b -> {
                     // Stop ends and removes: a second click within a few seconds confirms it.
                     if (System.currentTimeMillis() < stopArmedUntil) {
@@ -291,7 +294,8 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             if (e.state() == com.berg.orbis.net.PregenTasksPayload.PAUSED) paused = true;
             else going = true;
         }
-        pregenResume.visible = pregenPause.visible = pregenStop.visible = ops && listOpen;
+        pregenResume.visible = pregenPause.visible = pregenStop.visible = pregenSource.visible = ops && listOpen;
+        pregenSource.active = !targets.isEmpty();
         pregenResume.active = paused;
         pregenPause.active = going;
         pregenStop.active = !targets.isEmpty();
@@ -350,14 +354,18 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             int colour = state == com.berg.orbis.net.PregenTasksPayload.RUNNING ? RUNNING_GREEN
                     : state == com.berg.orbis.net.PregenTasksPayload.QUEUED ? QUEUED_YELLOW
                     : state == com.berg.orbis.net.PregenTasksPayload.DOWNLOADING ? DOWNLOAD_BLUE : PAUSED_GREY;
-            // Waiting for its map data: the download's progress ("map data 45%"), not the chunks'.
-            String right2 = state == com.berg.orbis.net.PregenTasksPayload.DOWNLOADING
-                    ? Component.translatable("orbisterrarum.map.pregen.state.downloading", e.total() > 0 ? pct + "%" : "...").getString() : pct + "%";
+            String right2 = pct + "%";
             int rw = font.width(right2);
+            // Where its map data comes from: Live (the online servers) or Download (Geofabrik), with the download's progress while it runs.
+            String mode = !e.download() ? Component.translatable("orbisterrarum.map.pregen.mode.live").getString()
+                    : e.mapPercent() >= 0 ? Component.translatable("orbisterrarum.map.pregen.mode.downloading", e.mapPercent()).getString()
+                    : Component.translatable("orbisterrarum.map.pregen.mode.download").getString();
+            int modeW = font.width(mode);
+            g.text(font, mode, x + w - 11 - rw - 8 - modeW, y, e.download() ? DOWNLOAD_BLUE : PAUSED_GREY);
             // the state as an icon at the right edge, the percentage before it
             stateIcon(g, x + w - 7, y + 1, state, colour);
             g.text(font, right2, x + w - 11 - rw, y, colour);
-            g.text(font, fit(e.label(), w - 12 - rw - 16), x + 12, y, WHITE);
+            g.text(font, fit(e.label(), w - 12 - rw - 16 - modeW - 8), x + 12, y, WHITE);
             int barW = w - 12;
             g.fill(x + 12, y + 10, x + 12 + barW, y + 11, 0xFF404850);
             g.fill(x + 12, y + 10, x + 12 + barW * pct / 100, y + 11, colour);
@@ -379,7 +387,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         if (buttons) {
             y += 2;
             int bx = p[2] - pad;
-            for (Button b : new Button[]{pregenStop, pregenPause, pregenResume}) {
+            for (Button b : new Button[]{pregenStop, pregenPause, pregenResume, pregenSource}) {
                 bx -= b.getWidth();
                 b.setPosition(bx, y);
                 bx -= 3;
@@ -460,6 +468,15 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             int x = pregenPause.getX() + 6, y = pregenPause.getY() + 5;
             g.fill(x, y, x + 3, y + 10, c);
             g.fill(x + 5, y, x + 8, y + 10, c);
+        }
+        if (pregenSource.visible) {
+            // two arrows, right over left: switch between Live and Download
+            int c = pregenSource.active ? DOWNLOAD_BLUE : 0xFF9A9A9A;
+            int x = pregenSource.getX() + 4, y = pregenSource.getY() + 5;
+            g.fill(x, y + 2, x + 10, y + 3, c);
+            for (int r = 0; r < 3; r++) g.fill(x + 9 + r, y + r, x + 10 + r, y + 5 - r, c);
+            g.fill(x + 2, y + 8, x + 12, y + 9, c);
+            for (int r = 0; r < 3; r++) g.fill(x + 2 - r, y + 6 + r, x + 3 - r, y + 11 - r, c);
         }
         if (pregenStop.visible) {
             boolean armed = System.currentTimeMillis() < stopArmedUntil;

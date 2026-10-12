@@ -13,7 +13,8 @@ import java.util.List;
  * the pre-generations listed by id (PregenTasks), or switch the hard limit on or off (no ids).
  */
 public record PregenControlPayload(Action action, List<String> tasks) implements CustomPacketPayload {
-    public enum Action { STOP, RESUME, LIMIT_ON, LIMIT_OFF, PAUSE }
+    /** SOURCE: switch the pre-generations named between Live and Download map data. */
+    public enum Action { STOP, RESUME, LIMIT_ON, LIMIT_OFF, PAUSE, SOURCE }
 
     private static final int MAX_TASKS = 256;
 

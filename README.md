@@ -38,7 +38,7 @@ where you want to spawn, and create the world. The other tabs (Features, Look & 
 | Teleport / mark / copy coordinates | Right-click |
 | Map style | Street, satellite or elevation; day / night |
 | See the blocks | **Blocks** shows the world from above |
-| Pre-generate | **Select area**, draw it (green), choose **Map data: Live** (online servers) or **Download** (Geofabrik first), **Generate**. Unfinished ones are listed under the button on the right, shown only while there are any (also after a restart): click to choose, then **Resume**, **Pause** or **Stop**; what is left shows purple |
+| Pre-generate | **Select area**, draw it (green), choose **Map data: Live** (online servers) or **Download** (Geofabrik first), **Generate**. Unfinished ones are listed under the button on the right, shown only while there are any (also after a restart): click to choose, then **Resume**, **Pause**, **Stop** or **⇄** (switch its map data between Live and Download); what is left shows purple |
 | World info and switches | The **i** button (real sky, hard limit, Draw all, Export for Aternos) |
 
 ## Commands

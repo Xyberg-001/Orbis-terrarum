@@ -70,9 +70,10 @@ public final class PregenStatus {
         }
         ServerLevel level = server.overworld();
         Component reply = switch (action) {
-            case STOP -> PregenTasks.control(server, "stop", payload.tasks());
-            case PAUSE -> PregenTasks.control(server, "pause", payload.tasks());
-            case RESUME -> PregenTasks.control(server, "resume", payload.tasks());
+            case STOP -> PregenTasks.control(server, "stop", payload.tasks(), player.getUUID());
+            case PAUSE -> PregenTasks.control(server, "pause", payload.tasks(), player.getUUID());
+            case RESUME -> PregenTasks.control(server, "resume", payload.tasks(), player.getUUID());
+            case SOURCE -> PregenTasks.control(server, "source", payload.tasks(), player.getUUID());
             case LIMIT_ON -> HardLimit.set(server, true);
             case LIMIT_OFF -> HardLimit.set(server, false);
         };

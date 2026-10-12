@@ -1910,7 +1910,13 @@ place you asked about, and landmark names only when zoomed in or hovered.
   `PregenTasks.mapDataDone` queues the task and it starts in its turn. Another download
   running, or map data off, means Live. Pause leaves it paused when the download ends,
   Stop also stops the download; a DOWNLOADING task found when the world opens is listed
-  as paused (its download stopped with the server).
+  as paused (its download stopped with the server). Each list row says where its map
+  data comes from ("Live", "Download", "Download 33%" while its download runs, even
+  paused; `Entry.download`, `Entry.mapPercent`), and the list's **⇄** button
+  (`PregenControlPayload.Action.SOURCE`, `PregenTasks.switchSource`) switches the ticked
+  ones when one source fails: Download to Live drops the download (the task may go at
+  once); Live to Download pauses a running one and downloads (`MapRequests.downloadForTask`),
+  queueing it when that is in. A failed download switches the task to Live by itself.
 - **Landmarks rebuild themselves** (`Landmarks.rebuildSoon`) after a map data
   download or an import finishes, so places the online servers missed join the
   advancements.
