@@ -39,8 +39,7 @@ import java.util.stream.Stream;
  * hundred MB, where the whole-country full import of Norway took 12 GB. A full-country "map" import
  * of Norway needs about 2 GB of heap; run it standalone with
  * {@code java -Xmx4g -cp orbisterrarum-<version>.jar com.berg.orbis.osm.extract.ExtractImporter <file.osm.pbf>}
- * from the Minecraft instance folder, or in game with Import map file in the world map's World window (worlds at 8 m per block or
- * coarser).
+ * from the Minecraft instance folder, or in game with {@code /orbis import <file>}.
  */
 public final class ExtractImporter {
 

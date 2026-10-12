@@ -21,10 +21,10 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * The world map's World window (its i button): the world's facts on the left, and on the right its real sky switches and, for
- * operators, the hard limit, Draw all for the Blocks layer, Download map data and, in a world at 8 m per block or coarser that this
- * game hosts, Import map file (a country's OpenStreetMap file from the disk). Shown over the dimmed map and gone with Esc, its x or a
- * click beside it, so the map itself keeps only its one button. Asks the server again every two seconds while open, for progress.
+ * The world map's World window (its i button): the world's facts on the left (/orbis info, /wherell), and on the right its real sky
+ * switches (/orbis sky ...) and, for operators, the hard limit (/orbis hardlimit), Draw all for the Blocks layer (/orbis map render) and
+ * Download map data (/orbis mapdata, /orbis prefetch). Shown over the dimmed map and gone with Esc, its x or a click beside it, so the
+ * map itself keeps only its one button. Asks the server again every two seconds while open, for progress.
  */
 public final class WorldWindow extends Screen implements MapAnswerSink {
     private static final int TOP_H = 24, PAD = 8, LABEL_W = 74;
@@ -40,15 +40,15 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
     private boolean answered, op;
     private final Map<String, String> facts = new LinkedHashMap<>();
     private final Map<String, String[]> sky = new LinkedHashMap<>();
-    private boolean limitOn, drawing, downloading, coarse, importing, picking;
+    private boolean limitOn, drawing, downloading;
     private long allowedChunks;
-    private String drawText = "", downloadLine = "", importLine = "";
+    private String drawText = "", downloadLine = "";
     private float downloadFraction = -1;
     private String message;
     private long messageUntil;
 
     private final Map<String, Button> skyButtons = new LinkedHashMap<>();
-    private Button limit, draw, download, importFile;
+    private Button limit, draw, download;
     private int[] box, close;
 
     WorldWindow(WorldMapScreen parent, WorldInfoPayload info) {
@@ -97,29 +97,8 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
             String arg = sel == null ? "" : String.format(Locale.ROOT, "%.6f,%.6f,%.6f,%.6f", sel[0], sel[1], sel[2], sel[3]);
             ClientPlayNetworking.send(new MapRequestPayload("mapdata", arg, mid[0], mid[1]));
         }).bounds(0, 0, 60, 20).build());
-        importFile = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.world.import"), b -> pickMapFile())
-                .bounds(0, 0, 60, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.world.import.tip"))).build());
         layoutAndLabel();
         if (!answered) ask();
-    }
-
-    /** The operating system's file dialog (on this computer, which hosts the world), then the server imports the file. */
-    private void pickMapFile() {
-        if (picking) return;
-        picking = true;
-        java.nio.file.Path start = java.nio.file.Path.of(System.getProperty("user.home"), "Downloads");
-        com.berg.orbis.client.FolderPicker.chooseFile(Component.translatable("orbisterrarum.map.world.import.dialog").getString(),
-                java.nio.file.Files.isDirectory(start) ? start : null, "OpenStreetMap files", ".osm.pbf").thenAccept(file -> minecraft.execute(() -> {
-            picking = false;
-            if (file == null || !canAsk()) return;
-            ClientPlayNetworking.send(new MapRequestPayload("import", file.toString(), 0, 0));
-            nextAsk = System.currentTimeMillis() + 300;
-        }));
-    }
-
-    /** Import map file is offered where it is useful and works: a coarse world (8 m per block or more), an operator, this game hosting it. */
-    private boolean importOffered() {
-        return op && answered && coarse && minecraft != null && minecraft.getSingleplayerServer() != null;
     }
 
     @Override
@@ -175,11 +154,6 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
                         downloadFraction = -1;
                     }
                     downloadLine = f.length > 3 ? f[3] : "";
-                }
-                case "coarse" -> coarse = f.length > 1 && f[1].equals("1");
-                case "import" -> {
-                    importing = f.length > 1 && f[1].equals("1");
-                    importLine = f.length > 2 ? f[2] : "";
                 }
                 default -> { }
             }
@@ -284,12 +258,6 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
                 ? Component.literal(downloadLine.isEmpty() ? "" : downloadLine + " - ").append(Component.translatable("orbisterrarum.map.world.download.stop.tip"))
                 : Component.translatable("orbisterrarum.map.world.download.tip")));
         download.setPosition(x, y + 44);
-        importFile.visible = importOffered();
-        importFile.setWidth(cw);
-        importFile.active = !importing && !picking;
-        importFile.setMessage(importing ? Component.literal(fit(importLine.isEmpty() ? "..." : importLine, cw - 10))
-                : Component.translatable("orbisterrarum.map.world.import"));
-        importFile.setPosition(x, y + 66);
     }
 
     private String fit(String s, int w) {
@@ -350,7 +318,7 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
         int[] at = controlsAt();
         int controlsBottom = at[1] + 12;
         boolean controls = op && answered;
-        if (controls) controlsBottom += ((sky.size() + 1) / 2) * 22 + 14 + (importOffered() ? 4 : 3) * 22;
+        if (controls) controlsBottom += ((sky.size() + 1) / 2) * 22 + 14 + 3 * 22;
         else if (!sky.isEmpty()) controlsBottom += sky.size() * 10 + 4;
         else controlsBottom = at[1];
         int factsBottom = y0 + PAD + 14 + factsHeight();
