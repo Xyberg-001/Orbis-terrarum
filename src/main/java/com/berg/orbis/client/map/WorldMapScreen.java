@@ -65,8 +65,8 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     private boolean pressMoved;
     private static double lastScale = -1;
     /** The Minecraft layer's opacity: 0 off, then 35%, 70%, 100%. */
-    /** The Minecraft blocks over the real map (on by default), drawn at this opacity so the real map still shows through. */
-    private static final int BLOCK_ALPHA = 180;
+    /** The Minecraft blocks over the real map (on by default), fully opaque where the world is generated. */
+    private static final int BLOCK_ALPHA = 255;
     private static boolean blocksOn = true;
     private static boolean greyOut = true;
     private String layerHint;
