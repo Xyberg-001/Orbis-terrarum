@@ -372,20 +372,34 @@ public final class MapSelectTool {
             ring(g, x + 11, y + 8, 5.5, 3.6, c);
             gline(g, x + 7, y + 11, x + 5, y + 16, c);
         });
+        // Two overlapping squares, the old selection (top left) and the shape being drawn (bottom right); green is what ends up
+        // selected. A lone square read as the rectangle tool.
         icon(g, modeButton, 0xFFFFFFFF, (x, y, c) -> {
+            boolean on = modeButton.active;
+            int green = on ? 0xFF22C55E : 0xFF7A7A7A, edge = on ? 0xFFBBF7D0 : 0xFFAAAAAA;
             switch (mode) {
-                case NEW -> g.outline(x + 5, y + 5, 10, 10, c);
+                case NEW -> {
+                    // the old selection let go (dashed, grey), the new shape alone selected
+                    for (int i = 0; i < 9; i += 2) {
+                        g.fill(x + 3 + i, y + 3, x + 4 + i, y + 4, 0xFF9A9A9A);
+                        g.fill(x + 3, y + 3 + i, x + 4, y + 4 + i, 0xFF9A9A9A);
+                    }
+                    g.fill(x + 7, y + 7, x + 17, y + 17, green);
+                    g.outline(x + 7, y + 7, 10, 10, edge);
+                }
                 case ADD -> {
-                    g.outline(x + 3, y + 3, 9, 9, c);
-                    g.outline(x + 8, y + 8, 9, 9, c);
-                    g.fill(x + 13, y + 10, x + 14, y + 15, 0xFF4ADE80);
-                    g.fill(x + 11, y + 12, x + 16, y + 13, 0xFF4ADE80);
+                    // both selected, joined; a + in the new one
+                    g.fill(x + 3, y + 3, x + 12, y + 12, green);
+                    g.fill(x + 8, y + 8, x + 17, y + 17, green);
+                    g.fill(x + 12, y + 10, x + 13, y + 15, 0xFFFFFFFF);
+                    g.fill(x + 10, y + 12, x + 15, y + 13, 0xFFFFFFFF);
                 }
                 case SUBTRACT -> {
-                    g.outline(x + 3, y + 3, 9, 9, c);
-                    g.fill(x + 8, y + 8, x + 17, y + 17, 0xFF202020);
-                    g.outline(x + 8, y + 8, 9, 9, 0xFFF87171);
-                    g.fill(x + 10, y + 12, x + 15, y + 13, 0xFFF87171);
+                    // the old selection with the new shape's corner cut out of it, the cutting shape in red; a - in it
+                    g.fill(x + 3, y + 3, x + 12, y + 12, green);
+                    g.fill(x + 8, y + 8, x + 12, y + 12, 0xFF5A5A5A);
+                    g.outline(x + 8, y + 8, 9, 9, on ? 0xFFF87171 : 0xFFAAAAAA);
+                    g.fill(x + 10, y + 12, x + 15, y + 13, on ? 0xFFF87171 : 0xFFAAAAAA);
                 }
             }
         });
