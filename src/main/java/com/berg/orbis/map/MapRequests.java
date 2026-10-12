@@ -83,7 +83,7 @@ public final class MapRequests {
             case "here" -> here(player, req);
             case "about" -> answer(player, "about", req.arg(), about(server, player));
             case "landmarks" -> answer(player, "landmarks", req.arg(), landmarks(server, player));
-            case "sky", "drawall", "mapdata", "mapdata-stop", "export" -> {
+            case "sky", "drawall", "mapdata", "mapdata-stop", "export", "teleport" -> {
                 if (!op(player)) {
                     say(player, Component.literal("Only operators can change this world."));
                     return;
@@ -92,6 +92,7 @@ public final class MapRequests {
                     case "sky" -> sky(server, req.arg());
                     case "drawall" -> BlockMapService.renderAll(server);
                     case "mapdata" -> mapData(server, player, req);
+                    case "teleport" -> teleport(player, req.lat(), req.lon());
                     // Export for Aternos: "plain" or "orbis", then ",zip" for a single zip
                     case "export" -> com.berg.orbis.export.AternosExport.start(server, req.arg().startsWith("orbis"), req.arg().endsWith(",zip"));
                     default -> {
@@ -105,6 +106,30 @@ public final class MapRequests {
             }
             default -> { }
         }
+    }
+
+    // ------------------------------------------------------------------ teleport
+
+    /**
+     * The world map's Teleport (right-click a place, or a search card): onto the ground at that place, which for a chunk not generated yet
+     * is the real elevation (or the water's surface), so nobody lands in rock or falls into the void. Not beyond the world border.
+     */
+    private static Component teleport(ServerPlayer player, double lat, double lon) {
+        WorldModel model = OrbisMod.model();
+        int[] block = model.mapper().toBlock(lat, lon);
+        int x = block[0], z = block[1];
+        var level = player.level().getServer().overworld();
+        var border = level.getWorldBorder();
+        if (!border.isWithinBounds(x, z)) {
+            // a cubic world's border is nearer than vanilla's (Cubic Worlds packs positions with more bits for height)
+            return Component.literal(String.format(Locale.ROOT, "Block %d, %d is beyond the world border.%s", x, z, OrbisMod.cubicWorld()
+                    ? " A cubic world reaches less far than a normal one; a world made at a smaller scale (more metres a block) holds more of the Earth."
+                    : ""));
+        }
+        int surfaceY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        if (surfaceY <= model.cfg().minY + 1) surfaceY = Math.max(model.terrainHeight(x, z), model.cfg().waterLevelY()) + 1;
+        player.teleportTo(level, x + 0.5, surfaceY + 1, z + 0.5, java.util.Set.of(), player.getYRot(), player.getXRot(), true);
+        return Component.literal(String.format(Locale.ROOT, "Teleported to %.5f, %.5f (block %d, %d).", lat, lon, x, z));
     }
 
     // ------------------------------------------------------------------ what's here

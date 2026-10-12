@@ -247,11 +247,14 @@ public final class MapSelectTool {
         return any ? new double[]{s, w, n, e} : null;
     }
 
-    /** Operators of a server (or singleplayer with cheats) running Orbis: they can pre-generate. */
+    /**
+     * Operators of a server (or singleplayer with cheats) running Orbis: they can pre-generate. The server sends each player only the
+     * commands they may use, so its operator-only /orbis settings tells (it was /orbis pregen until that command went in 1.1.0).
+     */
     static boolean allowed(Minecraft mc) {
         if (mc.player == null || !ClientPlayNetworking.canSend(PregenSelectionPayload.TYPE)) return false;
         var orbis = mc.player.connection.getCommands().getRoot().getChild("orbis");
-        return orbis != null && orbis.getChild("pregen") != null;
+        return orbis != null && orbis.getChild("settings") != null;
     }
 
     // ------------------------------------------------------------------ widgets

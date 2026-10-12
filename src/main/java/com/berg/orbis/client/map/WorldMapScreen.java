@@ -325,20 +325,21 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         return canvas.latLonAt((canvas.left() + canvas.right()) / 2.0, (canvas.top() + canvas.bottom()) / 2.0);
     }
 
-    /** Operators can teleport to a place inside the world border (/tpll on a server with Orbis, /tp without). */
+    /** Operators can teleport to a place inside the world border (the map's own request on a server with Orbis, /tp without). */
     private boolean canTeleport(double lat, double lon) {
         if (minecraft.player == null) return false;
         var root = minecraft.player.connection.getCommands().getRoot();
-        if (root.getChild("tpll") == null && root.getChild("tp") == null) return false;
+        if (root.getChild("tp") == null) return false; // the server sends operators only
         int[] at = mapper == null ? null : mapper.toBlock(lat, lon);
         return at == null || minecraft.level == null || minecraft.level.getWorldBorder().isWithinBounds(at[0], at[1]);
     }
 
     private void teleportTo(double lat, double lon) {
-        if (minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null) {
-            minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tpll %.6f %.6f", lat, lon));
+        if (net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.canSend(com.berg.orbis.net.MapRequestPayload.TYPE)) {
+            // Orbis on the server: onto the ground there (the real elevation where nothing is generated yet)
+            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(new com.berg.orbis.net.MapRequestPayload("teleport", "", lat, lon));
         } else {
-            // A server without Orbis (no /tpll): vanilla's teleport, keeping the height (operators only).
+            // A server without Orbis: vanilla's teleport, keeping the height (operators only).
             int[] b = mapper.toBlock(lat, lon);
             minecraft.player.connection.sendCommand(String.format(Locale.ROOT, "tp @s %d ~ %d", b[0], b[1]));
         }
@@ -780,11 +781,9 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         menuAt = canvas.latLonAt(x, y);
         menuMark = markNear(x, y);
         menuItems.clear();
-        // /tpll (Orbis on the server) or vanilla /tp (a server without it) is for operators; the server only sends a
-        // player the commands they may run.
+        // Teleporting is for operators: the server only sends a player the commands they may run, vanilla /tp among them.
         int[] at = mapper == null ? null : mapper.toBlock(menuAt[0], menuAt[1]);
-        if (minecraft.player != null && (minecraft.player.connection.getCommands().getRoot().getChild("tpll") != null
-                || minecraft.player.connection.getCommands().getRoot().getChild("tp") != null)
+        if (minecraft.player != null && minecraft.player.connection.getCommands().getRoot().getChild("tp") != null
                 && (at == null || minecraft.level == null || minecraft.level.getWorldBorder().isWithinBounds(at[0], at[1]))) {
             menuItems.add("teleport");
         }

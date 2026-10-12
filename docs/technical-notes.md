@@ -58,7 +58,7 @@ why vanilla worlds keep vanilla's height. The screen has these tabs:
   the tab also had a place search with Look up, latitude/longitude fields, a
   Spawn point group with its own search and coordinates, and the
   pre-generation switches: all of it is on the map now. Exact spawn and Skip
-  open sea (/orbis pregen) moved to the Advanced tab.
+  open sea (automatic pre-generation) moved to the Advanced tab.
 - **Features** — groups Cities, Life, Nature, Minecraft gameplay and
   Fine-tuning (folded: road grading and ramps, major roads only, towns at
   vanilla scale).
@@ -1205,16 +1205,9 @@ stuck one.
 
 ## Commands
 Only the commands the world map cannot do for everyone remain (since 1.1.0; the map (B) does What's
-here, the world's facts, the real sky switches, the hard limit, Draw all, Download map data, Export
-for Aternos, Resume and the generated-area haze, and the landmarks rebuild themselves).
-- `/tpll <place or lat, lon>` — teleport to a place name ("Kathmandu",
-  "Eiffel Tower", "Bergen, Norway") or a coordinate ("27.7172, 85.3240"). Names are resolved
-  through Nominatim, Photon or an Overpass place lookup, whichever answers. Operator permission
-  (level 2, like `/tp`); the world map's Teleport runs it.
-- `/wherell` — your position as lat/lon (for players without the mod).
-- `/orbis pregen <km>`, `pregen at <lat> <lon> <km>`, `pregen area [all] <place>`,
-  `pregen status`, `pregen stop` — see "Pre-generating an area" (for server consoles; the map's
-  Select area does the same).
+here, the world's facts and your position, Teleport, the real sky switches, the hard limit, Draw all, Download map
+data, Export for Aternos, Pre-generation with Resume and the generated-area haze, and the landmarks
+rebuild themselves).
 - `/orbis settings [name] [value]` — the performance and network settings, for servers.
 
 ## Configuration — `config/orbisterrarum/orbisterrarum.json`
@@ -1768,14 +1761,13 @@ Norwegian peaks stand about 75 blocks above the sea.
      inside, on foundations on gentle slopes, never on roads or water.
      Bergen becomes a town of a few hundred houses exactly where Bergen is;
      the fjord, the mountains and the E39 are real.
-4. **Sweep it**: `/orbis pregen area Norway`. The outline comes from the
-   geocoder (a country is 8 polygons for Norway: mainland, Svalbard, Jan
-   Mayen, Bouvet Island, ...; the largest one is used, `/orbis pregen area
-   all Norway` takes them all). Chunks are generated row by row from the
+4. **Sweep it**: on the world map search Norway, **Select area** (its largest
+   part; a second button takes all 8 polygons: mainland, Svalbard, Jan Mayen,
+   Bouvet Island, ...) and **Generate**. Chunks are generated row by row from the
    north; open-sea chunks (all five elevation samples below -40 m) are skipped
    and generate instantly if anyone sails there later. Whether any sweep skips
-   them: for `/orbis pregen` (radius, outline) the world's
-   `pregenSkipOpenSea` (World tab, Pre-generation, on by default); for a drawn
+   them: for an automatic one from a place or radius the world's
+   `pregenSkipOpenSea` (Advanced tab, on by default); for a drawn
    area its own Skip open sea toggle in the select tool strip (off by
    default): the world map sends it in `PregenSelectionPayload` (a leading
    boolean), the world preview's goes with the new world as
@@ -1786,8 +1778,8 @@ Norwegian peaks stand about 75 blocks above the sea.
    Bergen 1:2 with it off: 552,873 full chunks, 2.73 GB; with it on (the 26.2
    world): 482,509, 2.29 GB. Radius sweeps count skipped chunks as done. Progress is saved to
    `config/orbisterrarum/pregen/norway.json` every ten seconds, so after
-   `/orbis pregen stop`, a crash or a restart the same command resumes at
-   the last completed row.
+   Stop, a crash or a restart, Generate with the same selection (or Resume) carries on
+   from the last completed row.
 5. **Upload**: the world folder plus `config/orbisterrarum/` (including
    `extracts/`, so the server can generate any chunk that was skipped) to
    the server, with the mod and Fabric API in `mods/`.
@@ -1832,9 +1824,10 @@ or landmark and drops a red pin on it.
   world spawn is a green square. **Markers** (toolbar) cycles their size,
   with the pins and labels, from 50% to 300% (`mapMarkerScale`, kept in the
   config). **Teleport here** in the right-click menu only appears for players
-  the server lets run `/tpll` (operators, like vanilla `/tp`).
+  the server lets run vanilla `/tp` (operators).
 - **Drag** to move, **scroll** or **double-click** to zoom, **Me** recentres.
-- **Right-click** a spot: *Teleport here* (runs `/tpll`; shown only to operators), *Mark this place*
+- **Right-click** a spot: *Teleport here* (the map's own "teleport" request: onto the ground there, the real elevation where
+  nothing is generated yet; shown only to operators), *Mark this place*
   (a yellow pin, kept per world in `config/orbisterrarum/map-marks.json`),
   *Copy coordinates*.
 - A scale bar shows a round number of blocks and the real distance, and the
@@ -1913,7 +1906,7 @@ place you asked about, and landmark names only when zoomed in or hovered.
   download or an import finishes, so places the online servers missed join the
   advancements.
 - **Select area** on a search card looks up the outline the way
-  `/orbis pregen area` does and selects its largest part; a second button swaps
+  the automatic pre-generation of a place does and selects its largest part; a second button swaps
   in all its parts (undoing the first, so the selection mode still applies).
 - The World window is a screen of its own over the map: the map keeps its tiles
   while it is open (`keepCanvas`) and draws dimmed behind it.
@@ -1959,14 +1952,14 @@ is never inside a building or under the ground. `orbis-spawn.json` in the
 world folder records it, so a later `/setworldspawn` is kept. The fitted
 world height also samples 10 km around a custom spawn, so a spawn on a
 mountain away from the location is not cut off. Existing worlds keep their
-spawn; use `/tpll <place>` and `/setworldspawn` there.
+spawn; teleport there from the world map and use `/setworldspawn`.
 
 ## Previewing the area before creating a world
 
 The **World** tab of the world settings screen (Create New World, World
 tab, Customize) has the **World generator map**. Press **Open** and a map opens inside the game
 (`client/AreaPreviewScreen`) showing exactly the chunks
-`/orbis pregen area <place>` would generate around the spawn and
+a pre-generation of the place's area would generate around the spawn and
 the scale on the Scale tab. Their pending values are used, so there is no
 need to press Done first.
 
@@ -2013,23 +2006,23 @@ It uses the sweep's own row ranges, so the count is the sweep's: 558,012
 chunks for Bergen at 1:2 in both. Whole countries work too: the outline's edges are
 indexed by north-south band, so Russia at 1:1 (280,000 chunk rows, 75
 billion chunks, about 440 TB) takes seconds instead of half an hour, which
-also keeps `/orbis pregen area` from freezing the server at its start. An
+also keeps a pre-generation of such an area from freezing the server at its start. An
 area that reaches past Minecraft's world edge (30 million blocks from
 spawn) is flagged in red. Areas are measured on the sphere, so large
 countries get their true size.
 
 Outlines found on Nominatim are cached for 90 days in
 `config/orbisterrarum/outline-cache` (`net/OutlineCache`), shared by the
-preview and `/orbis pregen area`: the second preview of Russia skips the
+preview and the pre-generation of a place: the second preview of Russia skips the
 half-minute lookup, and a sweep started after a preview uses the very
 outline that was previewed. Delete the folder to fetch outlines afresh. **Open in browser** writes the same
 preview as a web page (`config/orbisterrarum/preview/index.html`).
 
-## Pre-generating an area (`/orbis pregen`)
+## Pre-generating an area
 
 **Selections drawn on the world map** (`client/map/MapSelectTool`, operators
-only: the button shows when the command tree has `orbis pregen` and the server
-takes the message). Rectangle and ellipse are dragged on screen (north up; 32
+only: the button shows when the command tree has `orbis settings`, which the server
+sends operators only, and the server takes the message). Rectangle and ellipse are dragged on screen (north up; 32
 and 96 corners in lat/lon), the lasso freehand (a corner every 2 GUI pixels)
 or corner by corner. Each shape is projected to block coordinates, simplified
 (Douglas-Peucker, 2 blocks, harder for long lassos until the whole selection
@@ -2128,7 +2121,7 @@ projection and world id (`WorldInfoPayload.encode`): chat types are synced to
 every player by any server, plain Minecraft never uses this one, and an Orbis
 client that got no world-info message reads it on joining. Without Orbis on
 the server the map's Blocks layer is off and its teleport sends `tp @s x ~ z`
-(no `/tpll`); `orbis` keeps the generator and trims orbis-map to the kept
+(no Orbis to find the ground); `orbis` keeps the generator and trims orbis-map to the kept
 regions. Output: `<game>/orbis-exports/<world>-aternos-<time>/` with
 coverage.png and HOW-TO-UPLOAD.txt. Tested offline on the full Bergen 1:2
 world: 482,509 chunks in 120 s, a 113 MB base zip and 12 batches (every
@@ -2183,16 +2176,13 @@ a stale task from looking "running" in the next world of the session), and
 the automatic sweep starts again when the world opens. Tested offline: 300 random
 add/cut sequences agree chunk for chunk with a brute-force even-odd test.
 
-`/orbis pregen <radiusKm>` (around you) or `/orbis pregen at <lat> <lon>
-<radiusKm>` generates every chunk within the radius (real kilometres at any
-scale: 5 km at 1:2 is 2 500 blocks; the limit is 15 000 blocks), nearest first, after
-queueing all the map regions of the area for download. Progress is shown in
+A sweep (a selection, or an automatic one from a place or radius) generates its
+chunks after queueing all the map regions of the area for download. Progress is shown in
 chat every 2 minutes as four short lines (the log every 30 s) (place, percent and ETA; rows generated
 and on disk; chunks with the current and the average rate; loaded chunks,
 disk queue and heap), with "waiting for ..." in yellow when the sweep is
-throttled and a red FAILED count if anything fails; `/orbis pregen status`
-adds a line with the map-region and in-flight details, and the full report
-goes to the log. `/orbis pregen stop` ends it. The pre-generation map draws
+throttled and a red FAILED count if anything fails, and the full report
+goes to the log. Stop on the world map's progress panel ends it. The pre-generation map draws
 what the world has on disk, one pixel per chunk (green complete, amber a
 partly generated ring or an interrupted sweep, dark nothing) with the
 area's outline, the rows generated (blue) and on disk (white), the origin
@@ -2285,7 +2275,7 @@ a paused server keeps generating what was already requested but never
 ticks, so nothing unloads or is saved and the sweep freezes (four hours were
 lost that way once, just by switching to another window). While a sweep runs
 the client reports itself as not paused, like a world opened to LAN, so you
-can alt-tab freely. `/orbis pregen stop` pauses normally again.
+can alt-tab freely. Stopping it pauses normally again.
 
 **The disk sets the pace.** A chunk is written to the region file only when
 it leaves memory, and the game writes chunks one at a time; with
@@ -2436,7 +2426,7 @@ server neither ticks the sweep nor unloads and saves its chunks.
 ## Exploring a whole country
 
 Pre-generation is only needed for a *server* that must not download. For
-your own play, the world already streams: you can walk, fly or `/tpll`
+your own play, the world already streams: you can walk, fly or teleport from the world map
 across an entire country at 1:1 and only the places you actually visit are
 ever generated or stored. Nothing has to be prepared in advance.
 

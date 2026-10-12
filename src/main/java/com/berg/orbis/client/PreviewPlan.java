@@ -76,7 +76,8 @@ public final class PreviewPlan {
             }
         }
         long regionFiles = countRegions(sweep.firstRow(), rows);
-        String command = radiusKm != null ? "/orbis pregen " + fmt(radiusKm) : "/orbis pregen area " + outline.name().split(",")[0].trim();
+        String command = radiusKm != null ? "World map (B): Select area, a circle of " + fmt(radiusKm) + " km round the spawn, then Generate"
+                : "World map (B): search " + outline.name().split(",")[0].trim() + ", Select area, then Generate";
         return new PreviewPlan(outline, radiusKm, mapper, projection, sweep.firstRow(), rows, chunks, regionFiles, minCx, maxCx, command);
     }
 

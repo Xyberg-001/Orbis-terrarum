@@ -23,8 +23,7 @@ import java.util.Locale;
  * area travels with the world's settings: the selection drawn in the world preview if there is one, else the area
  * field (a place name, a radius in km around the location, or empty for the city or municipality the location is
  * in). It starts a few seconds after the world opens, resumes by itself whenever the world opens again, and is
- * marked done when it finishes; stopped by hand ({@code /orbis pregen stop}) it waits for {@code /orbis pregen
- * resume}. The state lives in {@code <world>/orbis-pregen/auto-state.txt} (done / paused).
+ * marked done when it finishes; stopped by hand (Stop on the world map) it waits for Resume. The state lives in {@code <world>/orbis-pregen/auto-state.txt} (done / paused).
  */
 public final class AutoPregen {
     private static final long START_DELAY_MS = 5_000;
@@ -75,7 +74,7 @@ public final class AutoPregen {
         if (cfg == null || !cfg.pregenOnCreate) {
             return Component.literal("This world has no area to pre-generate: it was created without \"Pre-generate when the world is created\".");
         }
-        if (PregenTask.isRunning()) return Component.literal("A pre-generation is already running; /orbis pregen status shows it.");
+        if (PregenTask.isRunning()) return Component.literal("A pre-generation is already running; the world map (B) shows its progress.");
         writeState(server, null);
         return begin(server, true);
     }
@@ -131,7 +130,7 @@ public final class AutoPregen {
             looking = false;
             if (error != null || outline == null) {
                 String why = error == null ? "no result" : String.valueOf(error.getCause() != null ? error.getCause().getMessage() : error.getMessage());
-                say(server, "Automatic pre-generation could not find the outline of " + what + " (" + why + "); it tries again when the world opens next, or /orbis pregen resume.");
+                say(server, "Automatic pre-generation could not find the outline of " + what + " (" + why + "); it tries again when the world opens next, or with Resume on the world map.");
                 return;
             }
             if (PregenTask.isRunning()) {

@@ -570,7 +570,7 @@ public class OrbisConfig {
     public boolean pregenOnCreate = false;
     /** Hard limit: only the selection (and areas pre-generated later) generates; see worldgen/HardLimit. */
     public boolean pregenHardLimit = false;
-    /** /orbis pregen (area, radius) leaves out chunks that are deep sea all over (they generate when someone sails there). */
+    /** An automatic pre-generation from a place or a radius leaves out chunks that are deep sea all over (they generate when someone sails there). */
     public boolean pregenSkipOpenSea = true;
     /** The world generator map's Skip open sea button for the area drawn there (off: sea and all). */
     public boolean pregenSelectionSkipsSea = false;

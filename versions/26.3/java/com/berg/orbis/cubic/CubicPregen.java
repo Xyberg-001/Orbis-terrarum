@@ -93,7 +93,7 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
 
     @Override
     public synchronized Component start(ServerLevel level, String label, AreaSweep area, boolean skipSea, String key) {
-        if (this.run != null) return Component.literal("A pre-generation is already running (" + this.run.label + "); /orbis pregen stop first.");
+        if (this.run != null) return Component.literal("A pre-generation is already running (" + this.run.label + "); stop it on the world map (B) first.");
         CubeGenerator generator = CubicApi.cubeGenerator(level);
         if (generator == null) return Component.literal("This cubic world has no Orbis cube generator to pre-generate with.");
         Run r = new Run(level, label, area, skipSea, key, generator);
@@ -102,7 +102,7 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         r.start();
         return Component.literal(String.format(Locale.ROOT,
                 "Pre-generating %s (cubic world): %,d cube columns, each from %d blocks under its ground to %d over it.%s Progress every 30 s; "
-                        + "/orbis pregen stop to end (it resumes later).",
+                        + "Stop on the world map (B) ends it (it resumes later).",
                 label, r.total, BELOW, ABOVE, r.resumedFrom > 0 ? String.format(Locale.ROOT, " Resuming after %,d columns done before.", r.resumedFrom) : ""));
     }
 

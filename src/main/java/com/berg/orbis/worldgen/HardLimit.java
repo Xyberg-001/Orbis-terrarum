@@ -32,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Hard limit: only the world's allowed area generates. The allowed area is the selection chosen when the world was
- * created, plus every area pre-generated since (map selections, /orbis pregen areas and radii), kept in
+ * created, plus every area pre-generated since (map selections and automatic ones), kept in
  * {@code <world>/orbis-pregen/allowed-extra.json}. With the limit on, a chunk outside it is left empty: no
  * terrain, no biomes to work out, no downloads, only an invisible barrier wall (full height) on its sides that touch
  * the allowed area; and players who get past the wall any other way (above the build limit, an ender pearl) are put
@@ -264,7 +264,7 @@ public final class HardLimit {
         if (dir == null) return Component.literal("Not an Orbis Terrarum world.");
         ChunkSelection a = allowed;
         if (on && (a == null || a.isEmpty())) {
-            return Component.literal("There is no allowed area yet: select an area on the world map and Generate it (or /orbis pregen), then switch the hard limit on.");
+            return Component.literal("There is no allowed area yet: select an area on the world map and Generate it, then switch the hard limit on.");
         }
         try {
             Files.createDirectories(dir);
