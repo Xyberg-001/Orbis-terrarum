@@ -95,7 +95,12 @@ public final class MapSelectTool {
     private int version;
     private boolean counted;
 
-    private Button toggle, hand, rect, ellipse, lassoButton, modeButton, undo, clear, expand, contract, sea, generate;
+    private Button toggle, hand, rect, ellipse, lassoButton, modeButton, undo, clear, expand, contract, sea, generate, source;
+    /**
+     * Where Generate gets the map data from (kept while the game runs): the online map servers while it generates (Live), or a
+     * download from Geofabrik first, of the region holding the selection, keeping only the selection's area (Download).
+     */
+    private static boolean downloadMapData;
     /** Skip open sea for this area: the world preview's goes with the new world, the world map's with Generate. Off at first. */
     private static boolean previewSkipSea, worldSkipSea;
     /** The shapes before each change, for Undo (the newest last). */
@@ -322,9 +327,16 @@ public final class MapSelectTool {
         generate = Button.builder(Component.translatable("orbisterrarum.map.select.generate"), b -> send())
                 .bounds(screenW - 104, screenH - 58, 100, 20)
                 .tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.select.generate.tip"))).build();
+        source = Button.builder(Component.empty(), b -> {
+                    downloadMapData = !downloadMapData;
+                    refresh();
+                }).bounds(screenW - 104 - 4 - 124, screenH - 58, 124, 20).build();
         if (!alwaysOn) add.accept(toggle);
         for (Button b : new Button[]{hand, rect, ellipse, lassoButton, modeButton, undo, clear, expand, contract, sea}) add.accept(b);
-        if (canGenerate) add.accept(generate);
+        if (canGenerate) {
+            add.accept(source);
+            add.accept(generate);
+        }
         refresh();
     }
 
@@ -341,6 +353,10 @@ public final class MapSelectTool {
         ChunkSelection s = selection;
         expand.active = contract.active = !resizing && s != null && !s.isEmpty();
         generate.visible = canGenerate && active && s != null && !s.isEmpty();
+        source.visible = generate.visible;
+        source.setMessage(Component.translatable(downloadMapData ? "orbisterrarum.map.select.source.download" : "orbisterrarum.map.select.source.live"));
+        source.setTooltip(Tooltip.create(Component.translatable(downloadMapData ? "orbisterrarum.map.select.source.download.tip"
+                : "orbisterrarum.map.select.source.live.tip")));
     }
 
     // The buttons' labels name them for narration; the strip draws icons over them instead of the text.
@@ -372,20 +388,34 @@ public final class MapSelectTool {
             ring(g, x + 11, y + 8, 5.5, 3.6, c);
             gline(g, x + 7, y + 11, x + 5, y + 16, c);
         });
+        // Two overlapping squares, the old selection (top left) and the shape being drawn (bottom right); green is what ends up
+        // selected. A lone square read as the rectangle tool.
         icon(g, modeButton, 0xFFFFFFFF, (x, y, c) -> {
+            boolean on = modeButton.active;
+            int green = on ? 0xFF22C55E : 0xFF7A7A7A, edge = on ? 0xFFBBF7D0 : 0xFFAAAAAA;
             switch (mode) {
-                case NEW -> g.outline(x + 5, y + 5, 10, 10, c);
+                case NEW -> {
+                    // the old selection let go (dashed, grey), the new shape alone selected
+                    for (int i = 0; i < 9; i += 2) {
+                        g.fill(x + 3 + i, y + 3, x + 4 + i, y + 4, 0xFF9A9A9A);
+                        g.fill(x + 3, y + 3 + i, x + 4, y + 4 + i, 0xFF9A9A9A);
+                    }
+                    g.fill(x + 7, y + 7, x + 17, y + 17, green);
+                    g.outline(x + 7, y + 7, 10, 10, edge);
+                }
                 case ADD -> {
-                    g.outline(x + 3, y + 3, 9, 9, c);
-                    g.outline(x + 8, y + 8, 9, 9, c);
-                    g.fill(x + 13, y + 10, x + 14, y + 15, 0xFF4ADE80);
-                    g.fill(x + 11, y + 12, x + 16, y + 13, 0xFF4ADE80);
+                    // both selected, joined; a + in the new one
+                    g.fill(x + 3, y + 3, x + 12, y + 12, green);
+                    g.fill(x + 8, y + 8, x + 17, y + 17, green);
+                    g.fill(x + 12, y + 10, x + 13, y + 15, 0xFFFFFFFF);
+                    g.fill(x + 10, y + 12, x + 15, y + 13, 0xFFFFFFFF);
                 }
                 case SUBTRACT -> {
-                    g.outline(x + 3, y + 3, 9, 9, c);
-                    g.fill(x + 8, y + 8, x + 17, y + 17, 0xFF202020);
-                    g.outline(x + 8, y + 8, 9, 9, 0xFFF87171);
-                    g.fill(x + 10, y + 12, x + 15, y + 13, 0xFFF87171);
+                    // the old selection with the new shape's corner cut out of it, the cutting shape in red; a - in it
+                    g.fill(x + 3, y + 3, x + 12, y + 12, green);
+                    g.fill(x + 8, y + 8, x + 12, y + 12, 0xFF5A5A5A);
+                    g.outline(x + 8, y + 8, 9, 9, on ? 0xFFF87171 : 0xFFAAAAAA);
+                    g.fill(x + 10, y + 12, x + 15, y + 13, on ? 0xFFF87171 : 0xFFAAAAAA);
                 }
             }
         });
@@ -825,7 +855,7 @@ public final class MapSelectTool {
         if (s == null || s.isEmpty()) return;
         List<ChunkSelection.Shape> list = new ArrayList<>();
         for (Shape shape : shapes) list.add(new ChunkSelection.Shape(shape.subtract(), shape.blocks()));
-        ClientPlayNetworking.send(new PregenSelectionPayload(list, skipSea()));
+        ClientPlayNetworking.send(new PregenSelectionPayload(list, skipSea(), downloadMapData));
         say.accept(Component.translatable("orbisterrarum.map.select.sent").getString());
     }
 
@@ -949,8 +979,8 @@ public final class MapSelectTool {
         }
     }
 
-    /** The count, size and time of the selection, above the Generate button. */
-    public void drawPanel(GuiGraphicsExtractor g, Font font, int screenW, int screenH) {
+    /** The count, size and time of the selection, above the Generate button, in text {@code ts} times the GUI's size. */
+    public void drawPanel(GuiGraphicsExtractor g, Font font, int screenW, int screenH, float ts) {
         if (!active || !canGenerate) return;
         ChunkSelection s = selection;
         List<String> lines = new ArrayList<>();
@@ -971,12 +1001,18 @@ public final class MapSelectTool {
         }
         int w = 0;
         for (String l : lines) w = Math.max(w, font.width(l));
-        int x = screenW - w - 10, y = screenH - (canGenerate ? 62 : 40) - lines.size() * 10;
-        g.fill(x - 4, y - 4, screenW - 2, y + lines.size() * 10 + 1, 0xC0000000);
+        // Its bottom right corner just above Generate, the box drawn small from there.
+        g.pose().pushMatrix();
+        g.pose().translate(screenW - 2, screenH - (canGenerate ? 61 : 39));
+        g.pose().scale(ts, ts);
+        int bw = w + 10, bh = lines.size() * 10 + 5;
+        g.fill(-bw, -bh, 0, 0, 0xC0000000);
+        int y = -bh + 4;
         for (String l : lines) {
-            g.text(font, l, x, y, l.startsWith("\u26A0") ? 0xFFFFB020 : 0xFFFFFFFF);
+            g.text(font, l, -bw + 5, y, l.startsWith("\u26A0") ? 0xFFFFB020 : 0xFFFFFFFF);
             y += 10;
         }
+        g.pose().popMatrix();
     }
 
     /** The selection the ceiling check was made for, and its result (null while it runs or when it fits). */

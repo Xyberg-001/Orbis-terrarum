@@ -54,6 +54,11 @@ public final class ElevationTiles {
         Path tile = dir.resolve(z + "_" + x + "_" + y + ".tile"), missing = dir.resolve(z + "_" + x + "_" + y + ".missing");
         if (Files.isRegularFile(tile)) return Files.readAllBytes(tile);
         if (Files.exists(missing)) return null;
+        // A coarser tile over it known to be missing: none this fine either (the terrain pyramid ends at the same zoom everywhere
+        // under a tile), so no download just to hear that.
+        for (int d = 1; d <= 6 && z - d >= 0; d++) {
+            if (Files.exists(dir.resolve((z - d) + "_" + (x >> d) + "_" + (y >> d) + ".missing"))) return null;
+        }
         String url = template.replace("{z}", String.valueOf(z)).replace("{x}", String.valueOf(x)).replace("{y}", String.valueOf(y));
         OrbisHttp.Response r = OrbisHttp.get(url, Map.of("User-Agent", "OrbisTerrarum/1.0 (Minecraft mod; elevation map)"), 20);
         if (r.status() == 404) {

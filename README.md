@@ -38,8 +38,8 @@ where you want to spawn, and create the world. The other tabs (Features, Look & 
 | Teleport / mark / copy coordinates | Right-click |
 | Map style | Street, satellite or elevation; day / night |
 | See the blocks | **Blocks** shows the world from above |
-| Pre-generate | **Select area**, draw it, **Generate** |
-| World info and switches | The **i** button (real sky, hard limit, download map data) |
+| Pre-generate | **Select area**, draw it (green), choose **Map data: Live** (online servers) or **Download** (Geofabrik first), **Generate**. Unfinished ones are listed under the button on the right, shown only while there are any (also after a restart): click to choose, then **Resume**, **Pause**, **Stop** or **⇄** (switch its map data between Live and Download); what is left shows purple |
+| World info and switches | The **i** button (real sky, hard limit, Draw all, Export for Aternos) |
 
 ## Commands
 
@@ -79,13 +79,15 @@ Ready-made setups:
 - **Big machine (16 GB+, 8+ cores, SSD):** `regionCacheSize 128`, `demTileCacheSize 768`, `imageryTileCacheSize 1024`, `regionPrefetchRadius 3`, then restart.
 
 Everything else is on the world map (B): Teleport, What's here, pre-generating (Select area, Generate, Stop, Resume), and the
-World window (**i**) with your position, the real sky and hard limit switches, Download map data, Draw all and Export for Aternos.
+World window (**i**) with your position, the real sky and hard limit switches, Draw all and Export for Aternos.
 
 ## Servers
 
 - Install the mod on the server only; set `level-type=orbisterrarum\:earth` in `server.properties` before the first start.
 - Easiest: create and pre-generate the world in singleplayer, then upload it.
 - Aternos: **Export for Aternos** in the world map's World window (**i**) makes the upload and a how-to file.
+
+> **Pre-generating on a server:** it gets slower when the server is short of memory (4 GB is tight for big areas; give it 6–8 GB, more for cubic worlds). **Map data: Download** fetches the region's whole Geofabrik file onto the server's storage (tens of MB for a small region, several GB for a big country); the area cut out of it stays there for good, and the file itself is deleted afterwards unless `keepDownloadedMapFiles` is on. Check the server has the space, or use **Live**.
 
 ## Tested on
 

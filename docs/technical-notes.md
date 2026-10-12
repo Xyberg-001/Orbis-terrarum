@@ -1144,8 +1144,9 @@ worlds pick it up for the regions they load next, and the file is deleted
 unless `keepDownloadedMapFiles`. Measured: Malta end to end in under a
 minute (8 MB file, 6 MB kept); Geofabrik gave 165 KB/s from India, so Norway
 (1.3 GB) takes over two hours there, shown as time left in the toast.
-The world map's **Download map data** (World window) does the same for the
-selection or the land around the middle of the map, for operators; its Stop stops it (the part is continued
+The world map's **Map data: Download** (beside Generate, 1.1.1; a World window
+button until then) does the same for the selection before it is pre-generated, for
+operators; Stop on its entry in the pre-generation list stops it (the part is continued
 next time, or started again when 12 h old).
 
 ### Pre-generation bar (`PregenTask.showBar`)
@@ -1719,7 +1720,7 @@ Norwegian peaks stand about 75 blocks above the sea.
    java -Xmx4g -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf"
    ```
 
-   or in game: Download map data (world map, World window **i**, or the offer when the world is
+   or in game: Map data: Download beside Generate on the world map (or the offer when the world is
    created) fetches the region's file from Geofabrik itself and, at 8 m per block or coarser, keeps
    this "map" profile of the area. Three passes over the file; Norway takes about three
    minutes on a 3 GB heap and becomes `config/orbisterrarum/extracts/norway/`
@@ -1802,7 +1803,7 @@ pedestrian streets as light streets, footpaths and tracks as fixed-width dashes,
 thin; national and regional borders; then labels, most important first, each claiming its space (places,
 water names, peaks with heights, street names upright along their longest straight piece from 14, named
 places as dots coloured by kind from 15 by rank, all from 17, house numbers from 18). Names are the local ones
-in Latin letters, else `name_en`, `name:latin` or `name_int`. Drawing takes about half a second a tile, so a drawn tile is kept as a PNG in `map-tile-cache/street-v1/` (named `.img` so the cache trim counts it) and read back in 20-60 ms while it is newer than its source tile; `STYLE` is bumped when the drawing changes. A source tile is decoded once for all the finer tiles drawn from it (the last 8, shared by the drawing threads), and a finer tile only draws the features whose bounds reach into it (a zoom-17 tile is a 64th of its zoom-14 source). Places carry a white symbol in their dot by kind (bag, trolley, fork and knife, cup, glass, bed, cross, pill, mortarboard, book, columns, star, film, bus, train, boat, plane, P, $, pump, church cross, tree, ball, envelope, shield), drawn with Java2D shapes. The night street map (`orbis-street-dark`, `Layer.STREET_DARK`; a button at the map's right edge, shown with the street map, with a 12-pixel sun (light) or crescent moon (dark) drawn over it for the mode the map is in (the font's ☾ read as a "C"), switches it and remembers the choice in `streetMapDark`; the layer button skips it) is the same drawing with every colour looked up in `StreetTiles.DARK` (streets a little lighter than the ground, as on Google's night map; places' colours lightened; a dark halo), cached in `street-dark-v2/`. Footpaths and sidewalks are quiet white lines with a faint edge (red dashes for each of Oslo's mapped sidewalks covered the centre); cycleways blue, steps short grey dashes, tracks brown dashes. The world map's not-generated haze is orange (0x80F5A04A; grey until 4 Oct 2026, lost on the light street map), its button "Orange: on/off". The elevation layer
+in Latin letters, else `name_en`, `name:latin` or `name_int`. Drawing takes about half a second a tile, so a drawn tile is kept as a PNG in `map-tile-cache/street-v1/` (named `.img` so the cache trim counts it) and read back in 20-60 ms while it is newer than its source tile; `STYLE` is bumped when the drawing changes. A source tile is decoded once for all the finer tiles drawn from it (the last 8, shared by the drawing threads), and a finer tile only draws the features whose bounds reach into it (a zoom-17 tile is a 64th of its zoom-14 source). Places carry a white symbol in their dot by kind (bag, trolley, fork and knife, cup, glass, bed, cross, pill, mortarboard, book, columns, star, film, bus, train, boat, plane, P, $, pump, church cross, tree, ball, envelope, shield), drawn with Java2D shapes. The night street map (`orbis-street-dark`, `Layer.STREET_DARK`; a button at the map's right edge, shown with the street map, with a 12-pixel sun (light) or crescent moon (dark) drawn over it for the mode the map is in (the font's ☾ read as a "C"), switches it and remembers the choice in `streetMapDark`; the layer button skips it) is the same drawing with every colour looked up in `StreetTiles.DARK` (streets a little lighter than the ground, as on Google's night map; places' colours lightened; a dark halo), cached in `street-dark-v2/`. Footpaths and sidewalks are quiet white lines with a faint edge (red dashes for each of Oslo's mapped sidewalks covered the centre); cycleways blue, steps short grey dashes, tracks brown dashes. The world map's not-generated haze is orange (0x80F5A04A; grey until 4 Oct 2026, lost on the light street map), its button "Not generated: on/off". The Minecraft blocks over the map (Blocks: on/off, on by default) are drawn fully opaque (an opacity cycle until 1.1.1). The elevation layer
 (`client/ElevationTiles`, also in the world generator map) is drawn here from
 Mapterhorn's terrain tiles, the heights the world is built from, sharing the
 generator's `dem-cache` (files and `.missing` markers): a hypsometric tint
@@ -1898,10 +1899,31 @@ place you asked about, and landmark names only when zoomed in or hovered.
   and for operators `sky`, `drawall`, `mapdata` and `mapdata-stop`. Answers
   carry the question's id, so a late answer for a card no longer shown is
   dropped; changes answer with a `msg` line for the map.
-- **Download map data** takes the selection's box (else a box around the middle
-  of the map) to `MapDataJob`; where no Geofabrik file fits (it is on disk
-  already, it crosses a border, or the scale is 8 m per block or coarser) it
-  falls back to fetching the online servers' regions around it, at most 13 x 13.
+- **Map data: Live / Download** (beside Generate, `MapSelectTool.source`, kept while the
+  game runs; 1.1.1, replacing the World window's Download map data button). Live:
+  the online servers are asked while the sweep runs. Download: Generate sends
+  `PregenSelectionPayload.downloadMapData`; `MapRequests.generateWithMapData` lists the
+  selection at once as a task in the DOWNLOADING state (`PregenTasks.State`, shown
+  "map data 45%" with a down arrow, its done/total the download's per mille), plans the
+  selection's box with `MapDataJob` and downloads it; when that ends (in, failed, or not
+  needed because map data on disk covers it or no single file holds it)
+  `PregenTasks.mapDataDone` queues the task and it starts in its turn. Another download
+  running, or map data off, means Live. Pause leaves it paused when the download ends,
+  Stop also stops the download; a DOWNLOADING task found when the world opens is listed
+  as paused (its download stopped with the server). Each list row says where its map
+  data comes from ("Live", "Download", "Download 33%" while its download runs, even
+  paused; `Entry.download`, `Entry.mapPercent`), and the list's **⇄** button
+  (`PregenControlPayload.Action.SOURCE`, `PregenTasks.switchSource`) switches the ticked
+  ones when one source fails: Download to Live drops the download (the task may go at
+  once); Live to Download pauses a running one and downloads (`MapRequests.downloadForTask`),
+  queueing it when that is in. A failed download switches the task to Live by itself. One download runs at a time
+  (`MapDataJob`): a second one is queued (`Task.downloadQueued`, "Download (queued)"
+  in the row; `PregenTasks.requestDownload`) and starts by itself, checked each second
+  in `PregenTasks.tick`, when none runs. The region file is kept after its import
+  (listed in `extracts-src/shared-downloads.txt`) so a queued download in the same
+  region only imports from it (`MapDataJob.run` reuses a complete file under 30 days
+  old); when no download runs or waits, or as the world opens, the listed files go
+  (`MapRequests.deleteSharedFiles`) unless `keepDownloadedMapFiles` is on.
 - **Landmarks rebuild themselves** (`Landmarks.rebuildSoon`) after a map data
   download or an import finishes, so places the online servers missed join the
   advancements.
@@ -2054,7 +2076,44 @@ operator level, rebuilds the same `ChunkSelection` and runs
 `PregenTask.startSelection`: an area sweep (`new AreaSweep(selection,
 outline)`, rows straight from the runs, no widening), with progress in `orbis-pregen/selection-<fingerprint>.json` so the same
 selection resumes. Shapes are kept per world in
-`config/orbisterrarum/map-selections.json`. The world preview
+`config/orbisterrarum/map-selections.json`.
+
+**The list of pre-generations** (`worldgen/PregenTasks`, 1.1.1): every
+pre-generation not finished yet is a task, listed in a dropdown behind a button
+on the map's right edge under the World button (the button shows only while
+there are any; a chunk-grid icon with a count, and a thin progress line under
+it while one runs): running, queued (waits its turn) or paused, with how far it
+has got and the running one's live detail. The dropdown opens by itself once
+when a task is added while the map is open, and a click on the map closes it. One runs at a time; when it
+finishes or is paused the next queued one starts. Generate on the map (and the
+automatic pre-generation of a new world, `AutoPregen`, which hands its area
+over once and writes `handed` to `auto-state.txt`) adds a task, queued behind
+the running one; a task's id is its area's fingerprint, so the same selection
+again picks its task up. Click a row to tick it (several can be ticked),
+double-click to bring its area into view; Resume, Pause and Stop act on the
+ticked ones (or the only one); they are icons (play, pause, a square that
+turns red for the confirming click), and Stop ends and removes them after a second
+click (what is generated stays). The map shades what the ticked tasks have
+left, or all of them when none is ticked, as one translucent purple area
+(`WorldMapScreen.drawPending`, as the selection being drawn is green), with
+an edge when chunks are big enough; the legend says "Pre-generation still to
+do". Kept in `orbis-pregen/tasks/<id>.json` (label, kind, Skip open sea,
+state, last row done, when made: the queue order) and `<id>-area.json`
+(`ChunkSelection.toJson`, written once), all written on one writer thread.
+The sweep (`PregenTask.runTask`, an area sweep over the task's chunks) gives
+its rows on disk to the task every 10 s (`PregenTasks.progress`), so a pause,
+crash or restart carries on at the next row; the task that was running when
+the world closed carries on by itself 5 s after it opens. Older progress files
+(`selection-<fingerprint>.json`, `<place>.json`, from 1.1.0) give a new task's
+rows already done. Players with the mod get the list as
+`net/PregenTasksPayload` (on joining and at every change; each area only the
+first time, encoded as the hard limit's, at most `AllowedAreaPayload.MAX_RUNS`
+runs a message); the buttons send `PregenControlPayload` with the task ids
+(operators only, checked by the server). In a cubic world the sweep is the
+cubic sweeper's (`cubic/CubicPregen`, versions/26.3): it walks bands of 16 chunk rows, and
+each second the task list takes the last chunk row of the bands whose cube columns are all
+done (`CubicSweeper.doneRow`), so its purple shrinks and its percentage moves as in a
+normal world. The world preview
 (`AreaPreviewScreen`) has the same tool through `client/map/MapView` (the
 preview's own map implements it; `MapCanvas` does on the world map), without
 Generate: right-drag pans there and a right-click still sets the spawn. Its

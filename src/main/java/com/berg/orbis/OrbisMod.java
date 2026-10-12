@@ -105,6 +105,10 @@ public class OrbisMod implements ModInitializer {
         com.berg.orbis.worldgen.ChunkSelection selection = com.berg.orbis.worldgen.ChunkSelection.of(payload.shapes());
         System.out.println(String.format(java.util.Locale.ROOT, "[orbis] %s asked to pre-generate a map selection: %d shapes, %,d chunks",
                 player.getName().getString(), payload.shapes().size(), selection.count()));
+        if (payload.downloadMapData()) {
+            com.berg.orbis.map.MapRequests.generateWithMapData(player, level, selection, payload.skipSea());
+            return;
+        }
         player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, payload.skipSea()));
     }
 
@@ -482,6 +486,7 @@ public class OrbisMod implements ModInitializer {
         });
         com.berg.orbis.worldgen.AutoPregen.register();
         com.berg.orbis.worldgen.HardLimit.register();
+        com.berg.orbis.worldgen.PregenTasks.register(); // the pre-generations not finished yet, listed and shaded purple on the world map
         com.berg.orbis.worldgen.PregenStatus.register(); // the pre-generation's progress and controls on the world map
         com.berg.orbis.map.MapRequests.register(); // the world map's What's here, World window and landmark pins
         // A selection drawn on the world map (operators only).

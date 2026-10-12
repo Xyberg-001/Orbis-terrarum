@@ -20,12 +20,17 @@ public record AllowedAreaPayload(boolean on, ChunkSelection area) implements Cus
     /** The message for this area, or "off" when the limit is off or the area is too big to send. */
     public static AllowedAreaPayload of(boolean on, ChunkSelection area) {
         if (!on || area == null || area.isEmpty()) return new AllowedAreaPayload(false, new ChunkSelection());
+        return fits(area) ? new AllowedAreaPayload(true, area) : new AllowedAreaPayload(false, new ChunkSelection());
+    }
+
+    /** Whether an area is small enough to send ({@link #MAX_RUNS} runs at most). */
+    public static boolean fits(ChunkSelection area) {
         long runs = 0;
         for (int z = area.firstRow(); z <= area.lastRow(); z++) {
             int[] r = area.rawRuns(z);
             if (r != null) runs += r.length / 2;
         }
-        return runs > MAX_RUNS ? new AllowedAreaPayload(false, new ChunkSelection()) : new AllowedAreaPayload(true, area);
+        return runs <= MAX_RUNS;
     }
 
     /**
@@ -71,6 +76,11 @@ public record AllowedAreaPayload(boolean on, ChunkSelection area) implements Cus
 
     private void write(RegistryFriendlyByteBuf buf) {
         buf.writeBoolean(on);
+        writeArea(buf, area);
+    }
+
+    /** An area as rows of runs, each a zigzag-encoded difference from the one before (also {@link PregenTasksPayload}). */
+    public static void writeArea(RegistryFriendlyByteBuf buf, ChunkSelection area) {
         int rows = 0;
         for (int z = area.firstRow(); z <= area.lastRow(); z++) if (area.rawRuns(z) != null) rows++;
         buf.writeVarInt(rows);
@@ -91,6 +101,10 @@ public record AllowedAreaPayload(boolean on, ChunkSelection area) implements Cus
 
     private static AllowedAreaPayload read(RegistryFriendlyByteBuf buf) {
         boolean on = buf.readBoolean();
+        return new AllowedAreaPayload(on, readArea(buf));
+    }
+
+    public static ChunkSelection readArea(RegistryFriendlyByteBuf buf) {
         int rows = buf.readVarInt();
         if (rows < 0 || rows > MAX_RUNS) throw new IllegalArgumentException("too many rows: " + rows);
         ChunkSelection area = new ChunkSelection();
@@ -108,14 +122,14 @@ public record AllowedAreaPayload(boolean on, ChunkSelection area) implements Cus
             }
             area.addRow(z, r);
         }
-        return new AllowedAreaPayload(on, area);
+        return area;
     }
 
-    private static int zig(int v) {
+    static int zig(int v) {
         return (v << 1) ^ (v >> 31);
     }
 
-    private static int unzig(int v) {
+    static int unzig(int v) {
         return (v >>> 1) ^ -(v & 1);
     }
 

@@ -13,8 +13,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * The pre-generation on the world map: its progress sent to players with the mod once a second while a sweep runs (and once as it ends),
- * and the map's Stop, Resume and hard-limit buttons carried out (operators only).
+ * The pre-generation on the world map: the running sweep's progress sent to players with the mod once a second (and once as it ends),
+ * and the map's Resume, Pause, Stop and hard-limit buttons carried out (operators only; the list itself is PregenTasks).
  */
 public final class PregenStatus {
     private static PregenStatusPayload lastSent = PregenStatusPayload.IDLE;
@@ -26,7 +26,7 @@ public final class PregenStatus {
         PayloadTypeRegistry.clientboundPlay().register(PregenStatusPayload.TYPE, PregenStatusPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay().register(PregenControlPayload.TYPE, PregenControlPayload.CODEC);
         ServerPlayNetworking.registerGlobalReceiver(PregenControlPayload.TYPE,
-                (payload, ctx) -> ctx.server().execute(() -> control(ctx.player(), payload.action())));
+                (payload, ctx) -> ctx.server().execute(() -> control(ctx.player(), payload)));
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             if (++ticks % 20 == 0) broadcast(server, false);
         });
@@ -42,12 +42,9 @@ public final class PregenStatus {
     private static PregenStatusPayload current(MinecraftServer server) {
         if (!orbis(server)) return PregenStatusPayload.IDLE;
         PregenTask.Snapshot s = PregenTask.snapshot();
-        if (s != null) {
-            return new PregenStatusPayload(true, s.label(), s.fraction(), s.detail(), s.waiting() == null ? "" : s.waiting(), "");
-        }
-        String resumable = PregenTask.resumable();
-        if (resumable == null && AutoPregen.paused(server)) resumable = "the area chosen when the world was created";
-        return resumable == null ? PregenStatusPayload.IDLE : new PregenStatusPayload(false, "", 0f, "", "", resumable);
+        if (s == null) return PregenStatusPayload.IDLE;
+        PregenTasks.Task t = PregenTasks.running();
+        return new PregenStatusPayload(true, t != null ? t.id : "", s.label(), s.fraction(), s.detail(), s.waiting() == null ? "" : s.waiting());
     }
 
     /** Sends the progress to every player with the mod: each second while a sweep runs, else when it changed ({@code now}: at once). */
@@ -60,7 +57,8 @@ public final class PregenStatus {
         }
     }
 
-    private static void control(ServerPlayer player, PregenControlPayload.Action action) {
+    private static void control(ServerPlayer player, PregenControlPayload payload) {
+        PregenControlPayload.Action action = payload.action();
         MinecraftServer server = player.level().getServer();
         if (!Commands.hasPermission(Commands.LEVEL_GAMEMASTERS).test(player.createCommandSourceStack())) {
             player.sendSystemMessage(Component.literal("Only operators can run the pre-generation."));
@@ -72,8 +70,10 @@ public final class PregenStatus {
         }
         ServerLevel level = server.overworld();
         Component reply = switch (action) {
-            case STOP -> PregenTask.stop();
-            case RESUME -> PregenTask.resumable() != null ? PregenTask.resume(level) : AutoPregen.resume(server);
+            case STOP -> PregenTasks.control(server, "stop", payload.tasks(), player.getUUID());
+            case PAUSE -> PregenTasks.control(server, "pause", payload.tasks(), player.getUUID());
+            case RESUME -> PregenTasks.control(server, "resume", payload.tasks(), player.getUUID());
+            case SOURCE -> PregenTasks.control(server, "source", payload.tasks(), player.getUUID());
             case LIMIT_ON -> HardLimit.set(server, true);
             case LIMIT_OFF -> HardLimit.set(server, false);
         };

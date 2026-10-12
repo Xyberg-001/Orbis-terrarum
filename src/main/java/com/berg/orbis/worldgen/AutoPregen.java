@@ -22,14 +22,14 @@ import java.util.Locale;
  * Pre-generation chosen when the world was created (World tab: "Pre-generate when the world is created"). The
  * area travels with the world's settings: the selection drawn in the world preview if there is one, else the area
  * field (a place name, a radius in km around the location, or empty for the city or municipality the location is
- * in). It starts a few seconds after the world opens, resumes by itself whenever the world opens again, and is
- * marked done when it finishes; stopped by hand (Stop on the world map) it waits for Resume. The state lives in {@code <world>/orbis-pregen/auto-state.txt} (done / paused).
+ * in). A few seconds after the world first opens it becomes a task of the world map's pre-generation list
+ * ({@link PregenTasks}), which runs, pauses and resumes it from then on. {@code <world>/orbis-pregen/auto-state.txt} says it was
+ * handed over ("handed"; "done" and "paused" are from 1.1.0, when this class ran it: a paused one is listed as paused).
  */
 public final class AutoPregen {
     private static final long START_DELAY_MS = 5_000;
     private static long startAt;
     private static boolean checked;
-    private static PregenTask started;
     private static boolean looking;
 
     private AutoPregen() {}
@@ -37,7 +37,6 @@ public final class AutoPregen {
     public static void register() {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             checked = false;
-            started = null;
             looking = false;
             startAt = System.currentTimeMillis() + START_DELAY_MS;
         });
@@ -47,67 +46,31 @@ public final class AutoPregen {
     private static void tick(MinecraftServer server) {
         if (!checked && System.currentTimeMillis() >= startAt) {
             checked = true;
-            begin(server, false);
-        }
-        PregenTask t = started;
-        if (t != null && PregenTask.active() != t && !OrbisMod.stopping()) {
-            started = null;
-            if (PregenTask.lastFinished() == t) {
-                writeState(server, "done");
-                say(server, "Pre-generation of the world's area is complete.");
-            } else {
-                writeState(server, "paused");
-                say(server, "Automatic pre-generation paused; Resume in the world map's pre-generation panel (B) carries on from where it stopped.");
-            }
+            begin(server);
         }
     }
 
-    /** Whether the world's own automatic pre-generation was stopped by hand and waits to be resumed. */
-    public static boolean paused(MinecraftServer server) {
-        OrbisConfig cfg = cfg();
-        return cfg != null && cfg.pregenOnCreate && "paused".equals(readState(server)) && !PregenTask.isRunning();
-    }
-
-    /** The world map's Resume: carry on with the world's own area after a stop. */
-    public static Component resume(MinecraftServer server) {
-        OrbisConfig cfg = cfg();
-        if (cfg == null || !cfg.pregenOnCreate) {
-            return Component.literal("This world has no area to pre-generate: it was created without \"Pre-generate when the world is created\".");
-        }
-        if (PregenTask.isRunning()) return Component.literal("A pre-generation is already running; the world map (B) shows its progress.");
-        writeState(server, null);
-        return begin(server, true);
-    }
-
-    private static OrbisConfig cfg() {
-        WorldModel m = OrbisMod.model();
-        return m == null ? null : m.cfg();
-    }
-
-    private static Component begin(MinecraftServer server, boolean asked) {
+    private static void begin(MinecraftServer server) {
         WorldModel model = OrbisMod.model();
         ServerLevel level = server.overworld();
-        if (model == null || !(level.getChunkSource().getGenerator() instanceof RealWorldChunkGenerator)) return Component.literal("Not an Orbis Terrarum world.");
+        if (model == null || !(level.getChunkSource().getGenerator() instanceof RealWorldChunkGenerator)) return;
         OrbisConfig cfg = model.cfg();
-        if (!cfg.pregenOnCreate) return Component.literal("This world has no area to pre-generate.");
+        if (!cfg.pregenOnCreate || looking) return;
         String state = readState(server);
-        if ("done".equals(state) && !asked) return Component.empty();
-        if ("paused".equals(state)) {
-            System.out.println("[orbis] Automatic pre-generation is paused (stopped by hand); Resume on the world map carries on");
-            return Component.empty();
-        }
-        if (PregenTask.isRunning() || looking) return Component.literal("A pre-generation is already running.");
+        if ("done".equals(state) || "handed".equals(state)) return;
+        boolean paused = "paused".equals(state); // stopped by hand in 1.1.0: listed, waiting for Resume
 
         List<OrbisConfig.PregenShape> shapes = cfg.pregenShapes == null ? List.of() : cfg.pregenShapes;
         if (!shapes.isEmpty()) {
-            return launch(server, PregenTask.startSelection(level, ChunkSelection.ofSettings(shapes, model.mapper()), cfg.pregenSelectionSkipsSea),
-                    "the selection drawn in the world preview");
+            launch(server, PregenTask.startSelection(level, ChunkSelection.ofSettings(shapes, model.mapper()), cfg.pregenSelectionSkipsSea,
+                    PregenTasks.AUTO, paused), "the selection drawn in the world preview");
+            return;
         }
         String q = cfg.pregenArea == null ? "" : cfg.pregenArea.trim();
         if (q.isEmpty()) {
             // Nothing was selected on the world generator map.
             System.out.println("[orbis] Automatic pre-generation is on but nothing was selected; nothing to do");
-            return Component.literal("Nothing was selected to pre-generate when this world was created. Select an area on the world map and press Generate.");
+            return;
         }
         Double km = km(q);
         if (km != null) {
@@ -119,8 +82,9 @@ public final class AutoPregen {
                 xz[2 * i] = (int) Math.round(r * Math.cos(th));
                 xz[2 * i + 1] = (int) Math.round(r * Math.sin(th));
             }
-            return launch(server, PregenTask.startSelection(level, ChunkSelection.of(List.of(new ChunkSelection.Shape(false, xz)))),
+            launch(server, PregenTask.startSelection(level, ChunkSelection.of(List.of(new ChunkSelection.Shape(false, xz))), null, PregenTasks.AUTO, paused),
                     String.format(Locale.ROOT, "%s km round the location", q.replaceAll("(?i)\\s*km", "")));
+            return;
         }
         looking = true;
         var lookup = Geocoder.lookupArea(q);
@@ -130,26 +94,19 @@ public final class AutoPregen {
             looking = false;
             if (error != null || outline == null) {
                 String why = error == null ? "no result" : String.valueOf(error.getCause() != null ? error.getCause().getMessage() : error.getMessage());
-                say(server, "Automatic pre-generation could not find the outline of " + what + " (" + why + "); it tries again when the world opens next, or with Resume on the world map.");
-                return;
-            }
-            if (PregenTask.isRunning()) {
-                say(server, "Automatic pre-generation waits: another pre-generation is running (Resume on the world map once it is done).");
+                say(server, "Automatic pre-generation could not find the outline of " + what + " (" + why + "); it tries again when the world opens next.");
                 return;
             }
             AreaOutline main = outline.largestOnly();
-            launch(server, PregenTask.startArea(level, main, true), main.name().split(",")[0]);
+            launch(server, PregenTask.startArea(level, main, true, PregenTasks.AUTO, paused), main.name().split(",")[0]);
         }));
-        return Component.literal("Looking up the outline of " + what + "...");
     }
 
-    /** Called right after a start (nothing else was running, see begin), so the active task is ours if there is one. */
-    private static Component launch(MinecraftServer server, Component message, String what) {
-        started = PregenTask.active();
-        System.out.println("[orbis] Automatic pre-generation of " + what + ": " + message.getString());
-        if (started != null) say(server, "Automatic pre-generation of " + what + " (chosen when the world was created):");
+    /** The area is on the world map's list now (running, queued or paused): this class is done with it. */
+    private static void launch(MinecraftServer server, Component message, String what) {
+        writeState(server, "handed");
+        say(server, "Automatic pre-generation of " + what + " (chosen when the world was created):");
         server.getPlayerList().broadcastSystemMessage(message, false);
-        return message;
     }
 
     private static void say(MinecraftServer server, String text) {

@@ -259,6 +259,130 @@ public final class MapRequests {
         return Component.literal("Looking up map data for the area...");
     }
 
+    /**
+     * The world map's Generate with "Map data: Download": the selection is listed at once as a pre-generation waiting for its map
+     * data, the Geofabrik file holding it is downloaded (only the selection's area kept) and the pre-generation starts when that is
+     * in, or at once when map data on disk covers the area already. Without a single file for it (across a border), with another
+     * download running or with map data off, it generates with the online servers as usual.
+     */
+    public static void generateWithMapData(ServerPlayer player, net.minecraft.server.level.ServerLevel level,
+                                           com.berg.orbis.worldgen.ChunkSelection selection, boolean skipSea) {
+        MinecraftServer server = level.getServer();
+        WorldModel model = OrbisMod.model();
+        if (model == null || model.regions() == null || selection.isEmpty()) {
+            player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea));
+            return;
+        }
+        String id = selection.fingerprint();
+        player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea, com.berg.orbis.worldgen.PregenTasks.SELECTION,
+                com.berg.orbis.worldgen.PregenTasks.State.DOWNLOADING));
+        // Now, or after the download running (one at a time; a later one in the same region reuses its file).
+        String how = com.berg.orbis.worldgen.PregenTasks.requestDownload(server, player.getUUID(), id);
+        if (how != null) tell(server, player.getUUID(), how);
+    }
+
+    /** The region files kept after an import for the downloads queued behind it, listed here until the queue is empty. */
+    private static java.nio.file.Path sharedList() {
+        return OrbisMod.dataDir().resolve("extracts-src").resolve("shared-downloads.txt");
+    }
+
+    private static synchronized void noteShared(java.nio.file.Path pbf) {
+        try {
+            java.nio.file.Files.createDirectories(pbf.getParent());
+            java.nio.file.Files.writeString(sharedList(), pbf.toAbsolutePath() + "\n", java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (java.io.IOException e) {
+            System.err.println("[orbis] Could not note a shared map data file: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Deletes the region files kept for the downloads queued behind them, once none is left (unless keepDownloadedMapFiles): called
+     * by the pre-generation list when no download runs or waits, and as the world opens (after a crash).
+     */
+    public static synchronized void deleteSharedFiles() {
+        java.nio.file.Path list = sharedList();
+        if (!java.nio.file.Files.exists(list)) return;
+        try {
+            if (!OrbisMod.config().keepDownloadedMapFiles) {
+                for (String line : java.nio.file.Files.readAllLines(list, java.nio.charset.StandardCharsets.UTF_8)) {
+                    if (!line.isBlank()) java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(line.trim()));
+                }
+            }
+            java.nio.file.Files.deleteIfExists(list);
+        } catch (java.io.IOException | RuntimeException e) {
+            System.err.println("[orbis] Could not delete the shared map data files: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Downloads the map data for a listed pre-generation (Generate with Download, or its list entry switched to Download): the
+     * Geofabrik file of the region holding its area, only the area kept; {@link com.berg.orbis.worldgen.PregenTasks#mapDataDone} when
+     * that ends (in, failed, or not needed). False when it cannot start (another download running, no map data in this world).
+     */
+    public static boolean downloadForTask(MinecraftServer server, UUID who, String id, com.berg.orbis.worldgen.ChunkSelection area) {
+        WorldModel model = OrbisMod.model();
+        if (model == null || model.regions() == null || area.isEmpty() || MapDataJob.busy()) return false;
+        // The area's box in degrees, from its chunk corners.
+        int[] xr = area.xRange();
+        double[] a = model.mapper().toLatLonExact(xr[0] * 16.0, area.firstRow() * 16.0);
+        double[] b = model.mapper().toLatLonExact((xr[1] + 1) * 16.0, (area.lastRow() + 1) * 16.0);
+        double[] box = {Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])};
+        long ticket = com.berg.orbis.worldgen.PregenTasks.mapDataStarted(id);
+        java.nio.file.Path data = OrbisMod.dataDir();
+        double mpb = model.cfg().metersPerBlock;
+        Thread t = new Thread(() -> {
+            MapDataJob.Plan plan = null;
+            String why = null;
+            try {
+                plan = MapDataJob.plan(data, box, mpb);
+            } catch (Exception e) {
+                why = e.getMessage();
+            }
+            if (plan == null) {
+                boolean failed = why != null;
+                String note = failed ? "The map data look-up failed (" + why + "); the pre-generation uses the online map servers."
+                        : "Map data on disk covers this area already (or no single file holds it): the pre-generation goes ahead.";
+                server.execute(() -> {
+                    tell(server, who, note);
+                    com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, !failed);
+                });
+                return;
+            }
+            MapDataJob.Plan chosen = plan;
+            server.execute(() -> tell(server, who, String.format(Locale.ROOT,
+                    "Downloading map data for %s (%s); only this area is kept. The pre-generation goes ahead when it is in (world map, B).",
+                    chosen.region().name(), chosen.sizeText())));
+            // The region file stays after the import: a download queued behind this one in the same region reads it instead of
+            // fetching it again. It goes with the shared ones when no download is left (or stays with keepDownloadedMapFiles).
+            if (!OrbisMod.config().keepDownloadedMapFiles) noteShared(data.resolve("extracts-src").resolve(plan.region().id() + "-latest.osm.pbf"));
+            boolean started = MapDataJob.start(data, plan, true, new MapDataJob.Listener() {
+                @Override
+                public void progress(String line, float fraction) {
+                    mapDataLine = line;
+                    mapDataFraction = fraction;
+                    com.berg.orbis.worldgen.PregenTasks.mapDataProgress(id, ticket, fraction);
+                }
+
+                @Override
+                public void finished(String message, boolean ok) {
+                    System.out.println("[orbis] " + message);
+                    mapDataLine = "";
+                    mapDataFraction = -1;
+                    server.execute(() -> {
+                        tell(server, who, ok ? message : message + " The pre-generation uses the online map servers.");
+                        if (ok) Landmarks.rebuildSoon(server);
+                        com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, ok);
+                    });
+                }
+            });
+            if (!started) server.execute(() -> com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, false));
+        }, "Orbis-map-data-plan");
+        t.setDaemon(true);
+        t.start();
+        return true;
+    }
+
     /** The online servers' regions over the box, fetched ahead (at most 13 x 13 around its middle); the message to say. */
     private static String prefetch(WorldModel model, double[] box) {
         if (model.regions() == null) return "map data is off in this world.";

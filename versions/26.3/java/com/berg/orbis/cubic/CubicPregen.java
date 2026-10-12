@@ -50,6 +50,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
     /** Blocks generated under a column's lowest ground and over its highest ground or water. */
     private static final int BELOW = 64;
     private static final int ABOVE = 64;
+    /** Blocks around a cube column whose map data its generation reads (the cave band's 96, and room for structures' footprints). */
+    private static final int MAP_REACH = 160;
     /** Cube columns across a tile. */
     private static final int TILE = 8;
     /** Cubes asked for and not full yet. */
@@ -102,7 +104,7 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         r.start();
         return Component.literal(String.format(Locale.ROOT,
                 "Pre-generating %s (cubic world): %,d cube columns, each from %d blocks under its ground to %d over it.%s Progress every 30 s; "
-                        + "Stop on the world map (B) ends it (it resumes later).",
+                        + "Pause on the world map (B) pauses it (Resume carries on).",
                 label, r.total, BELOW, ABOVE, r.resumedFrom > 0 ? String.format(Locale.ROOT, " Resuming after %,d columns done before.", r.resumedFrom) : ""));
     }
 
@@ -115,12 +117,19 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
     }
 
     @Override
+    public int doneRow() {
+        Run r = this.run;
+        return r == null ? Integer.MIN_VALUE : r.doneRow();
+    }
+
+    @Override
     public PregenTask.Snapshot snapshot() {
         Run r = this.run;
         if (r == null) return null;
         return new PregenTask.Snapshot(r.label, r.total == 0 ? 1f : Math.min(1f, (float) r.donePrefix / r.total),
                 String.format(Locale.ROOT, "%,d of %,d cube columns, %,d cubes, %.0f cubes/s", r.donePrefix, r.total, r.cubesDone.get(), r.rate),
-                r.waiting);
+                // Barely moving and not waiting for itself: the cubes wait for their data (map data from Overpass, terrain, ...).
+                r.waiting != null ? r.waiting : r.rate < 0.5 ? PregenTask.waitingForData() : null);
     }
 
     @Override
@@ -177,6 +186,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         /** Columns walked (all their cubes asked for), and done in walking order with none missing before them. */
         final AtomicInteger columnsWalked = new AtomicInteger();
         int donePrefix;
+        /** Each band of TILE cube rows in walking order: {columns walked by its end, its last chunk row}. */
+        final int[][] bandEnds;
         final java.util.BitSet doneColumns = new java.util.BitSet();
         /** Full cubes still held (server thread). */
         final ArrayDeque<long[]> held = new ArrayDeque<>();
@@ -184,6 +195,15 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         final java.util.HashSet<Long> asked = new java.util.HashSet<>();
 
         volatile long lastGcAsked;
+        /** Memory is short: the server thread lets go of the cubes held (the producer asks, the server thread does it). */
+        volatile boolean releaseHeld;
+        /** Cubes held, as last counted on the server thread (the producer reads it). */
+        volatile int heldCount;
+        /**
+         * The old generation's share in use with nothing of the sweep's in memory (no cube held or asked for, no writes queued): the
+         * players' and the game's. The sweep waits for memory only above it (plus a margin); 0 until such a reading.
+         */
+        volatile double memoryFloor;
         long lastLog;
         long lastChat;
         long lastSave;
@@ -201,13 +221,31 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
             this.maxCube = Math.floorDiv(CubicApi.maxY(level), CubeTerrain.SIZE);
             this.progressFile = key == null ? null : level.getServer().getWorldPath(LevelResource.ROOT).resolve("orbis-pregen").resolve(key);
             int[] count = {0};
-            walk((index, x, z) -> count[0]++);
+            int firstCubeRow = Math.floorDiv(area.firstRow(), 2);
+            List<int[]> bands = new ArrayList<>(); // {columns walked by the band's end, its last chunk row}
+            walk((index, x, z) -> {
+                count[0]++;
+                int lastChunkRow = (firstCubeRow + Math.floorDiv(z - firstCubeRow, TILE) * TILE + TILE - 1) * 2 + 1;
+                if (bands.isEmpty() || bands.get(bands.size() - 1)[1] != lastChunkRow) bands.add(new int[]{0, lastChunkRow});
+                bands.get(bands.size() - 1)[0] = index + 1;
+            });
             this.total = count[0];
+            this.bandEnds = bands.toArray(new int[0][]);
             this.resumedFrom = readProgress();
             this.donePrefix = this.resumedFrom;
             this.bar = new ServerBossEvent(java.util.UUID.randomUUID(), Component.literal("Pre-generating " + label), BossEvent.BossBarColor.GREEN,
                     BossEvent.BossBarOverlay.PROGRESS);
             this.loadedAtStart = level.getChunkSource().getLoadedChunksCount();
+        }
+
+        /** The last chunk row of the bands whose columns are all done (the task list's progress), or Integer.MIN_VALUE. */
+        int doneRow() {
+            int row = Integer.MIN_VALUE;
+            for (int[] b : this.bandEnds) {
+                if (b[0] > this.donePrefix) break;
+                row = b[1];
+            }
+            return row;
         }
 
         void start() {
@@ -287,6 +325,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
                 walk((index, x, z) -> {
                     if (this.stopRequested) throw new InterruptedException();
                     if (index < this.resumedFrom) return;
+                    awaitMapData(x, z);
+                    if (this.stopRequested) throw new InterruptedException();
                     int[] band = band(x, z);
                     if (band == null) {
                         this.columnsSkipped.incrementAndGet();
@@ -304,6 +344,36 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
             } finally {
                 this.producerDone = true;
             }
+        }
+
+        /**
+         * Waits until every map region the generation of a cube column reads is ready, before any of its cubes is asked for: the regions
+         * within {@link #MAP_REACH} blocks of it (the cave band looks 96 blocks around a chunk for roads and buildings, and a structure's
+         * footprint reaches further). The generator waits for them too, but on Minecraft's shared worker threads, inside Cubic Worlds'
+         * queue: with an Overpass server not answering, the sweep's cubes held those threads for minutes and a player joining waited
+         * behind them for the cubes around them (12 Oct 2026). The chunk sweeps wait the same way, before Minecraft is asked.
+         */
+        void awaitMapData(int cubeX, int cubeZ) throws InterruptedException {
+            WorldModel m = this.model;
+            if (m == null || m.regions() == null) return;
+            int size = CubeTerrain.SIZE, region = m.regions().regionSize();
+            int x0 = cubeX * size - MAP_REACH, x1 = cubeX * size + size - 1 + MAP_REACH;
+            int z0 = cubeZ * size - MAP_REACH, z1 = cubeZ * size + size - 1 + MAP_REACH;
+            // The regions one and two region rows ahead (south) download meanwhile, as the chunk sweeps queue theirs.
+            m.regions().futureForBlock(cubeX * size, z1 + region);
+            m.regions().futureForBlock(cubeX * size, z1 + 2 * region);
+            for (int x = x0; ; x = Math.min(x1, x + region)) {
+                for (int z = z0; ; z = Math.min(z1, z + region)) {
+                    java.util.concurrent.CompletableFuture<?> f = m.regions().futureForBlock(x, z);
+                    while (!this.stopRequested && !f.isDone()) {
+                        this.waiting = "waiting for map data";
+                        Thread.sleep(100);
+                    }
+                    if (z == z1) break;
+                }
+                if (x == x1) break;
+            }
+            this.waiting = null;
         }
 
         /** The cube-Y band of a column, or null to leave it out (beyond the world border or limit, or open sea when that is skipped). */
@@ -369,13 +439,22 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         String mustWait() {
             if (CubicApi.pendingCubeWrites(this.level) > MAX_PENDING_WRITES) return "waiting for the disk";
             if (this.level.getChunkSource().getLoadedChunksCount() > this.loadedAtStart + MAX_LOADED) return "waiting for unloads";
-            if (oldGenAfterGc() > MAX_HEAP_FRACTION) {
+            double old = oldGenAfterGc();
+            if (old > Math.min(0.95, Math.max(MAX_HEAP_FRACTION, this.memoryFloor + 0.10))) {
+                // The cubes held for their neighbours go first: waiting while holding them stood the sweep still for good (a 4 GB
+                // server with a player in it, 12 Oct 2026: 15 minutes at 0 cubes/s).
+                this.releaseHeld = true;
                 // what was in use at the last collection: with nothing in flight nothing allocates, and without a collection the reading
                 // would never come down (the sweep stood still with the heap full of garbage)
                 long now = System.currentTimeMillis();
-                if (this.inFlight.get() == 0 && now - this.lastGcAsked > 10_000) {
+                boolean nothingOfOurs = this.inFlight.get() == 0 && this.heldCount == 0 && CubicApi.pendingCubeWrites(this.level) < 200;
+                if (nothingOfOurs && now - this.lastGcAsked > 10_000) {
                     this.lastGcAsked = now;
                     System.gc();
+                } else if (nothingOfOurs && now - this.lastGcAsked > 3_000) {
+                    // Collected with nothing of the sweep's in memory and still this full: it is the players' and the game's, and
+                    // waiting cannot free it. Carry on with a margin above it.
+                    this.memoryFloor = old;
                 }
                 return "waiting for memory";
             }
@@ -409,10 +488,13 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
                     columnDone(index);
                 }
             }
-            while (this.held.size() > KEEP_HELD) {
+            int keep = this.releaseHeld ? 0 : KEEP_HELD;
+            this.releaseHeld = false;
+            while (this.held.size() > keep) {
                 long[] c = this.held.pollFirst();
                 CubicApi.releaseCube(this.level, PregenTask.PREGEN_TICKET, (int) c[0], (int) c[1], (int) c[2]);
             }
+            this.heldCount = this.held.size();
             for (ServerPlayer p : this.level.getServer().getPlayerList().getPlayers()) {
                 if (!this.bar.getPlayers().contains(p)) this.bar.addPlayer(p);
             }

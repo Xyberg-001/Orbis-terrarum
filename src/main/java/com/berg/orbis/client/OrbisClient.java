@@ -18,6 +18,10 @@ public class OrbisClient implements ClientModInitializer {
     public static volatile com.berg.orbis.net.AllowedAreaPayload allowedArea;
     /** The server's pre-generation, for the world map's progress bar (idle when none runs or the server has no Orbis). */
     public static volatile com.berg.orbis.net.PregenStatusPayload pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
+    /** The server's pre-generations not finished yet, in queue order, for the world map's list (empty: none). */
+    public static volatile java.util.List<com.berg.orbis.net.PregenTasksPayload.Entry> pregenTasks = java.util.List.of();
+    /** Their areas by id: each comes once, the list after that only says how far it has got. */
+    public static final java.util.Map<String, com.berg.orbis.worldgen.ChunkSelection> pregenAreas = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
     public void onInitializeClient() {
@@ -38,6 +42,16 @@ public class OrbisClient implements ClientModInitializer {
                 (payload, context) -> allowedArea = payload);
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PregenStatusPayload.TYPE,
                 (payload, context) -> pregenStatus = payload);
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PregenTasksPayload.TYPE,
+                (payload, context) -> {
+                    java.util.Set<String> ids = new java.util.HashSet<>();
+                    for (var e : payload.tasks()) {
+                        ids.add(e.id());
+                        if (e.area() != null) pregenAreas.put(e.id(), e.area());
+                    }
+                    pregenAreas.keySet().retainAll(ids);
+                    pregenTasks = payload.tasks();
+                });
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.MapAnswerPayload.TYPE,
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().gui.screen() instanceof com.berg.orbis.client.map.MapAnswerSink sink) sink.answer(payload);
@@ -76,6 +90,8 @@ public class OrbisClient implements ClientModInitializer {
             worldInfo = null;
             allowedArea = null;
             pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
+            pregenTasks = java.util.List.of();
+            pregenAreas.clear();
             mc.execute(() -> com.berg.orbis.client.map.BlockMapClient.clear(mc));
         });
         System.out.println("[orbis] Client ready: world settings via Create New World > Customize"
