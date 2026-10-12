@@ -54,6 +54,13 @@ public class OsmDataProvider {
     private final Map<String, Semaphore> endpointSlots = new HashMap<>();
     private final HttpClient client;
     private final AtomicInteger endpointIndex = new AtomicInteger();
+    /**
+     * Endpoints that just failed or timed out, and until when they are passed over: a public server that hangs costs a whole timeout
+     * (2.5 minutes) each time, and the rotation used to come back to it for the next region (Everest, 12 Oct 2026: overpass.kumi.systems
+     * timed out region after region while the others answered).
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> passOverUntil = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long PASS_OVER_MS = 10 * 60_000L;
     private volatile long cooldownUntil;
     private volatile boolean closed;
     /** Imported country extracts, consulted before any network request. */
@@ -161,17 +168,21 @@ public class OsmDataProvider {
         IOException last = null;
         for (int attempt = 0; attempt <= retries; attempt++) {
             if (closed) throw new IOException("provider closed (world model replaced)");
-            String endpoint = endpoints.get(Math.floorMod(endpointIndex.get(), endpoints.size()));
+            String endpoint = pickEndpoint();
             try {
-                return fetchOverpass(endpoint, south, west, north, east);
+                String json = fetchOverpass(endpoint, south, west, north, east);
+                passOverUntil.remove(endpoint);
+                return json;
             } catch (RateLimited e) {
                 last = e;
                 long wait = Math.max(20_000L, e.retryAfterMs);
                 cooldownUntil = Math.max(cooldownUntil, System.currentTimeMillis() + wait);
+                passOver(endpoint, wait);
                 endpointIndex.incrementAndGet();
                 System.err.println("[orbis] " + e.getMessage() + " -- switching endpoint, cooling down " + (wait / 1000) + " s");
             } catch (IOException e) {
                 last = e;
+                passOver(endpoint, PASS_OVER_MS);
                 endpointIndex.incrementAndGet();
                 long backoffMs = 3000L * (attempt + 1);
                 System.err.println("[orbis] Overpass fetch failed (attempt " + (attempt + 1) + "/" + (retries + 1) + ") on " + endpoint
@@ -180,6 +191,25 @@ public class OsmDataProvider {
             }
         }
         throw last;
+    }
+
+    /** The endpoint in turn, passing over those that failed lately; when every one has, the one in turn anyway. */
+    private String pickEndpoint() {
+        int n = endpoints.size(), start = Math.floorMod(endpointIndex.get(), n);
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < n; i++) {
+            String e = endpoints.get((start + i) % n);
+            if (passOverUntil.getOrDefault(e, 0L) <= now) return e;
+        }
+        return endpoints.get(start);
+    }
+
+    private void passOver(String endpoint, long ms) {
+        if (endpoints.size() < 2) return;
+        Long before = passOverUntil.put(endpoint, System.currentTimeMillis() + ms);
+        if (before == null || before <= System.currentTimeMillis()) {
+            System.out.println("[orbis] Overpass: " + endpoint + " is passed over for " + ms / 60_000 + " min (it failed); the others are asked first");
+        }
     }
 
     private String fetchOverpass(String endpoint, double south, double west, double north, double east) throws IOException, InterruptedException {
