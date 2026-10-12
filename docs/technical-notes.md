@@ -2057,16 +2057,20 @@ selection resumes. Shapes are kept per world in
 `config/orbisterrarum/map-selections.json`.
 
 **The list of pre-generations** (`worldgen/PregenTasks`, 1.1.1): every
-pre-generation not finished yet is a task, shown top centre on the world map
-while there are any: running, queued (waits its turn) or paused, with how far
-it has got and the running one's live detail. One runs at a time; when it
+pre-generation not finished yet is a task, listed in a dropdown behind a button
+on the map's right edge under the World button (the button shows only while
+there are any; a chunk-grid icon with a count, and a thin progress line under
+it while one runs): running, queued (waits its turn) or paused, with how far it
+has got and the running one's live detail. The dropdown opens by itself once
+when a task is added while the map is open, and a click on the map closes it. One runs at a time; when it
 finishes or is paused the next queued one starts. Generate on the map (and the
 automatic pre-generation of a new world, `AutoPregen`, which hands its area
 over once and writes `handed` to `auto-state.txt`) adds a task, queued behind
 the running one; a task's id is its area's fingerprint, so the same selection
 again picks its task up. Click a row to tick it (several can be ticked),
 double-click to bring its area into view; Resume, Pause and Stop act on the
-ticked ones (or the only one), Stop ends and removes them after a second
+ticked ones (or the only one); they are icons (play, pause, a square that
+turns red for the confirming click), and Stop ends and removes them after a second
 click (what is generated stays). The map shades what the ticked tasks have
 left, or all of them when none is ticked, as one translucent purple area
 (`WorldMapScreen.drawPending`, as the selection being drawn is green), with
