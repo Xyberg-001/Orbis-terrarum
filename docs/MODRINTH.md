@@ -70,8 +70,9 @@ New
   once found; the i window with the world's facts, the real sky switches, the hard
   limit, Draw all for the Blocks layer and Download map data; pre-generation progress
   with Stop and Resume. The /orbis commands it replaces are gone.
-- Map data from Geofabrik: when you create a world, Orbis offers OpenStreetMap's file
-  for its region, keeps only your area and reads the map from disk from then on.
+- Map data from Geofabrik: when you create a world (or with Download map data on the
+  world map), Orbis fetches OpenStreetMap's file for its region, keeps only your area (a
+  country-scale world keeps the whole country's main features) and reads the map from disk.
 - Far view with Voxy in singleplayer: land shown from the map data before it exists.
 - Mountains at 1:1: an area high above the sea (the Himalaya) gets the world's height
   laid over its own ground, 1:1 from the valleys to the summits.
