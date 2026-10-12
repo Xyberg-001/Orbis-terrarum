@@ -13,8 +13,10 @@ import java.util.List;
  * "Generate this": the shapes an operator drew on the world map (block coordinates, in order, each added or cut
  * out). The server turns them into the same {@link ChunkSelection} the map showed and sweeps it. Vertices go as
  * zigzag-encoded differences, a few bytes each, since a message from the game to the server is capped at 32 KB.
+ * {@code downloadMapData}: download the area's map data from Geofabrik first (the map's "Map data: Download"), else the
+ * online map servers are asked while it generates.
  */
-public record PregenSelectionPayload(List<ChunkSelection.Shape> shapes, boolean skipSea) implements CustomPacketPayload {
+public record PregenSelectionPayload(List<ChunkSelection.Shape> shapes, boolean skipSea, boolean downloadMapData) implements CustomPacketPayload {
     public static final Type<PregenSelectionPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath("orbisterrarum", "pregen_selection"));
     public static final StreamCodec<RegistryFriendlyByteBuf, PregenSelectionPayload> CODEC =
             CustomPacketPayload.codec(PregenSelectionPayload::write, PregenSelectionPayload::read);
@@ -23,6 +25,7 @@ public record PregenSelectionPayload(List<ChunkSelection.Shape> shapes, boolean 
 
     private void write(RegistryFriendlyByteBuf buf) {
         buf.writeBoolean(skipSea);
+        buf.writeBoolean(downloadMapData);
         buf.writeVarInt(shapes.size());
         for (ChunkSelection.Shape s : shapes) {
             buf.writeBoolean(s.subtract());
@@ -40,6 +43,7 @@ public record PregenSelectionPayload(List<ChunkSelection.Shape> shapes, boolean 
 
     private static PregenSelectionPayload read(RegistryFriendlyByteBuf buf) {
         boolean skipSea = buf.readBoolean();
+        boolean download = buf.readBoolean();
         int n = buf.readVarInt();
         if (n < 0 || n > MAX_SHAPES) throw new IllegalArgumentException("too many shapes: " + n);
         List<ChunkSelection.Shape> shapes = new ArrayList<>(n);
@@ -59,7 +63,7 @@ public record PregenSelectionPayload(List<ChunkSelection.Shape> shapes, boolean 
             }
             shapes.add(new ChunkSelection.Shape(subtract, v));
         }
-        return new PregenSelectionPayload(shapes, skipSea);
+        return new PregenSelectionPayload(shapes, skipSea, download);
     }
 
     private static int zig(int v) {

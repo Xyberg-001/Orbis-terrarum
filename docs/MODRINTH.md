@@ -162,7 +162,7 @@ Ready-made setups:
 - **Slow or metered internet:** `regionPrefetchRadius 1`, `overpassConcurrentRequests 2`, `imageryZoom 17`, `osmMaxWaitMinutes 30`.
 - **Big machine (16 GB+, 8+ cores, SSD):** `regionCacheSize 128`, `demTileCacheSize 768`, `imageryTileCacheSize 1024`, `regionPrefetchRadius 3`, then restart.
 
-Everything else is on the world map (B): Teleport, What's here, pre-generating (Select area, Generate, Stop, Resume), and the World window (**i**) with your position, the real sky and hard limit switches, Download map data, Draw all and Export for Aternos.
+Everything else is on the world map (B): Teleport, What's here, pre-generating (Select area, Map data: Live or Download, Generate, Resume, Pause, Stop), and the World window (**i**) with your position, the real sky and hard limit switches, Draw all and Export for Aternos.
 
 ### Servers
 Install the mod on the server only and set `level-type=orbisterrarum\:earth` in `server.properties` before the first start. Easiest: create and pre-generate the world in singleplayer, then upload it.

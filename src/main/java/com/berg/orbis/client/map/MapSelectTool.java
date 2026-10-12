@@ -95,7 +95,12 @@ public final class MapSelectTool {
     private int version;
     private boolean counted;
 
-    private Button toggle, hand, rect, ellipse, lassoButton, modeButton, undo, clear, expand, contract, sea, generate;
+    private Button toggle, hand, rect, ellipse, lassoButton, modeButton, undo, clear, expand, contract, sea, generate, source;
+    /**
+     * Where Generate gets the map data from (kept while the game runs): the online map servers while it generates (Live), or a
+     * download from Geofabrik first, of the region holding the selection, keeping only the selection's area (Download).
+     */
+    private static boolean downloadMapData;
     /** Skip open sea for this area: the world preview's goes with the new world, the world map's with Generate. Off at first. */
     private static boolean previewSkipSea, worldSkipSea;
     /** The shapes before each change, for Undo (the newest last). */
@@ -322,9 +327,16 @@ public final class MapSelectTool {
         generate = Button.builder(Component.translatable("orbisterrarum.map.select.generate"), b -> send())
                 .bounds(screenW - 104, screenH - 58, 100, 20)
                 .tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.select.generate.tip"))).build();
+        source = Button.builder(Component.empty(), b -> {
+                    downloadMapData = !downloadMapData;
+                    refresh();
+                }).bounds(screenW - 104 - 4 - 124, screenH - 58, 124, 20).build();
         if (!alwaysOn) add.accept(toggle);
         for (Button b : new Button[]{hand, rect, ellipse, lassoButton, modeButton, undo, clear, expand, contract, sea}) add.accept(b);
-        if (canGenerate) add.accept(generate);
+        if (canGenerate) {
+            add.accept(source);
+            add.accept(generate);
+        }
         refresh();
     }
 
@@ -341,6 +353,10 @@ public final class MapSelectTool {
         ChunkSelection s = selection;
         expand.active = contract.active = !resizing && s != null && !s.isEmpty();
         generate.visible = canGenerate && active && s != null && !s.isEmpty();
+        source.visible = generate.visible;
+        source.setMessage(Component.translatable(downloadMapData ? "orbisterrarum.map.select.source.download" : "orbisterrarum.map.select.source.live"));
+        source.setTooltip(Tooltip.create(Component.translatable(downloadMapData ? "orbisterrarum.map.select.source.download.tip"
+                : "orbisterrarum.map.select.source.live.tip")));
     }
 
     // The buttons' labels name them for narration; the strip draws icons over them instead of the text.
@@ -839,7 +855,7 @@ public final class MapSelectTool {
         if (s == null || s.isEmpty()) return;
         List<ChunkSelection.Shape> list = new ArrayList<>();
         for (Shape shape : shapes) list.add(new ChunkSelection.Shape(shape.subtract(), shape.blocks()));
-        ClientPlayNetworking.send(new PregenSelectionPayload(list, skipSea()));
+        ClientPlayNetworking.send(new PregenSelectionPayload(list, skipSea(), downloadMapData));
         say.accept(Component.translatable("orbisterrarum.map.select.sent").getString());
     }
 

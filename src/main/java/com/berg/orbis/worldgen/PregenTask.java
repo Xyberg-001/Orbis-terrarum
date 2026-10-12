@@ -272,7 +272,7 @@ public final class PregenTask {
                     + "servers throttle. Download map data first (world map, World window).";
         }
         String label = outline.name().split(",")[0] + (mainlandOnly ? "" : " (all parts)");
-        return PregenTasks.submit(level, label, kind, area, null, doneRow, paused, extractNote);
+        return PregenTasks.submit(level, label, kind, area, null, doneRow, paused ? PregenTasks.State.PAUSED : PregenTasks.State.QUEUED, extractNote);
     }
 
     /**
@@ -284,7 +284,12 @@ public final class PregenTask {
     }
 
     /** A drawn area, with its own Skip open sea choice (null: the world's setting); {@code paused}: listed, not started. */
-    public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea, String kind, boolean paused) {
+    public static Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea, String kind, boolean paused) {
+        return startSelection(level, selection, skipSea, kind, paused ? PregenTasks.State.PAUSED : PregenTasks.State.QUEUED);
+    }
+
+    /** The same, listed in the given state (QUEUED: start or wait its turn; PAUSED; DOWNLOADING: when its map data is in). */
+    public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea, String kind, PregenTasks.State initial) {
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
         if (selection.isEmpty()) return Component.literal("The selection is empty.");
@@ -298,7 +303,7 @@ public final class PregenTask {
         }
         double km2 = selection.count() * 256.0 * model.cfg().metersPerBlock * model.cfg().metersPerBlock / 1e6;
         String label = String.format(Locale.ROOT, "%s (%s km²)", PregenTasks.AUTO.equals(kind) ? "World area" : "Selection", km2Text(km2));
-        Component reply = PregenTasks.submit(level, label, kind, selection, skipSea, doneRow, paused, "");
+        Component reply = PregenTasks.submit(level, label, kind, selection, skipSea, doneRow, initial, "");
         warnIfTooLow(level, model, selection);
         return reply;
     }

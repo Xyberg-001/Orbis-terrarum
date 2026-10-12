@@ -259,6 +259,83 @@ public final class MapRequests {
         return Component.literal("Looking up map data for the area...");
     }
 
+    /**
+     * The world map's Generate with "Map data: Download": the selection is listed at once as a pre-generation waiting for its map
+     * data, the Geofabrik file holding it is downloaded (only the selection's area kept) and the pre-generation starts when that is
+     * in, or at once when map data on disk covers the area already. Without a single file for it (across a border), with another
+     * download running or with map data off, it generates with the online servers as usual.
+     */
+    public static void generateWithMapData(ServerPlayer player, net.minecraft.server.level.ServerLevel level,
+                                           com.berg.orbis.worldgen.ChunkSelection selection, boolean skipSea) {
+        MinecraftServer server = level.getServer();
+        WorldModel model = OrbisMod.model();
+        if (model == null || model.regions() == null || selection.isEmpty()) {
+            player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea));
+            return;
+        }
+        if (MapDataJob.busy()) {
+            player.sendSystemMessage(Component.literal("[Orbis Terrarum] A map data download is running already; this pre-generation uses the online map servers."));
+            player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea));
+            return;
+        }
+        // The selection's box in degrees, from its chunk corners.
+        int[] xr = selection.xRange();
+        double[] a = model.mapper().toLatLonExact(xr[0] * 16.0, selection.firstRow() * 16.0);
+        double[] b = model.mapper().toLatLonExact((xr[1] + 1) * 16.0, (selection.lastRow() + 1) * 16.0);
+        double[] box = {Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])};
+        String id = selection.fingerprint();
+        player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea, com.berg.orbis.worldgen.PregenTasks.SELECTION,
+                com.berg.orbis.worldgen.PregenTasks.State.DOWNLOADING));
+        java.nio.file.Path data = OrbisMod.dataDir();
+        double mpb = model.cfg().metersPerBlock;
+        UUID who = player.getUUID();
+        Thread t = new Thread(() -> {
+            MapDataJob.Plan plan = null;
+            String why = null;
+            try {
+                plan = MapDataJob.plan(data, box, mpb);
+            } catch (Exception e) {
+                why = e.getMessage();
+            }
+            if (plan == null) {
+                String note = why != null ? "The map data look-up failed (" + why + "); the pre-generation uses the online map servers."
+                        : "Map data on disk covers this area already (or no single file holds it): the pre-generation starts.";
+                server.execute(() -> {
+                    tell(server, who, note);
+                    com.berg.orbis.worldgen.PregenTasks.mapDataDone(id);
+                });
+                return;
+            }
+            MapDataJob.Plan chosen = plan;
+            server.execute(() -> tell(server, who, String.format(Locale.ROOT,
+                    "Downloading map data for %s (%s); only this area is kept. The pre-generation starts when it is in (world map, B).",
+                    chosen.region().name(), chosen.sizeText())));
+            boolean started = MapDataJob.start(data, plan, OrbisMod.config().keepDownloadedMapFiles, new MapDataJob.Listener() {
+                @Override
+                public void progress(String line, float fraction) {
+                    mapDataLine = line;
+                    mapDataFraction = fraction;
+                    com.berg.orbis.worldgen.PregenTasks.mapDataProgress(id, fraction);
+                }
+
+                @Override
+                public void finished(String message, boolean ok) {
+                    System.out.println("[orbis] " + message);
+                    mapDataLine = "";
+                    mapDataFraction = -1;
+                    server.execute(() -> {
+                        tell(server, who, ok ? message : message + " The pre-generation uses the online map servers.");
+                        if (ok) Landmarks.rebuildSoon(server);
+                        com.berg.orbis.worldgen.PregenTasks.mapDataDone(id);
+                    });
+                }
+            });
+            if (!started) server.execute(() -> com.berg.orbis.worldgen.PregenTasks.mapDataDone(id));
+        }, "Orbis-map-data-plan");
+        t.setDaemon(true);
+        t.start();
+    }
+
     /** The online servers' regions over the box, fetched ahead (at most 13 x 13 around its middle); the message to say. */
     private static String prefetch(WorldModel model, double[] box) {
         if (model.regions() == null) return "map data is off in this world.";

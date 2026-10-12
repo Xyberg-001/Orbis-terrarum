@@ -105,6 +105,10 @@ public class OrbisMod implements ModInitializer {
         com.berg.orbis.worldgen.ChunkSelection selection = com.berg.orbis.worldgen.ChunkSelection.of(payload.shapes());
         System.out.println(String.format(java.util.Locale.ROOT, "[orbis] %s asked to pre-generate a map selection: %d shapes, %,d chunks",
                 player.getName().getString(), payload.shapes().size(), selection.count()));
+        if (payload.downloadMapData()) {
+            com.berg.orbis.map.MapRequests.generateWithMapData(player, level, selection, payload.skipSea());
+            return;
+        }
         player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, payload.skipSea()));
     }
 

@@ -255,7 +255,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     private final List<String> rowIds = new ArrayList<>();
     /** Until when a second click on Stop confirms it. */
     private long stopArmedUntil;
-    private static final int RUNNING_GREEN = 0xFF4ADE80, QUEUED_YELLOW = 0xFFFACC15, PAUSED_GREY = 0xFFB0B8C0;
+    private static final int RUNNING_GREEN = 0xFF4ADE80, QUEUED_YELLOW = 0xFFFACC15, PAUSED_GREY = 0xFFB0B8C0, DOWNLOAD_BLUE = 0xFF60A5FA;
 
     private static List<com.berg.orbis.net.PregenTasksPayload.Entry> pregenTasks() {
         return com.berg.orbis.client.OrbisClient.pregenTasks;
@@ -348,8 +348,11 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             int state = e.state();
             int pct = percent(e, st);
             int colour = state == com.berg.orbis.net.PregenTasksPayload.RUNNING ? RUNNING_GREEN
-                    : state == com.berg.orbis.net.PregenTasksPayload.QUEUED ? QUEUED_YELLOW : PAUSED_GREY;
-            String right2 = pct + "%";
+                    : state == com.berg.orbis.net.PregenTasksPayload.QUEUED ? QUEUED_YELLOW
+                    : state == com.berg.orbis.net.PregenTasksPayload.DOWNLOADING ? DOWNLOAD_BLUE : PAUSED_GREY;
+            // Waiting for its map data: the download's progress ("map data 45%"), not the chunks'.
+            String right2 = state == com.berg.orbis.net.PregenTasksPayload.DOWNLOADING
+                    ? Component.translatable("orbisterrarum.map.pregen.state.downloading", e.total() > 0 ? pct + "%" : "...").getString() : pct + "%";
             int rw = font.width(right2);
             // the state as an icon at the right edge, the percentage before it
             stateIcon(g, x + w - 7, y + 1, state, colour);
@@ -396,9 +399,12 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         return e.total() <= 0 ? 0 : (int) Math.min(100, Math.round(100.0 * e.done() / e.total()));
     }
 
-    /** A 7 x 7 state icon: a triangle (running), an hourglass (queued) or two bars (paused). */
+    /** A 7 x 7 state icon: a triangle (running), an hourglass (queued), two bars (paused) or a down arrow (downloading its map data). */
     private static void stateIcon(GuiGraphicsExtractor g, int x, int y, int state, int colour) {
-        if (state == com.berg.orbis.net.PregenTasksPayload.RUNNING) {
+        if (state == com.berg.orbis.net.PregenTasksPayload.DOWNLOADING) {
+            g.fill(x + 2, y, x + 5, y + 4, colour);
+            for (int r = 0; r < 3; r++) g.fill(x + r, y + 4 + r, x + 7 - r, y + 5 + r, colour);
+        } else if (state == com.berg.orbis.net.PregenTasksPayload.RUNNING) {
             for (int r = 0; r < 7; r++) {
                 int len = 1 + Math.min(r, 6 - r);
                 g.fill(x, y + r, x + len + 2, y + r + 1, colour);

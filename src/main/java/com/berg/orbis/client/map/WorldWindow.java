@@ -40,15 +40,14 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
     private boolean answered, op;
     private final Map<String, String> facts = new LinkedHashMap<>();
     private final Map<String, String[]> sky = new LinkedHashMap<>();
-    private boolean limitOn, drawing, downloading;
+    private boolean limitOn, drawing;
     private long allowedChunks;
-    private String drawText = "", downloadLine = "";
-    private float downloadFraction = -1;
+    private String drawText = "";
     private String message;
     private long messageUntil;
 
     private final Map<String, Button> skyButtons = new LinkedHashMap<>();
-    private Button limit, draw, download, export;
+    private Button limit, draw, export;
     private int[] box, close;
 
     WorldWindow(WorldMapScreen parent, WorldInfoPayload info) {
@@ -87,16 +86,6 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
         }).bounds(0, 0, 60, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.limit.tip"))).build());
         draw = addRenderableWidget(Button.builder(Component.empty(), b -> ClientPlayNetworking.send(new MapRequestPayload("drawall", "", 0, 0)))
                 .bounds(0, 0, 60, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.world.draw.tip"))).build());
-        download = addRenderableWidget(Button.builder(Component.empty(), b -> {
-            if (downloading) {
-                ClientPlayNetworking.send(new MapRequestPayload("mapdata-stop", "", 0, 0));
-                return;
-            }
-            double[] sel = parent.selectionBox();
-            double[] mid = parent.middle();
-            String arg = sel == null ? "" : String.format(Locale.ROOT, "%.6f,%.6f,%.6f,%.6f", sel[0], sel[1], sel[2], sel[3]);
-            ClientPlayNetworking.send(new MapRequestPayload("mapdata", arg, mid[0], mid[1]));
-        }).bounds(0, 0, 60, 20).build());
         export = addRenderableWidget(Button.builder(Component.translatable("orbisterrarum.map.export.button"), b -> {
             returning = true; // to the export window and back: the map's tiles stay
             minecraft.setScreenAndShow(new ExportWindow(this));
@@ -155,15 +144,6 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
                 case "draw" -> {
                     drawing = f.length > 1 && f[1].equals("1");
                     drawText = f.length > 2 ? f[2] : "";
-                }
-                case "mapdata" -> {
-                    downloading = f.length > 1 && f[1].equals("1");
-                    try {
-                        downloadFraction = f.length > 2 ? Float.parseFloat(f[2]) : -1;
-                    } catch (NumberFormatException e) {
-                        downloadFraction = -1;
-                    }
-                    downloadLine = f.length > 3 ? f[3] : "";
                 }
                 default -> { }
             }
@@ -251,7 +231,7 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
             i++;
         }
         y += ((i + 1) / 2) * 22 + 14;
-        for (Button b : new Button[]{limit, draw, download}) {
+        for (Button b : new Button[]{limit, draw}) {
             b.visible = controls;
             b.setWidth(cw);
         }
@@ -261,16 +241,9 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
         draw.setMessage(drawing ? Component.literal(fit(drawText, cw - 10)) : Component.translatable("orbisterrarum.map.world.draw"));
         draw.active = !drawing;
         draw.setPosition(x, y + 22);
-        String pct = downloadFraction >= 0 ? " (" + Math.round(downloadFraction * 100) + "%)" : "";
-        download.setMessage(downloading ? Component.translatable("orbisterrarum.map.world.download.stop", pct)
-                : Component.translatable(parent.selectionBox() != null ? "orbisterrarum.map.world.download.selection" : "orbisterrarum.map.world.download"));
-        download.setTooltip(Tooltip.create(downloading
-                ? Component.literal(downloadLine.isEmpty() ? "" : downloadLine + " - ").append(Component.translatable("orbisterrarum.map.world.download.stop.tip"))
-                : Component.translatable("orbisterrarum.map.world.download.tip")));
-        download.setPosition(x, y + 44);
         export.visible = exportOffered();
         export.setWidth(cw);
-        export.setPosition(x, y + 66);
+        export.setPosition(x, y + 44);
     }
 
     private String fit(String s, int w) {
@@ -336,7 +309,7 @@ public final class WorldWindow extends Screen implements MapAnswerSink {
         int[] at = controlsAt();
         int controlsBottom = at[1] + 12;
         boolean controls = op && answered;
-        if (controls) controlsBottom += ((sky.size() + 1) / 2) * 22 + 14 + (exportOffered() ? 4 : 3) * 22;
+        if (controls) controlsBottom += ((sky.size() + 1) / 2) * 22 + 14 + (exportOffered() ? 3 : 2) * 22;
         else if (!sky.isEmpty()) controlsBottom += sky.size() * 10 + 4;
         else controlsBottom = at[1];
         int factsBottom = y0 + PAD + 14 + factsHeight();

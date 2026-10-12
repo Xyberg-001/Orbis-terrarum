@@ -1144,8 +1144,9 @@ worlds pick it up for the regions they load next, and the file is deleted
 unless `keepDownloadedMapFiles`. Measured: Malta end to end in under a
 minute (8 MB file, 6 MB kept); Geofabrik gave 165 KB/s from India, so Norway
 (1.3 GB) takes over two hours there, shown as time left in the toast.
-The world map's **Download map data** (World window) does the same for the
-selection or the land around the middle of the map, for operators; its Stop stops it (the part is continued
+The world map's **Map data: Download** (beside Generate, 1.1.1; a World window
+button until then) does the same for the selection before it is pre-generated, for
+operators; Stop on its entry in the pre-generation list stops it (the part is continued
 next time, or started again when 12 h old).
 
 ### Pre-generation bar (`PregenTask.showBar`)
@@ -1719,7 +1720,7 @@ Norwegian peaks stand about 75 blocks above the sea.
    java -Xmx4g -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf"
    ```
 
-   or in game: Download map data (world map, World window **i**, or the offer when the world is
+   or in game: Map data: Download beside Generate on the world map (or the offer when the world is
    created) fetches the region's file from Geofabrik itself and, at 8 m per block or coarser, keeps
    this "map" profile of the area. Three passes over the file; Norway takes about three
    minutes on a 3 GB heap and becomes `config/orbisterrarum/extracts/norway/`
@@ -1898,10 +1899,18 @@ place you asked about, and landmark names only when zoomed in or hovered.
   and for operators `sky`, `drawall`, `mapdata` and `mapdata-stop`. Answers
   carry the question's id, so a late answer for a card no longer shown is
   dropped; changes answer with a `msg` line for the map.
-- **Download map data** takes the selection's box (else a box around the middle
-  of the map) to `MapDataJob`; where no Geofabrik file fits (it is on disk
-  already, it crosses a border, or the scale is 8 m per block or coarser) it
-  falls back to fetching the online servers' regions around it, at most 13 x 13.
+- **Map data: Live / Download** (beside Generate, `MapSelectTool.source`, kept while the
+  game runs; 1.1.1, replacing the World window's Download map data button). Live:
+  the online servers are asked while the sweep runs. Download: Generate sends
+  `PregenSelectionPayload.downloadMapData`; `MapRequests.generateWithMapData` lists the
+  selection at once as a task in the DOWNLOADING state (`PregenTasks.State`, shown
+  "map data 45%" with a down arrow, its done/total the download's per mille), plans the
+  selection's box with `MapDataJob` and downloads it; when that ends (in, failed, or not
+  needed because map data on disk covers it or no single file holds it)
+  `PregenTasks.mapDataDone` queues the task and it starts in its turn. Another download
+  running, or map data off, means Live. Pause leaves it paused when the download ends,
+  Stop also stops the download; a DOWNLOADING task found when the world opens is listed
+  as paused (its download stopped with the server).
 - **Landmarks rebuild themselves** (`Landmarks.rebuildSoon`) after a map data
   download or an import finishes, so places the online servers missed join the
   advancements.

@@ -18,8 +18,8 @@ public record PregenTasksPayload(List<Entry> tasks) implements CustomPacketPaylo
     public static final Type<PregenTasksPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath("orbisterrarum", "pregen_tasks"));
     public static final StreamCodec<RegistryFriendlyByteBuf, PregenTasksPayload> CODEC = CustomPacketPayload.codec(PregenTasksPayload::write,
             PregenTasksPayload::read);
-    /** Running, queued, paused (PregenTasks.State's order). */
-    public static final int RUNNING = 0, QUEUED = 1, PAUSED = 2;
+    /** Running, queued, paused, waiting for its map data to download (PregenTasks.State's order). */
+    public static final int RUNNING = 0, QUEUED = 1, PAUSED = 2, DOWNLOADING = 3;
     private static final int MAX_TASKS = 256;
 
     public record Entry(String id, String label, int state, long total, long done, int doneRow, ChunkSelection area) {

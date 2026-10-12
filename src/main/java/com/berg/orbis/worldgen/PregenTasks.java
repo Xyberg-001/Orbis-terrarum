@@ -40,7 +40,8 @@ import java.util.UUID;
  * task up instead of making a second one. The sweep itself is {@link PregenTask} (or the cubic sweeper in a cubic world).
  */
 public final class PregenTasks {
-    public enum State { RUNNING, QUEUED, PAUSED }
+    /** DOWNLOADING: listed, waiting for its map data to download (the map's "Map data: Download"); it is queued when that is in. */
+    public enum State { RUNNING, QUEUED, PAUSED, DOWNLOADING }
 
     /** One pre-generation: its whole area (rows north to south) and the last row on disk. */
     public static final class Task {
@@ -52,6 +53,8 @@ public final class PregenTasks {
         int doneRow;
         long doneChunks;
         State state;
+        /** How far its map data download has got (0 to 1), or -1: while DOWNLOADING. */
+        float mapFraction = -1;
 
         Task(String id, String label, String kind, Boolean skipSea, ChunkSelection area, int doneRow, State state) {
             this.id = id;
@@ -136,28 +139,32 @@ public final class PregenTasks {
 
     /**
      * A new pre-generation (or the same area again): it starts at once when nothing runs, else it waits its turn. {@code doneRow}: rows
-     * already done (from an older progress file), or the area's first row - 1. {@code paused}: listed but not started. {@code note} is
-     * added to the start message.
+     * already done (from an older progress file), or the area's first row - 1. {@code initial}: QUEUED to start (or wait its turn),
+     * PAUSED to list it only, DOWNLOADING to list it until its map data is in ({@link #mapDataDone}). {@code note} is added to the
+     * start message.
      */
     static synchronized Component submit(ServerLevel level, String label, String kind, ChunkSelection area, Boolean skipSea, int doneRow,
-                                         boolean paused, String note) {
+                                         State initial, String note) {
         if (area.isEmpty()) return Component.literal("The area is empty.");
         server = level.getServer();
         String id = area.fingerprint();
         Task t = tasks.get(id);
+        State want = initial == State.RUNNING ? State.QUEUED : initial;
         if (t == null) {
-            t = new Task(id, label, kind, skipSea, area, doneRow, paused ? State.PAUSED : State.QUEUED);
+            t = new Task(id, label, kind, skipSea, area, doneRow, want);
             tasks.put(id, t);
             writeArea(t);
         } else if (t.state == State.RUNNING) {
             return Component.literal(t.label + " is already being pre-generated (world map, B).");
-        } else if (!paused) {
-            t.state = State.QUEUED;
+        } else if (want != State.PAUSED) {
+            t.state = want;
         }
         writeMeta(t);
         Component reply;
-        if (paused) {
+        if (t.state == State.PAUSED) {
             reply = Component.literal(t.label + " is listed as paused on the world map (B): Resume carries on with it.");
+        } else if (t.state == State.DOWNLOADING) {
+            reply = Component.literal(t.label + " is listed on the world map (B); it starts when its map data is in.");
         } else if (running == null && !PregenTask.isRunning()) {
             reply = run(level, t);
             if (!note.isEmpty()) reply = Component.empty().append(reply).append(note);
@@ -168,6 +175,27 @@ public final class PregenTasks {
         }
         broadcast();
         return reply;
+    }
+
+    /** How far a waiting pre-generation's map data download has got (0 to 1); the map's list shows it. */
+    public static synchronized void mapDataProgress(String id, float fraction) {
+        Task t = tasks.get(id);
+        if (t == null || t.state != State.DOWNLOADING) return;
+        boolean changed = Math.round(t.mapFraction * 100) != Math.round(fraction * 100);
+        t.mapFraction = fraction;
+        if (changed) broadcast();
+    }
+
+    /** Its map data download ended (in, failed or not needed): a pre-generation still waiting for it is queued and may start. */
+    public static synchronized void mapDataDone(String id) {
+        Task t = tasks.get(id);
+        if (t == null || t.state != State.DOWNLOADING) return;
+        t.state = State.QUEUED;
+        t.mapFraction = -1;
+        writeMeta(t);
+        Component started = startNext();
+        if (started != null && server != null) server.getPlayerList().broadcastSystemMessage(started, false);
+        broadcast();
     }
 
     // ------------------------------------------------------------------ the map's buttons
@@ -208,6 +236,7 @@ public final class PregenTasks {
             case "stop" -> {
                 for (Task t : chosen) {
                     if (t == running) haltRunning();
+                    if (t.state == State.DOWNLOADING) com.berg.orbis.osm.extract.MapDataJob.stop();
                     tasks.remove(t.id);
                     deleteFiles(t);
                     names.add(t.label);
@@ -339,6 +368,9 @@ public final class PregenTasks {
                     ChunkSelection area = ChunkSelection.fromJson(Files.readString(dir.resolve(id + "-area.json"), StandardCharsets.UTF_8));
                     if (area.isEmpty()) continue;
                     State st = State.valueOf(m.get("state").getAsString());
+                    // Its download stopped with the server: listed as paused (Resume uses the online servers, or press Generate
+                    // with Download again).
+                    if (st == State.DOWNLOADING) st = State.PAUSED;
                     Task t = new Task(id, m.get("label").getAsString(), m.get("kind").getAsString(),
                             m.has("skipSea") ? m.get("skipSea").getAsBoolean() : null, area, m.get("doneRow").getAsInt(), st);
                     found.add(t);
@@ -461,7 +493,10 @@ public final class PregenTasks {
             }
             List<PregenTasksPayload.Entry> list = new ArrayList<>();
             for (Task t : tasks.values()) {
-                list.add(new PregenTasksPayload.Entry(t.id, t.label, t.state.ordinal(), t.total, t.doneChunks, t.doneRow, areas.get(t.id)));
+                // While its map data downloads, done/total are the download's (per mille, 0/0 while it cannot say).
+                boolean dl = t.state == State.DOWNLOADING;
+                list.add(new PregenTasksPayload.Entry(t.id, t.label, t.state.ordinal(), dl ? (t.mapFraction < 0 ? 0 : 1000) : t.total,
+                        dl ? Math.max(0, Math.round(t.mapFraction * 1000)) : t.doneChunks, t.doneRow, areas.get(t.id)));
             }
             ServerPlayNetworking.send(player, new PregenTasksPayload(list));
         } while (!missing.isEmpty());
