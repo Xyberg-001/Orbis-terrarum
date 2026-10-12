@@ -494,13 +494,19 @@ public final class PregenTask {
         if (f != null) f.stop();
     }
 
+    /** "downloading map data (3 regions)": what the terrain builders wait for in an area whose map is not on disk yet. */
+    private String mapWait() {
+        int n = model == null || model.regions() == null ? 0 : model.regions().queued();
+        return n <= 0 ? "downloading map data" : String.format(Locale.ROOT, "downloading map data (%d region%s)", n, n == 1 ? "" : "s");
+    }
+
     /** Asks the chunk system for a chunk (from this non-server thread the request is queued, not blocking). */
     private void submit(int cx, int cz) throws InterruptedException {
         sweepRow = cz;
         FastPregen f = fast;
         if (f != null) {
             while (!stopRequested && !f.ready(cx, cz)) {
-                waiting = "building terrain ahead";
+                waiting = f.waitingForMap() ? mapWait() : "building terrain ahead";
                 Thread.sleep(20);
             }
         }

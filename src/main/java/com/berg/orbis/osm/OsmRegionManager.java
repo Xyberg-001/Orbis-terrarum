@@ -362,6 +362,11 @@ public final class OsmRegionManager {
         return failed.get();
     }
 
+    /** Map regions asked for and not ready yet (downloading, waiting their turn, or being built). */
+    public int queued() {
+        return pending.size();
+    }
+
     /** Map regions being built right now (taken by a worker, not finished). */
     public int preparing() {
         int n = 0;

@@ -116,6 +116,8 @@ public final class FastPregen {
     private volatile boolean stopped, walked;
     private final AtomicLong built = new AtomicLong(), handed = new AtomicLong(), existing = new AtomicLong(),
             dropped = new AtomicLong(), failed = new AtomicLong();
+    /** Builder threads waiting for a map region to download (the sweep says so instead of "building terrain ahead"). */
+    private final AtomicInteger waitingForMap = new AtomicInteger();
     private final AtomicInteger errorsLogged = new AtomicInteger();
     private final Map<Long, Map<Structure, StructureStart>> starts = new LinkedHashMap<>(4096, 0.75f, true) {
         @Override
@@ -232,6 +234,11 @@ public final class FastPregen {
     }
 
     /** "terrain built ahead 12,345 - 67 existing kept" for the progress lines. */
+    /** Whether a builder thread is waiting for a map region to download. */
+    public boolean waitingForMap() {
+        return waitingForMap.get() > 0;
+    }
+
     /** Chunks built ahead of the sweep so far. */
     public long builtAhead() {
         return built.get();
@@ -277,7 +284,18 @@ public final class FastPregen {
             WorldModel model = OrbisMod.model();
             int minX = pos.getMinBlockX(), minZ = pos.getMinBlockZ();
             if (model == null || !model.terrainReady(minX, minZ)) return; // no terrain tiles yet: the game's own path waits for them
-            RegionRaster raster = model.regions() == null ? null : model.regions().futureForBlock(minX, minZ).join();
+            java.util.concurrent.CompletableFuture<RegionRaster> region = model.regions() == null ? null : model.regions().futureForBlock(minX, minZ);
+            RegionRaster raster;
+            if (region == null || region.isDone()) {
+                raster = region == null ? null : region.join();
+            } else {
+                waitingForMap.incrementAndGet();
+                try {
+                    raster = region.join();
+                } finally {
+                    waitingForMap.decrementAndGet();
+                }
+            }
             ProtoChunk chunk = new ProtoChunk(pos, UpgradeData.EMPTY, level, factory, null);
             if (structures) {
                 // Vanilla's order: structure starts, structure references, biomes, terrain.

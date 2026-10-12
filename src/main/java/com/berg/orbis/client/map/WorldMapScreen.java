@@ -359,7 +359,9 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             y += 10;
         }
         if (live) {
-            String detail = st.detail() + (st.waiting().isEmpty() ? "" : " (" + st.waiting() + ")");
+            // What it waits for (downloading map data, the disk, ...) says more than a rate of 0 chunks/s.
+            String detail = st.waiting().isEmpty() ? st.detail()
+                    : Character.toUpperCase(st.waiting().charAt(0)) + st.waiting().substring(1);
             g.text(font, fit(detail, w), x, y + 1, PAUSED_GREY);
             y += 11;
         }
