@@ -167,6 +167,8 @@ Everything else is on the world map (B): Teleport, What's here, pre-generating (
 ### Servers
 Install the mod on the server only and set `level-type=orbisterrarum\:earth` in `server.properties` before the first start. Easiest: create and pre-generate the world in singleplayer, then upload it.
 
+> **Pre-generating on a server:** it gets slower when the server is short of memory (4 GB is tight for big areas; give it 6–8 GB, more for cubic worlds). **Map data: Download** fetches the region's whole Geofabrik file onto the server's storage (tens of MB for a small region, several GB for a big country); the area cut out of it stays there for good, and the file itself is deleted afterwards unless `keepDownloadedMapFiles` is on. Check the server has the space, or use **Live**.
+
 **True height (optional, Minecraft 26.3):** add [Cubic Worlds](https://github.com/Xyberg-001/CubicWorlds/releases) and switch on its **Cubic Worlds** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest.
 
 ### Internet and privacy

@@ -378,6 +378,12 @@ public final class PregenTasks {
         writeMeta(t);
         Component reply = PregenTask.runTask(level, t);
         runningCubic = PregenTask.active() == null && PregenTask.isRunning();
+        long maxMb = Runtime.getRuntime().maxMemory() >> 20;
+        if (PregenTask.isRunning() && level.getServer().isDedicatedServer() && maxMb < 6 * 1024) {
+            reply = Component.empty().append(reply).append(String.format(Locale.ROOT,
+                    "\n  This server has %,d MB of memory: pre-generation gets slower when it runs short (6-8 GB is better, more for a cubic world).",
+                    maxMb));
+        }
         if (!PregenTask.isRunning()) {
             // It could not start (the world model not ready): wait as paused rather than spin.
             running = null;

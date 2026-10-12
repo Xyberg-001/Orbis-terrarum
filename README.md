@@ -87,6 +87,8 @@ World window (**i**) with your position, the real sky and hard limit switches, D
 - Easiest: create and pre-generate the world in singleplayer, then upload it.
 - Aternos: **Export for Aternos** in the world map's World window (**i**) makes the upload and a how-to file.
 
+> **Pre-generating on a server:** it gets slower when the server is short of memory (4 GB is tight for big areas; give it 6–8 GB, more for cubic worlds). **Map data: Download** fetches the region's whole Geofabrik file onto the server's storage (tens of MB for a small region, several GB for a big country); the area cut out of it stays there for good, and the file itself is deleted afterwards unless `keepDownloadedMapFiles` is on. Check the server has the space, or use **Live**.
+
 ## Tested on
 
 Intel i7-9750H, RTX 2060, 16 GB for Minecraft. Bergen at 1:2 (566 km²): pre-generated in 1.5 hours (about 103 chunks/s), 3.3 GB on

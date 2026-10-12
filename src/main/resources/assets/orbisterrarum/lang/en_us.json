@@ -493,7 +493,7 @@
   "orbisterrarum.map.select.source.live": "Map data: Live",
   "orbisterrarum.map.select.source.download": "Map data: Download",
   "orbisterrarum.map.select.source.live.tip": "Generate asks the online OpenStreetMap servers for the map data while it generates. Nothing to wait for first, but it slows down (or stalls) when the public servers are busy. Click for Download.",
-  "orbisterrarum.map.select.source.download.tip": "Generate first downloads the map data from Geofabrik: the file of the country or region holding the selection (it can be hundreds of MB), keeping only the selection's area. The pre-generation waits in the list until it is in, then runs without the online servers. Click for Live.",
+  "orbisterrarum.map.select.source.download.tip": "Generate first downloads the map data from Geofabrik: the whole file of the country or region holding the selection (tens of MB for a small region, several GB for a big country), onto the server's storage. The area cut out of it stays there; the file itself is deleted afterwards unless keepDownloadedMapFiles is on, so make sure the server has the space. The pre-generation waits in the list until it is in, then runs without the online servers. Click for Live.",
   "orbisterrarum.map.select.generate": "Generate",
   "orbisterrarum.map.pregen.button.tip": "Pre-generation: %s unfinished. Click for the list.",
   "orbisterrarum.map.pregen.title": "Pre-generation",
