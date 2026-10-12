@@ -318,8 +318,15 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         int shown = Math.min(LIST_ROWS, list.size());
         boolean live = false;
         for (var e : list) live |= e.state() == com.berg.orbis.net.PregenTasksPayload.RUNNING && st.running();
+        // The running one's line: what it waits for (downloading map data, the disk, ...) says more than a rate of 0 chunks/s.
+        List<FormattedCharSequence> detail = List.of();
+        if (live) {
+            String d = st.waiting().isEmpty() ? st.detail() : Character.toUpperCase(st.waiting().charAt(0)) + st.waiting().substring(1);
+            detail = font.split(Component.literal(d), w);
+            if (detail.size() > 2) detail = detail.subList(0, 2);
+        }
         boolean buttons = pregenStop.visible;
-        int height = pad + 11 + shown * ROW_H + (list.size() > LIST_ROWS ? 10 : 0) + (live ? 11 : 0) + (buttons ? 22 : 0) + pad - 1;
+        int height = pad + 11 + shown * ROW_H + (list.size() > LIST_ROWS ? 10 : 0) + (live ? detail.size() * 10 + 1 : 0) + (buttons ? 22 : 0) + pad - 1;
         int[] p = {left, pregenButton.getY(), right, pregenButton.getY() + height};
         g.fill(p[0], p[1], p[2], p[3], 0xE0101418);
         g.outline(p[0], p[1], p[2] - p[0], p[3] - p[1], 0xFF3A4048);
@@ -338,7 +345,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             g.outline(x, y + 1, 8, 8, ticked ? PENDING_EDGE : 0xFF8890A0);
             if (ticked) g.fill(x + 2, y + 3, x + 6, y + 7, PENDING_EDGE);
             int state = e.state();
-            int pct = e.total() <= 0 ? 0 : (int) Math.min(100, Math.round(100.0 * e.done() / e.total()));
+            int pct = percent(e, st);
             int colour = state == com.berg.orbis.net.PregenTasksPayload.RUNNING ? RUNNING_GREEN
                     : state == com.berg.orbis.net.PregenTasksPayload.QUEUED ? QUEUED_YELLOW : PAUSED_GREY;
             String right2 = pct + "%";
@@ -359,11 +366,11 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             y += 10;
         }
         if (live) {
-            // What it waits for (downloading map data, the disk, ...) says more than a rate of 0 chunks/s.
-            String detail = st.waiting().isEmpty() ? st.detail()
-                    : Character.toUpperCase(st.waiting().charAt(0)) + st.waiting().substring(1);
-            g.text(font, fit(detail, w), x, y + 1, PAUSED_GREY);
-            y += 11;
+            for (FormattedCharSequence l : detail) {
+                g.text(font, l, x, y + 1, PAUSED_GREY);
+                y += 10;
+            }
+            y += 1;
         }
         if (buttons) {
             y += 2;
@@ -375,6 +382,17 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             }
         }
         pregenPanel = p;
+    }
+
+    /**
+     * How far a pre-generation has got, in percent: the running one live (rows generated, from the progress the server sends each
+     * second), the others from the rows on disk (which lag behind by up to ten seconds and the disk queue).
+     */
+    private static int percent(com.berg.orbis.net.PregenTasksPayload.Entry e, com.berg.orbis.net.PregenStatusPayload st) {
+        if (e.state() == com.berg.orbis.net.PregenTasksPayload.RUNNING && st.running() && st.task().equals(e.id())) {
+            return (int) Math.min(100, Math.max(0, Math.round(st.fraction() * 100)));
+        }
+        return e.total() <= 0 ? 0 : (int) Math.min(100, Math.round(100.0 * e.done() / e.total()));
     }
 
     /** A 7 x 7 state icon: a triangle (running), an hourglass (queued) or two bars (paused). */
@@ -405,7 +423,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         int bx = pregenButton.getX(), by = pregenButton.getY();
         com.berg.orbis.net.PregenTasksPayload.Entry run = null;
         for (var e : list) if (e.state() == com.berg.orbis.net.PregenTasksPayload.RUNNING) run = e;
-        int pct = run == null || run.total() <= 0 ? 0 : (int) Math.min(100, Math.round(100.0 * run.done() / run.total()));
+        int pct = run == null ? 0 : percent(run, com.berg.orbis.client.OrbisClient.pregenStatus);
         // a 3 x 3 chunk grid, filled as far as the running one has got (all grey when none runs)
         for (int i = 0; i < 9; i++) {
             int gx = bx + 4 + (i % 3) * 4, gy = by + 4 + (i / 3) * 4;
