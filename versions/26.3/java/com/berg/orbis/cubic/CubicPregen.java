@@ -126,7 +126,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         if (r == null) return null;
         return new PregenTask.Snapshot(r.label, r.total == 0 ? 1f : Math.min(1f, (float) r.donePrefix / r.total),
                 String.format(Locale.ROOT, "%,d of %,d cube columns, %,d cubes, %.0f cubes/s", r.donePrefix, r.total, r.cubesDone.get(), r.rate),
-                r.waiting);
+                // Barely moving and not waiting for itself: the cubes wait for their data (map data from Overpass, terrain, ...).
+                r.waiting != null ? r.waiting : r.rate < 0.5 ? PregenTask.waitingForData() : null);
     }
 
     @Override

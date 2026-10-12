@@ -1086,6 +1086,20 @@ public final class PregenTask {
         };
     }
 
+    /**
+     * What generation waits for right now, from the downloads running and the map regions being prepared ("downloading map data (3),
+     * terrain (2)", "preparing map data (1 region)"), or null when nothing: for a sweep that is barely moving (the cubic sweeper's too).
+     */
+    public static String waitingForData() {
+        String downloads = downloadsNow();
+        if (!downloads.isEmpty()) return "downloading " + downloads;
+        WorldModel m = OrbisMod.model();
+        int preparing = m != null && m.regions() != null ? m.regions().preparing() : 0;
+        if (preparing > 0) return "preparing map data (" + preparing + (preparing == 1 ? " region)" : " regions)");
+        int queued = m != null && m.regions() != null ? m.regions().queued() : 0;
+        return queued > 0 ? "waiting for map data (" + queued + (queued == 1 ? " region)" : " regions)") : null;
+    }
+
     /** The data being downloaded right now, by kind: "map data (3), building heights (12)". */
     private static String downloadsNow() {
         java.util.Map<String, Integer> byKind = new java.util.LinkedHashMap<>();
