@@ -18,7 +18,7 @@ coastlines, rivers, every building, roads, bridges, railways and forests. Minecr
 
 ## Install
 
-1. Fabric Loader and **Fabric API** for your Minecraft version.
+1. **Fabric API** for your Minecraft version.
 2. `orbisterrarum-<version>+<minecraft>.jar` in `mods/`.
 3. Recommended: **Mod Menu**, for the settings.
 
