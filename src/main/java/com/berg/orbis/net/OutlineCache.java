@@ -24,7 +24,7 @@ import java.util.zip.GZIPOutputStream;
 /**
  * Area outlines from Nominatim, kept in memory and on disk ({@code config/orbisterrarum/outline-cache}) for 90
  * days. Boundaries rarely change, a country's outline takes Nominatim half a minute to build (Russia: 31 s), and
- * Nominatim's usage policy asks clients to cache. The area preview and {@code /orbis pregen area} share it, so a
+ * Nominatim's usage policy asks clients to cache. The area preview and the pre-generation of a place share it, so a
  * sweep started after a preview uses exactly the outline that was previewed. Delete the folder to fetch afresh.
  */
 public final class OutlineCache {

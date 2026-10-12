@@ -14,7 +14,7 @@ import net.minecraft.server.level.ServerPlayer;
 
 /**
  * The pre-generation on the world map: its progress sent to players with the mod once a second while a sweep runs (and once as it ends),
- * and the map's Stop, Resume and hard-limit buttons carried out (operators only, as the /orbis pregen and /orbis hardlimit commands).
+ * and the map's Stop, Resume and hard-limit buttons carried out (operators only).
  */
 public final class PregenStatus {
     private static PregenStatusPayload lastSent = PregenStatusPayload.IDLE;

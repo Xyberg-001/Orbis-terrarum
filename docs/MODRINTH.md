@@ -129,17 +129,40 @@ Other world types stay plain vanilla.
 
 ### Commands
 
-| Command | What it does | Who |
-|---|---|---|
-| `/tpll <place or lat, lon>` | Teleport to a place ("Eiffel Tower") or coordinates | op |
-| `/wherell` | Your latitude and longitude | everyone |
-| `/orbis pregen <km>` | Pre-generate everything within `<km>` of you (server consoles; on the map: Select area, Generate) | op |
-| `/orbis pregen at <lat> <lon> <km>` | The same around a coordinate | op |
-| `/orbis pregen area [all] <place>` | Pre-generate a town or country by its outline (`all`: islands and overseas parts too) | op |
-| `/orbis pregen status` / `stop` | Progress, or stop it | op |
-| `/orbis settings [name] [value]` | The mod's performance and network settings, for servers (singleplayer: Mod Menu) | op |
+`/orbis settings` is the only command, for operators: a server has no Mod Menu, so its performance and network settings are changed here (in singleplayer, use Mod Menu → Orbis Terrarum instead). Changes are saved at once; the ones marked *restart* apply after a restart.
 
-Everything else is on the world map (B): What's here, the World window (**i**) with the real sky and hard limit switches, Download map data, Draw all, Export for Aternos, and Resume.
+- `/orbis settings` lists every setting with its value
+- `/orbis settings <name>` shows one
+- `/orbis settings <name> <value>` changes it, e.g. `/orbis settings regionCacheSize 24`
+
+| Setting | Default | What it does | For your hardware |
+|---|---|---|---|
+| `regionCacheSize` | 64 | Map regions kept in memory (3–4 MB each, 8–256), *restart* | 24 on 2–4 GB servers; 128 with 16 GB or more |
+| `demTileCacheSize` | 384 | Terrain tiles kept in memory (about 100 MB at 384), *restart* | 128 on small servers; 768 with plenty of memory |
+| `imageryTileCacheSize` | 512 | Aerial photo tiles kept in memory (about 130 MB at 512), *restart* | 128 on small servers; 1024 with plenty of memory |
+| `regionPrefetchRadius` | 2 | How far ahead of players map data is downloaded (0–6; 2 is a 2.5 km square) | 1 on slow internet or small servers; 3 for players flying fast |
+| `overpassConcurrentRequests` | 4 | Map downloads at once (1–8) | 2 on slow or shared connections |
+| `osmMaxWaitMinutes` | 15 | How long a chunk waits for its map data before it generates without buildings | 30 on slow connections |
+| `waitForOsm` | true | New chunks wait for their map data | Keep on; off only while the map services are down and land without buildings is fine |
+| `imageryZoom` | 18 | Detail of the aerial photos used for colours (14–20) | 17 on slow internet (a quarter of the downloads); 19 for sharper colours |
+| `fastPregen` | true | Pre-generation builds terrain ahead on several threads | Keep on: it is several times faster |
+| `fastPregenThreads` | 0 | Threads for that; 0 = half the processor's | 1–2 on 2–4 core machines or when the machine runs other things |
+| `parallelChunkCompression` | true | Chunks are compressed for saving on several threads | Off on 2-core machines |
+| `pregenPauseWorld` | true | Mobs, crops, redstone and time stand still while a pre-generation runs | Off if players must keep playing during it (slower) |
+| `fastChunkWrites` | true | Chunks are saved without waiting for the disk after each one, *restart* | Keep on, above all on a hard disk; off on unreliable power (a crash loses the last seconds) |
+| `prefetchSpawnAtStartup` | true | Downloads the map around the spawn while the server starts | Keep on |
+| `keepDownloadedMapFiles` | false | Keeps the Geofabrik files after a map data download | On if you make several worlds in the same country and have the disk space |
+| `displayFrameRange` | 48 | Blocks within which shop display frames are sent to players (0 = vanilla's 160) | 24–32 if players lag in big cities |
+| `debugLogging` | false | More detail in the server log | On only when reporting a problem |
+
+Ready-made setups:
+
+- **Small server (2–4 GB of memory):** `regionCacheSize 24`, `demTileCacheSize 128`, `imageryTileCacheSize 128`, `regionPrefetchRadius 1`, then restart.
+- **Few cores (2–4):** `fastPregenThreads 1`; on 2 cores also `parallelChunkCompression false`.
+- **Slow or metered internet:** `regionPrefetchRadius 1`, `overpassConcurrentRequests 2`, `imageryZoom 17`, `osmMaxWaitMinutes 30`.
+- **Big machine (16 GB+, 8+ cores, SSD):** `regionCacheSize 128`, `demTileCacheSize 768`, `imageryTileCacheSize 1024`, `regionPrefetchRadius 3`, then restart.
+
+Everything else is on the world map (B): Teleport, What's here, pre-generating (Select area, Generate, Stop, Resume), and the World window (**i**) with your position, the real sky and hard limit switches, Download map data, Draw all and Export for Aternos.
 
 ### Servers
 Install the mod on the server only and set `level-type=orbisterrarum\:earth` in `server.properties` before the first start. Easiest: create and pre-generate the world in singleplayer, then upload it.
