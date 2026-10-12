@@ -273,15 +273,46 @@ public final class MapRequests {
             player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea));
             return;
         }
-        if (MapDataJob.busy()) {
-            player.sendSystemMessage(Component.literal("[Orbis Terrarum] A map data download is running already; this pre-generation uses the online map servers."));
-            player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea));
-            return;
-        }
         String id = selection.fingerprint();
         player.sendSystemMessage(com.berg.orbis.worldgen.PregenTask.startSelection(level, selection, skipSea, com.berg.orbis.worldgen.PregenTasks.SELECTION,
                 com.berg.orbis.worldgen.PregenTasks.State.DOWNLOADING));
-        if (!downloadForTask(server, player.getUUID(), id, selection)) com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, false);
+        // Now, or after the download running (one at a time; a later one in the same region reuses its file).
+        String how = com.berg.orbis.worldgen.PregenTasks.requestDownload(server, player.getUUID(), id);
+        if (how != null) tell(server, player.getUUID(), how);
+    }
+
+    /** The region files kept after an import for the downloads queued behind it, listed here until the queue is empty. */
+    private static java.nio.file.Path sharedList() {
+        return OrbisMod.dataDir().resolve("extracts-src").resolve("shared-downloads.txt");
+    }
+
+    private static synchronized void noteShared(java.nio.file.Path pbf) {
+        try {
+            java.nio.file.Files.createDirectories(pbf.getParent());
+            java.nio.file.Files.writeString(sharedList(), pbf.toAbsolutePath() + "\n", java.nio.charset.StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (java.io.IOException e) {
+            System.err.println("[orbis] Could not note a shared map data file: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Deletes the region files kept for the downloads queued behind them, once none is left (unless keepDownloadedMapFiles): called
+     * by the pre-generation list when no download runs or waits, and as the world opens (after a crash).
+     */
+    public static synchronized void deleteSharedFiles() {
+        java.nio.file.Path list = sharedList();
+        if (!java.nio.file.Files.exists(list)) return;
+        try {
+            if (!OrbisMod.config().keepDownloadedMapFiles) {
+                for (String line : java.nio.file.Files.readAllLines(list, java.nio.charset.StandardCharsets.UTF_8)) {
+                    if (!line.isBlank()) java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(line.trim()));
+                }
+            }
+            java.nio.file.Files.deleteIfExists(list);
+        } catch (java.io.IOException | RuntimeException e) {
+            System.err.println("[orbis] Could not delete the shared map data files: " + e.getMessage());
+        }
     }
 
     /**
@@ -322,7 +353,10 @@ public final class MapRequests {
             server.execute(() -> tell(server, who, String.format(Locale.ROOT,
                     "Downloading map data for %s (%s); only this area is kept. The pre-generation goes ahead when it is in (world map, B).",
                     chosen.region().name(), chosen.sizeText())));
-            boolean started = MapDataJob.start(data, plan, OrbisMod.config().keepDownloadedMapFiles, new MapDataJob.Listener() {
+            // The region file stays after the import: a download queued behind this one in the same region reads it instead of
+            // fetching it again. It goes with the shared ones when no download is left (or stays with keepDownloadedMapFiles).
+            if (!OrbisMod.config().keepDownloadedMapFiles) noteShared(data.resolve("extracts-src").resolve(plan.region().id() + "-latest.osm.pbf"));
+            boolean started = MapDataJob.start(data, plan, true, new MapDataJob.Listener() {
                 @Override
                 public void progress(String line, float fraction) {
                     mapDataLine = line;

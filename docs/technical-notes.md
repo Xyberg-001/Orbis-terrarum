@@ -1916,7 +1916,14 @@ place you asked about, and landmark names only when zoomed in or hovered.
   (`PregenControlPayload.Action.SOURCE`, `PregenTasks.switchSource`) switches the ticked
   ones when one source fails: Download to Live drops the download (the task may go at
   once); Live to Download pauses a running one and downloads (`MapRequests.downloadForTask`),
-  queueing it when that is in. A failed download switches the task to Live by itself.
+  queueing it when that is in. A failed download switches the task to Live by itself. One download runs at a time
+  (`MapDataJob`): a second one is queued (`Task.downloadQueued`, "Download (queued)"
+  in the row; `PregenTasks.requestDownload`) and starts by itself, checked each second
+  in `PregenTasks.tick`, when none runs. The region file is kept after its import
+  (listed in `extracts-src/shared-downloads.txt`) so a queued download in the same
+  region only imports from it (`MapDataJob.run` reuses a complete file under 30 days
+  old); when no download runs or waits, or as the world opens, the listed files go
+  (`MapRequests.deleteSharedFiles`) unless `keepDownloadedMapFiles` is on.
 - **Landmarks rebuild themselves** (`Landmarks.rebuildSoon`) after a map data
   download or an import finishes, so places the online servers missed join the
   advancements.

@@ -359,6 +359,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             // Where its map data comes from: Live (the online servers) or Download (Geofabrik), with the download's progress while it runs.
             String mode = !e.download() ? Component.translatable("orbisterrarum.map.pregen.mode.live").getString()
                     : e.mapPercent() >= 0 ? Component.translatable("orbisterrarum.map.pregen.mode.downloading", e.mapPercent()).getString()
+                    : e.downloadQueued() ? Component.translatable("orbisterrarum.map.pregen.mode.queued").getString()
                     : Component.translatable("orbisterrarum.map.pregen.mode.download").getString();
             int modeW = font.width(mode);
             g.text(font, mode, x + w - 11 - rw - 8 - modeW, y, e.download() ? DOWNLOAD_BLUE : PAUSED_GREY);

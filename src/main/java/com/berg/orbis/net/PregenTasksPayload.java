@@ -23,7 +23,8 @@ public record PregenTasksPayload(List<Entry> tasks) implements CustomPacketPaylo
     private static final int MAX_TASKS = 256;
 
     /** {@code download}: its map data comes from a Geofabrik download (else Live); {@code mapPercent}: that download's progress, -1 when none runs. */
-    public record Entry(String id, String label, int state, long total, long done, int doneRow, ChunkSelection area, boolean download, int mapPercent) {
+    public record Entry(String id, String label, int state, long total, long done, int doneRow, ChunkSelection area, boolean download, int mapPercent,
+                        boolean downloadQueued) {
     }
 
     private void write(RegistryFriendlyByteBuf buf) {
@@ -39,6 +40,7 @@ public record PregenTasksPayload(List<Entry> tasks) implements CustomPacketPaylo
             if (e.area() != null) AllowedAreaPayload.writeArea(buf, e.area());
             buf.writeBoolean(e.download());
             buf.writeVarInt(e.mapPercent() + 1);
+            buf.writeBoolean(e.downloadQueued());
         }
     }
 
@@ -54,7 +56,8 @@ public record PregenTasksPayload(List<Entry> tasks) implements CustomPacketPaylo
             ChunkSelection area = buf.readBoolean() ? AllowedAreaPayload.readArea(buf) : null;
             boolean download = buf.readBoolean();
             int mapPercent = buf.readVarInt() - 1;
-            list.add(new Entry(id, label, state, total, done, doneRow, area, download, mapPercent));
+            boolean queued = buf.readBoolean();
+            list.add(new Entry(id, label, state, total, done, doneRow, area, download, mapPercent, queued));
         }
         return new PregenTasksPayload(list);
     }

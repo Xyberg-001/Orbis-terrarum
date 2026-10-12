@@ -57,6 +57,9 @@ public final class PregenTasks {
         boolean download;
         /** Its download runs now (it can while the task is paused). */
         boolean downloadRunning;
+        /** Its download waits for the one running (one at a time), and who asked for it (told how it went). */
+        boolean downloadQueued;
+        UUID who;
         /** How far that download has got (0 to 1), or -1. */
         float mapFraction = -1;
 
@@ -183,6 +186,32 @@ public final class PregenTasks {
         return reply;
     }
 
+    /**
+     * Asks for a listed pre-generation's map data download: at once when none runs, else queued behind it (it starts by itself, a
+     * second each, see {@link #tick}). A message for the player, or null when MapRequests says it itself.
+     */
+    public static synchronized String requestDownload(MinecraftServer s, UUID who, String id) {
+        Task t = tasks.get(id);
+        if (t == null) return null;
+        t.download = true;
+        t.who = who;
+        if (t.state != State.PAUSED) t.state = State.DOWNLOADING;
+        boolean busy = com.berg.orbis.osm.extract.MapDataJob.busy();
+        for (Task o : tasks.values()) busy |= o.downloadRunning;
+        if (busy) {
+            t.downloadQueued = true;
+            writeMeta(t);
+            broadcast();
+            return t.label + ": its map data download waits for the one running (one at a time; in the same region it reuses that file).";
+        }
+        writeMeta(t);
+        if (!com.berg.orbis.map.MapRequests.downloadForTask(s, who, t.id, t.area)) {
+            mapDataDone(t.id, false);
+            return t.label + ": no map data download is possible here; it uses the online map servers.";
+        }
+        return null;
+    }
+
     /** A pre-generation's map data download has started (MapRequests.downloadForTask). */
     public static synchronized void mapDataStarted(String id) {
         Task t = tasks.get(id);
@@ -209,6 +238,7 @@ public final class PregenTasks {
         Task t = tasks.get(id);
         if (t == null) return;
         t.downloadRunning = false;
+        t.downloadQueued = false;
         t.mapFraction = -1;
         if (!ok) t.download = false;
         if (t.state == State.DOWNLOADING) t.state = State.QUEUED;
@@ -230,26 +260,17 @@ public final class PregenTasks {
                 if (t.downloadRunning) com.berg.orbis.osm.extract.MapDataJob.stop();
                 t.download = false;
                 t.downloadRunning = false;
+                t.downloadQueued = false;
                 t.mapFraction = -1;
                 if (t.state == State.DOWNLOADING) t.state = State.QUEUED;
                 writeMeta(t);
                 out.add(t.label + ": Live");
-            } else if (com.berg.orbis.osm.extract.MapDataJob.busy()) {
-                out.add(t.label + ": stays Live (another map data download is running; switch it when that is done)");
             } else {
                 if (t == running) haltRunning();
-                State before = t.state;
-                t.download = true;
-                t.state = State.DOWNLOADING;
-                writeMeta(t);
-                if (com.berg.orbis.map.MapRequests.downloadForTask(s, who, t.id, t.area)) {
-                    out.add(t.label + ": Download");
-                } else {
-                    t.download = false;
-                    t.state = before == State.RUNNING ? State.QUEUED : before;
-                    writeMeta(t);
-                    out.add(t.label + ": stays Live (no map data download possible here)");
-                }
+                t.state = State.DOWNLOADING; // it goes ahead when its map data is in
+                String note = requestDownload(s, who, t.id);
+                out.add(t.label + (note != null && note.contains("no map data download") ? ": stays Live (no map data download possible here)"
+                        : t.downloadQueued ? ": Download (queued behind the download running)" : ": Download"));
             }
         }
         Component started = startNext();
@@ -396,6 +417,24 @@ public final class PregenTasks {
         }
         if (++ticks % 20 != 0) return;
         synchronized (PregenTasks.class) {
+            // The next map data download in the queue, when none runs; with none left, the region files kept for them go.
+            boolean downloading = com.berg.orbis.osm.extract.MapDataJob.busy();
+            for (Task t : tasks.values()) downloading |= t.downloadRunning;
+            if (!downloading && server != null) {
+                Task next = null;
+                for (Task t : tasks.values()) {
+                    if (t.downloadQueued) {
+                        next = t;
+                        break;
+                    }
+                }
+                if (next != null) {
+                    next.downloadQueued = false;
+                    if (!com.berg.orbis.map.MapRequests.downloadForTask(server, next.who, next.id, next.area)) mapDataDone(next.id, false);
+                } else {
+                    com.berg.orbis.map.MapRequests.deleteSharedFiles();
+                }
+            }
             // The cubic sweeper finished by itself.
             if (running != null && runningCubic && !PregenTask.isRunning() && !OrbisMod.stopping()) finished(running);
             // Its rows done, each second (the chunk sweep reports them itself), so the purple shrinks there too.
@@ -458,6 +497,7 @@ public final class PregenTasks {
         }
         for (Task t : found) tasks.putIfAbsent(t.id, t);
         if (resume) resumeAt = System.currentTimeMillis() + RESUME_DELAY_MS;
+        com.berg.orbis.map.MapRequests.deleteSharedFiles();
         for (Task t : tasks.values()) {
             System.out.printf(Locale.ROOT, "[orbis] Pre-generation %s: %s, %,d of %,d chunks done%n", t.state.name().toLowerCase(Locale.ROOT), t.label,
                     t.doneChunks, t.total);
@@ -560,7 +600,7 @@ public final class PregenTasks {
             for (Task t : tasks.values()) {
                 int mapPercent = t.downloadRunning ? (t.mapFraction < 0 ? 0 : Math.round(t.mapFraction * 100)) : -1;
                 list.add(new PregenTasksPayload.Entry(t.id, t.label, t.state.ordinal(), t.total, t.doneChunks, t.doneRow, areas.get(t.id),
-                        t.download, mapPercent));
+                        t.download, mapPercent, t.downloadQueued));
             }
             ServerPlayNetworking.send(player, new PregenTasksPayload(list));
         } while (!missing.isEmpty());
