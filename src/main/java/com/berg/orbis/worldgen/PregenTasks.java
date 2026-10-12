@@ -92,6 +92,8 @@ public final class PregenTasks {
     /** It runs on the cubic sweeper (which says only whether it runs: finished is "no longer running and not paused by us"). */
     private static boolean runningCubic;
     private static long resumeAt;
+    /** A sweep finished: start the next queued one on a later tick, once the finished one has let go of everything. */
+    private static boolean nextDue;
     /** The areas each player's map already has (sent once; progress comes without them). */
     private static final Map<UUID, Set<String>> sent = new HashMap<>();
     private static int ticks;
@@ -110,6 +112,7 @@ public final class PregenTasks {
         ServerLifecycleEvents.SERVER_STOPPED.register(s -> {
             synchronized (PregenTasks.class) {
                 server = null;
+                nextDue = false;
                 tasks.clear();
                 running = null;
                 sent.clear();
@@ -236,13 +239,9 @@ public final class PregenTasks {
         if (running == t) running = null;
         if (tasks.remove(t.id) != null) deleteFiles(t);
         broadcast();
-        MinecraftServer s = server;
-        if (s != null) s.execute(() -> {
-            synchronized (PregenTasks.class) {
-                Component started = startNext();
-                if (started != null) s.getPlayerList().broadcastSystemMessage(started, false);
-            }
-        });
+        // Not now: this is called from inside the finishing sweep, which still restores the region cache it widened (and a next
+        // sweep started here ran with the cache shrunk under it and stalled). server.execute would run it right here too.
+        nextDue = true;
     }
 
     /** The task whose sweep runs now, or null. */
@@ -286,6 +285,13 @@ public final class PregenTasks {
     }
 
     private static void tick(MinecraftServer s) {
+        if (nextDue) {
+            synchronized (PregenTasks.class) {
+                nextDue = false;
+                Component started = startNext();
+                if (started != null) s.getPlayerList().broadcastSystemMessage(started, false);
+            }
+        }
         if (resumeAt != 0 && System.currentTimeMillis() >= resumeAt) {
             resumeAt = 0;
             synchronized (PregenTasks.class) {
