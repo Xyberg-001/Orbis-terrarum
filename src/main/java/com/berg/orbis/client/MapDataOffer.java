@@ -39,7 +39,6 @@ final class MapDataOffer {
         if (rw == null) return false;
         WorldSettings s = rw.settings().isPresent() ? rw.settings().get() : OrbisMod.defaultWorldSettings();
         double mpb = s.metersPerBlock;
-        if (mpb >= 8.0) return false;
         double[] box = areaOf(s, mpb);
         askedFor = screen;
         Minecraft mc = Minecraft.getInstance();
@@ -72,7 +71,8 @@ final class MapDataOffer {
                 if (go) start(plan, cfg.keepDownloadedMapFiles);
                 proceed(screen);
             }, Component.translatable("orbisterrarum.mapdata.title"),
-                    Component.translatable("orbisterrarum.mapdata.offer", plan.region().name(), plan.sizeText()),
+                    Component.translatable(plan.profile() == com.berg.orbis.osm.extract.ExtractImporter.Profile.MAP
+                            ? "orbisterrarum.mapdata.offer.map" : "orbisterrarum.mapdata.offer", plan.region().name(), plan.sizeText()),
                     Component.translatable("orbisterrarum.mapdata.download"), Component.translatable("orbisterrarum.mapdata.notnow")));
         }));
         return true;

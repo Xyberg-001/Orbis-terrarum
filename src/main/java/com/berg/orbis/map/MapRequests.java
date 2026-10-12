@@ -198,15 +198,16 @@ public final class MapRequests {
             }
             if (plan == null) {
                 mapDataLine = "";
-                String note = mpb >= 8.0 ? "At 8 m per block or coarser a country's map file is imported with /orbis import; "
-                        : why != null ? "The map data look-up failed (" + why + "); " : "Map data on disk covers this area already, or no single file holds it; ";
+                String note = why != null ? "The map data look-up failed (" + why + "); " : "Map data on disk covers this area already, or no single file holds it; ";
                 server.execute(() -> tell(server, who, note + prefetch(model, area)));
                 return;
             }
             MapDataJob.Plan chosen = plan;
+            String kept = chosen.profile() == com.berg.orbis.osm.extract.ExtractImporter.Profile.MAP
+                    ? "its main features (coast, water, rivers, main roads, railways) are kept" : "only this area is kept";
             server.execute(() -> tell(server, who, String.format(Locale.ROOT,
-                    "Downloading map data for %s (%s); only this area is kept. The world uses the online servers until it is ready.",
-                    chosen.region().name(), chosen.sizeText())));
+                    "Downloading map data for %s (%s); %s. The world uses the online servers until it is ready.",
+                    chosen.region().name(), chosen.sizeText(), kept)));
             MapDataJob.start(data, plan, OrbisMod.config().keepDownloadedMapFiles, new MapDataJob.Listener() {
                 @Override
                 public void progress(String line, float fraction) {

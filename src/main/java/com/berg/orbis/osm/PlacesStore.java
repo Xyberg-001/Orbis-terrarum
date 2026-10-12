@@ -20,8 +20,7 @@ import java.util.Map;
 import java.util.zip.GZIPInputStream;
 
 /**
- * Extra points of interest from outside OpenStreetMap (Overture Places, imported with /orbis import-places or
- * PlacesImporter), stored as OSM-style tagged nodes in 0.1-degree cell files under
+ * Extra points of interest from outside OpenStreetMap (Overture Places, imported with PlacesImporter outside the game), stored as OSM-style tagged nodes in 0.1-degree cell files under
  * config/orbisterrarum/places/. They are merged into the map data of every region so that shops, bars,
  * museums and the rest that OSM does not know get their furniture and door signs too. A place whose name an
  * OSM point already carries nearby is dropped, so nothing is doubled.

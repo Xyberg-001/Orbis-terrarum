@@ -31,7 +31,7 @@ import java.util.zip.GZIPOutputStream;
  *   pip install overturemaps
  *   python -m overturemaps download --bbox=5.05,60.20,5.65,60.55 -f geojson --type=place -o bergen-places.geojson
  * </pre>
- * then {@code /orbis import-places bergen-places.geojson} in game, or run this class from the command line:
+ * then run this class from the command line (there is no in-game command since 1.1.0):
  * {@code java -cp orbisterrarum-<version>.jar com.berg.orbis.osm.PlacesImporter bergen-places.geojson --out config/orbisterrarum/places}.
  *
  * Each place becomes an OSM-style tagged node (name + shop/amenity/tourism/office/leisure/healthcare) from

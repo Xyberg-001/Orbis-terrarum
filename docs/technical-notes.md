@@ -1216,7 +1216,6 @@ generated-area haze, and the landmarks rebuild themselves).
   `pregen status`, `pregen stop` — see "Pre-generating an area" (for server consoles; the map's
   Select area does the same).
 - `/orbis export aternos [orbis] [zip]` — see "Playing with friends".
-- `/orbis import <file.osm.pbf>`, `/orbis import-places <file.geojson>` — local map and place data.
 - `/orbis settings [name] [value]` — the performance and network settings, for servers.
 
 ## Configuration — `config/orbisterrarum/orbisterrarum.json`
@@ -1597,12 +1596,11 @@ No extra software or DNS change is needed on the player's side.
   ```
   pip install overturemaps
   python -m overturemaps download --bbox=5.05,60.20,5.65,60.55 -f geojson --type=place -o bergen-places.geojson
-  /orbis import-places E:\Downloads\bergen-places.geojson
+  java -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.PlacesImporter bergen-places.geojson --out config/orbisterrarum/places
   ```
 
-  (or `java -cp orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.PlacesImporter
-  bergen-places.geojson --out config/orbisterrarum/places` outside the
-  game). Each place becomes an OSM-style tagged node from its Overture
+  (from the Minecraft instance folder, with the game closed or before the
+  area generates; there is no in-game command for it since 1.1.0). Each place becomes an OSM-style tagged node from its Overture
   category (restaurant, bar, hotel, museum, gym, pharmacy, supermarket,
   clothing store, hairdresser, bank, school, church, office, ...); places
   without a name, with an unusable category or with confidence below 0.35
@@ -1729,8 +1727,9 @@ Norwegian peaks stand about 75 blocks above the sea.
    java -Xmx4g -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf"
    ```
 
-   or in game with `/orbis import E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf`
-   (progress in chat). Three passes over the file; Norway takes about three
+   or in game: Download map data (world map, World window **i**, or the offer when the world is
+   created) fetches the region's file from Geofabrik itself and, at 8 m per block or coarser, keeps
+   this "map" profile of the area. Three passes over the file; Norway takes about three
    minutes on a 3 GB heap and becomes `config/orbisterrarum/extracts/norway/`
    (11,600 cells of 0.1°, about 1 GB: 1.8 million ways, 490,000 water
    polygons, 89 million points).
@@ -1930,8 +1929,9 @@ are sent to players only within `displayFrameRange` blocks (48 by default; `mixi
 on `ChunkMap.TrackedEntity.getEffectiveRange`). Frames players hang are not locked and keep vanilla's reach.
 It works on the server, so it also helps players without the mod, and in worlds furnished before.
 
-The commands the map replaced are gone in 1.1.0 (see Commands); `/orbis import-places`
-is operator-only (it reads a file on the server's disk).
+The commands the map replaced are gone in 1.1.0 (see Commands), and so are `/orbis import`
+(Download map data handles every scale) and `/orbis import-places` (the places importer runs
+outside the game).
 
 ## Choosing the spawn point
 
