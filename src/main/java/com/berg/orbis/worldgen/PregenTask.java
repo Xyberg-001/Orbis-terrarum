@@ -45,8 +45,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * list ({@link PregenTasks}), its area swept chunk row by chunk row from north
  * to south like a scanner. Open-sea chunks can be skipped; the rows on disk
  * go to the task every ten seconds, so a pause, crash or restart carries on
- * at the last completed row. (A radius around a point, nearest chunks first,
- * is the older shape, no longer started from anywhere.)
+ * at the last completed row.
  * Chunk requests are issued from the task's own thread: asked from the
  * server thread, vanilla's chunk request blocks that thread until the chunk
  * is done, which would serialise everything; asked from another thread it is
@@ -97,7 +96,7 @@ public final class PregenTask {
     private final int maxLoaded;
     /** The world model the sweep runs against. */
     private WorldModel model;
-    /** A drawn area's own Skip open sea button; null: the world's setting (automatic pre-generation from a place or radius). */
+    /** A drawn area's own Skip open sea button; null: the world's setting (automatic pre-generation from a place). */
     private Boolean skipSeaChoice;
     /** The world map's entry for this sweep (PregenTasks), which keeps its progress. */
     private PregenTasks.Task task;
@@ -162,9 +161,6 @@ public final class PregenTask {
 
     private final ServerLevel level;
     private final String label;
-    // radius mode
-    private final long[] chunks;
-    // area mode
     private final AreaSweep sweep;
     private final int startRow;
     private long estimatedChunks;
@@ -174,7 +170,6 @@ public final class PregenTask {
     private final AtomicLong skippedExisting = new AtomicLong();
     private volatile int producerRow;
     private int completedRow;
-    // both modes
     private final Semaphore slots = new Semaphore(MAX_IN_FLIGHT);
     private final ConcurrentLinkedQueue<Pending> pending = new ConcurrentLinkedQueue<>();
     /** Finished chunks still holding their ticket, oldest first (server thread only). */
@@ -205,20 +200,9 @@ public final class PregenTask {
     private double rateNow;
     private long lastSave = System.currentTimeMillis();
 
-    private PregenTask(ServerLevel level, String label, long[] chunks) {
-        this.level = level;
-        this.label = label;
-        this.chunks = chunks;
-        this.sweep = null;
-        this.startRow = 0;
-        this.baselineLoaded = level.getChunkSource().getLoadedChunksCount();
-        this.maxLoaded = loadedLimitFor(level);
-    }
-
     private PregenTask(ServerLevel level, String label, AreaSweep sweep, int startRow) {
         this.level = level;
         this.label = label;
-        this.chunks = null;
         this.sweep = sweep;
         this.startRow = startRow;
         this.completedRow = startRow - 1;
@@ -234,115 +218,6 @@ public final class PregenTask {
         if (baselineLoaded < 3000) return "";
         return String.format(Locale.ROOT, "\n  %,d chunks are loaded around the players already (render distance); the sweep adds up to %,d more. "
                 + "A render distance of 8-12 during the sweep leaves more memory for it.", baselineLoaded, maxLoaded);
-    }
-
-    // ---- radius ----------------------------------------------------------------------
-
-    /** The most blocks a radius sweep may reach (about 2.8 million chunks). */
-    private static final int MAX_RADIUS_BLOCKS = 15_000;
-
-    /** Starts a radius task; returns a message for the player. */
-    public static synchronized Component start(ServerLevel level, int centerX, int centerZ, int radiusBlocks) {
-        if (active != null) return Component.literal("A pre-generation is already running (" + active.label + "); stop it on the world map (B) first.\n" + active.progress());
-        CubicSweeper cubic = cubic(level);
-        if (cubic != null) {
-            if (cubic.running()) return Component.literal("A pre-generation is already running; stop it on the world map (B) first.\n" + cubic.status().getString());
-            int ccx = centerX >> 4, ccz = centerZ >> 4, cr = (radiusBlocks >> 4) + 1;
-            ChunkSelection disc = new ChunkSelection();
-            for (int dz = -cr; dz <= cr; dz++) {
-                int w = (int) Math.floor(Math.sqrt((double) cr * cr - (double) dz * dz));
-                disc.addRow(ccz + dz, new int[]{ccx - w, ccx + w});
-            }
-            HardLimit.extend(level.getServer(), disc);
-            WorldModel m = OrbisMod.model();
-            double mpb = m == null ? 1.0 : m.cfg().metersPerBlock;
-            return cubic.start(level, String.format(Locale.ROOT, "%.1f km around %d, %d", radiusBlocks * mpb / 1000.0, centerX, centerZ),
-                    new AreaSweep(disc, new ArrayList<>()), m != null && m.cfg().pregenSkipOpenSea,
-                    "cubic-radius-" + centerX + "_" + centerZ + "_" + radiusBlocks + ".json");
-        }
-        int cx = centerX >> 4, cz = centerZ >> 4, r = (radiusBlocks >> 4) + 1;
-        List<long[]> list = new ArrayList<>();
-        for (int dz = -r; dz <= r; dz++) {
-            for (int dx = -r; dx <= r; dx++) {
-                if (dx * dx + dz * dz > r * r) continue;
-                list.add(new long[]{cx + dx, cz + dz, (long) dx * dx + (long) dz * dz});
-            }
-        }
-        list.sort((a, b) -> Long.compare(a[2], b[2]));
-        long[] packed = new long[list.size()];
-        for (int i = 0; i < packed.length; i++) packed[i] = pack((int) list.get(i)[0], (int) list.get(i)[1]);
-        ChunkSelection circle = new ChunkSelection();
-        for (int dz = -r; dz <= r; dz++) {
-            int w = (int) Math.floor(Math.sqrt((double) r * r - (double) dz * dz));
-            circle.addRow(cz + dz, new int[]{cx - w, cx + w});
-        }
-        HardLimit.extend(level.getServer(), circle);
-
-        // Queue the map data for the whole area now, nearest regions first, below player demand.
-        WorldModel model = OrbisMod.model();
-        int queuedRegions = 0;
-        if (model != null && model.regions() != null) {
-            OsmRegionManager regions = model.regions();
-            int rr = regions.regionCoord(radiusBlocks) + 1;
-            int rcx = regions.regionCoord(centerX), rcz = regions.regionCoord(centerZ);
-            for (int dz = -rr; dz <= rr; dz++) {
-                for (int dx = -rr; dx <= rr; dx++) {
-                    if (dx * dx + dz * dz > (rr + 1) * (rr + 1)) continue;
-                    regions.future(rcx + dx, rcz + dz, 20 + Math.max(Math.abs(dx), Math.abs(dz)));
-                    queuedRegions++;
-                }
-            }
-        }
-        double mpbLabel = model == null ? 1.0 : model.cfg().metersPerBlock;
-        String label = String.format(Locale.ROOT, "%.1f km around %d, %d", radiusBlocks * mpbLabel / 1000.0, centerX, centerZ);
-        PregenTask t = new PregenTask(level, label, packed);
-        t.model = model;
-        t.widenRegionCache(2 * radiusBlocks);
-        t.startRadiusProducer();
-        active = t;
-        tellNeeds(level);
-        double estMb = packed.length * 12 / 1024.0;
-        return Component.literal(String.format(Locale.ROOT,
-                "Pre-generating %s: %,d chunks (%d map regions queued). Rough world size afterwards: %.0f MB. Progress every 30 s; Stop on the world map (B) ends it.%s",
-                label, packed.length, queuedRegions, estMb, syncNote(level)));
-    }
-
-    private void startRadiusProducer() {
-        it.unimi.dsi.fastutil.longs.LongOpenHashSet planned = new it.unimi.dsi.fastutil.longs.LongOpenHashSet(chunks);
-        boolean skip = skipSea();
-        startFast(visitor -> {
-            for (long p : chunks) {
-                if (stopRequested) break;
-                int cx = (int) (p >> 32), cz = (int) p;
-                if (skip && isOpenSea(model, cx, cz)) continue;
-                visitor.visit(cx, cz);
-            }
-        }, (cx, cz) -> planned.contains(pack(cx, cz)) && !(skip && isOpenSea(model, cx, cz)));
-        producer = new Thread(() -> {
-            DiskChunks disk = new DiskChunks(level);
-            try {
-                for (long p : chunks) {
-                    if (stopRequested) break;
-                    int cx = (int) (p >> 32), cz = (int) p;
-                    if (disk.finished(cx, cz)) {
-                        skippedExisting.incrementAndGet();
-                        continue;
-                    }
-                    if (skip && isOpenSea(model, cx, cz)) {
-                        skippedSea.incrementAndGet();
-                        continue;
-                    }
-                    submit(cx, cz);
-                }
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            } finally {
-                producerFinishedAt = System.currentTimeMillis();
-                producerDone = true;
-            }
-        }, "Orbis-Pregen");
-        producer.setDaemon(true);
-        producer.start();
     }
 
     // ---- area -------------------------------------------------------------------------
@@ -726,7 +601,6 @@ public final class PregenTask {
      * unload, so their writes are queued. Only such rows count as progress on disk once a write barrier passes.
      */
     private void advanceUnloadedRow() {
-        if (sweep == null) return;
         ChunkMapAccessor map = (ChunkMapAccessor) level.getChunkSource().chunkMap;
         var visible = map.orbisterrarum$visibleChunkMap();
         var unloads = map.orbisterrarum$pendingUnloads();
@@ -768,8 +642,8 @@ public final class PregenTask {
     }
 
     /**
-     * The world's "Skip open sea" setting: chunks that are deep sea all over are left out of every sweep (radius,
-     * place outline, drawn selection) and generate when someone sails there; off, the sweep generates them too.
+     * The world's "Skip open sea" setting: chunks that are deep sea all over are left out of every sweep (place
+     * outline, drawn selection) and generate when someone sails there; off, the sweep generates them too.
      */
     private boolean skipSea() {
         if (skipSeaChoice != null) return skipSeaChoice;
@@ -785,10 +659,6 @@ public final class PregenTask {
             if (Double.isNaN(e) || e > DEEP_SEA_M) return false;
         }
         return true;
-    }
-
-    private static long pack(int cx, int cz) {
-        return ((cx & 0xffffffffL) << 32) | (cz & 0xffffffffL);
     }
 
     private static String slug(String name) {
@@ -1167,12 +1037,8 @@ public final class PregenTask {
         }
     }
 
-    /** How far the sweep is, 0..1 (rows for an area sweep, chunks otherwise). */
+    /** How far the sweep is, 0..1 (rows done). */
     private float fraction() {
-        if (sweep == null) {
-            long sea = skippedSea.get() + skippedExisting.get();
-            return (float) ((done + failed + sea) / (double) Math.max(1, chunks.length));
-        }
         return (float) (Math.max(0, completedRow - sweep.firstRow() + 1) / (double) Math.max(1, sweep.rowCount()));
     }
 
@@ -1181,11 +1047,9 @@ public final class PregenTask {
         String downloads = downloadsNow();
         if (barRate >= 0.5) {
             String s = String.format(Locale.ROOT, "%.1f chunks/s", barRate);
-            if (sweep != null) {
-                int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1), rowsFromStart = Math.max(0, completedRow - startRow + 1);
-                long elapsed = Math.max(1, (System.currentTimeMillis() - startedAt) / 1000);
-                if (rowsFromStart > 0) s += " - " + eta((long) (elapsed * (double) (sweep.rowCount() - rowsDone) / rowsFromStart)) + " left";
-            }
+            int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1), rowsFromStart = Math.max(0, completedRow - startRow + 1);
+            long elapsed = Math.max(1, (System.currentTimeMillis() - startedAt) / 1000);
+            if (rowsFromStart > 0) s += " - " + eta((long) (elapsed * (double) (sweep.rowCount() - rowsDone) / rowsFromStart)) + " left";
             return downloads.isEmpty() ? s : s + " - downloading " + downloads;
         }
         if (!downloads.isEmpty()) return "downloading " + downloads;
@@ -1255,10 +1119,8 @@ public final class PregenTask {
             while (held.size() > HOLD_TICKETS) level.getChunkSource().removeTicketWithRadius(PREGEN_TICKET, held.pollFirst(), 0);
             inFlight.decrementAndGet();
             slots.release();
-            if (sweep != null) {
-                AtomicInteger n = outstanding.get(p.row());
-                if (n != null && n.decrementAndGet() <= 0) outstanding.remove(p.row(), n);
-            }
+            AtomicInteger n = outstanding.get(p.row());
+            if (n != null && n.decrementAndGet() <= 0) outstanding.remove(p.row(), n);
         }
         long now = System.currentTimeMillis();
         // Held tickets are a cache, not a promise: when the loaded-chunk limit is near, give the oldest back so
@@ -1267,25 +1129,23 @@ public final class PregenTask {
         for (int i = 0; i < 16 && !held.isEmpty() && loaded > baselineLoaded + maxLoaded - 512; i++) {
             level.getChunkSource().removeTicketWithRadius(PREGEN_TICKET, held.pollFirst(), 0);
         }
-        if (sweep != null) {
-            int limit = producerRow; // rows below this are fully queued
-            while (completedRow + 1 < limit && !outstanding.containsKey(completedRow + 1)) completedRow++;
-            advanceUnloadedRow();
-            // A write barrier every 10 s: whatever had left memory when it was taken is on disk once it completes,
-            // and only that counts as progress for a resume (generated-but-unwritten rows are lost with a crash).
-            if (barrier != null && barrier.isDone()) {
-                flushedRow = Math.max(flushedRow, barrierRow);
-                barrier = null;
-            }
-            if (barrier == null && now - lastBarrier > 10_000) {
-                lastBarrier = now;
-                barrierRow = unloadedRow;
-                barrier = level.getChunkSource().chunkMap.synchronize(false);
-            }
-            if (now - lastSave > 10_000) {
-                lastSave = now;
-                saveProgress(false);
-            }
+        int limit = producerRow; // rows below this are fully queued
+        while (completedRow + 1 < limit && !outstanding.containsKey(completedRow + 1)) completedRow++;
+        advanceUnloadedRow();
+        // A write barrier every 10 s: whatever had left memory when it was taken is on disk once it completes,
+        // and only that counts as progress for a resume (generated-but-unwritten rows are lost with a crash).
+        if (barrier != null && barrier.isDone()) {
+            flushedRow = Math.max(flushedRow, barrierRow);
+            barrier = null;
+        }
+        if (barrier == null && now - lastBarrier > 10_000) {
+            lastBarrier = now;
+            barrierRow = unloadedRow;
+            barrier = level.getChunkSource().chunkMap.synchronize(false);
+        }
+        if (now - lastSave > 10_000) {
+            lastSave = now;
+            saveProgress(false);
         }
         if (!producerDone || !pending.isEmpty()) return false;
         // Everything is generated: release the tickets still held, let the chunks leave memory, then wait for
@@ -1301,7 +1161,7 @@ public final class PregenTask {
         }
         if (!finalBarrier.isDone()) return false;
         if (writeBacklog() > 0 && now - producerFinishedAt < 600_000) return false;
-        if (sweep != null) flushedRow = unloadedRow = completedRow;
+        flushedRow = unloadedRow = completedRow;
         return true;
     }
 
@@ -1320,13 +1180,6 @@ public final class PregenTask {
                 inFlight.get(), level.getChunkSource().getLoadedChunksCount(), baselineLoaded + maxLoaded,
                 backlog < 0 ? "?" : String.format(Locale.ROOT, "%,d", backlog), MAX_PENDING_WRITES,
                 why != null ? " -- " + why : "", usedMb, maxMb, 100 * oldGenAfterGc(), regions);
-        if (sweep == null) {
-            long sea = skippedSea.get() + skippedExisting.get(); // counted as done: nothing to generate there
-            long remaining = rate > 0 ? (long) ((chunks.length - finished - sea) / rate) : -1;
-            return String.format(Locale.ROOT, "  %,d / %,d chunks%s%s (%.0f%%), %.1f chunks/s, ETA %s\n%s",
-                    finished, chunks.length, failedNote, sea > 0 ? String.format(Locale.ROOT, ", %,d open-sea skipped or already there", sea) : "",
-                    100.0 * (finished + sea) / Math.max(1, chunks.length), rate, eta(remaining), load);
-        }
         int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1);
         int rowsOnDisk = Math.max(0, flushedRow - sweep.firstRow() + 1);
         int rowsFromStart = Math.max(0, completedRow - startRow + 1);
@@ -1343,13 +1196,6 @@ public final class PregenTask {
         int finished = done + failed;
         double rate = rateNow > 0 ? rateNow : finished / (double) elapsed;
         String failedNote = failed > 0 ? String.format(Locale.ROOT, ", %,d failed", failed) : "";
-        if (sweep == null) {
-            long sea = skippedSea.get() + skippedExisting.get();
-            long remaining = rate > 0 ? (long) ((chunks.length - finished - sea) / rate) : -1;
-            return new Snapshot(label, (float) ((finished + sea) / (double) Math.max(1, chunks.length)),
-                    String.format(Locale.ROOT, "%,d of %,d chunks%s, %.0f chunks/s, %s left", finished + sea, chunks.length, failedNote, rate, eta(remaining)),
-                    waiting);
-        }
         int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1);
         int rowsFromStart = Math.max(0, completedRow - startRow + 1);
         int rowsLeft = sweep.rowCount() - rowsDone;
@@ -1397,20 +1243,12 @@ public final class PregenTask {
         long usedMb = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) >> 20;
         long maxMb = Runtime.getRuntime().maxMemory() >> 20;
         int backlog = writeBacklog();
-        String pct, where, remaining;
-        if (sweep == null) {
-            long sea = skippedSea.get() + skippedExisting.get();
-            pct = String.format(Locale.ROOT, "%.0f%%", 100.0 * (total + sea) / Math.max(1, chunks.length));
-            where = String.format(Locale.ROOT, "%,d of %,d chunks", total + sea, chunks.length);
-            remaining = eta(avg > 0 ? (long) ((chunks.length - total - sea) / avg) : -1);
-        } else {
-            int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1);
-            int rowsOnDisk = Math.max(0, flushedRow - sweep.firstRow() + 1);
-            int rowsFromStart = Math.max(0, completedRow - startRow + 1);
-            pct = String.format(Locale.ROOT, "%.0f%%", 100.0 * rowsDone / Math.max(1, sweep.rowCount()));
-            where = String.format(Locale.ROOT, "row %,d of %,d - on disk to row %,d", rowsDone, sweep.rowCount(), rowsOnDisk);
-            remaining = eta(rowsFromStart > 0 ? (long) (elapsed * (double) (sweep.rowCount() - rowsDone) / rowsFromStart) : -1);
-        }
+        int rowsDone = Math.max(0, completedRow - sweep.firstRow() + 1);
+        int rowsOnDisk = Math.max(0, flushedRow - sweep.firstRow() + 1);
+        int rowsFromStart = Math.max(0, completedRow - startRow + 1);
+        String pct = String.format(Locale.ROOT, "%.0f%%", 100.0 * rowsDone / Math.max(1, sweep.rowCount()));
+        String where = String.format(Locale.ROOT, "row %,d of %,d - on disk to row %,d", rowsDone, sweep.rowCount(), rowsOnDisk);
+        String remaining = eta(rowsFromStart > 0 ? (long) (elapsed * (double) (sweep.rowCount() - rowsDone) / rowsFromStart) : -1);
         MutableComponent msg = line("Pregen " + shortLabel(), ChatFormatting.GOLD).withStyle(ChatFormatting.BOLD);
         msg.append(line(finished ? " - finished in " + eta(elapsed) : " - " + pct + " - ETA " + remaining, ChatFormatting.WHITE).withStyle(style -> style.withBold(false)));
         msg.append(line("\n  " + where, ChatFormatting.GRAY));
