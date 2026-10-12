@@ -59,6 +59,12 @@ public final class PregenTasks {
         boolean downloadRunning;
         /** Its download waits for the one running (one at a time), and who asked for it (told how it went). */
         boolean downloadQueued;
+        /**
+         * The ticket of its current download: a download switched off (or replaced) reports its end late, after the next one was
+         * asked for, and that report must not count for the new one (12 Oct 2026: Live, Download, Live, Download in ten seconds
+         * left it Live and running).
+         */
+        long downloadTicket;
         UUID who;
         /** How far that download has got (0 to 1), or -1. */
         float mapFraction = -1;
@@ -206,25 +212,26 @@ public final class PregenTasks {
         }
         writeMeta(t);
         if (!com.berg.orbis.map.MapRequests.downloadForTask(s, who, t.id, t.area)) {
-            mapDataDone(t.id, false);
+            mapDataDone(t.id, t.downloadTicket, false);
             return t.label + ": no map data download is possible here; it uses the online map servers.";
         }
         return null;
     }
 
-    /** A pre-generation's map data download has started (MapRequests.downloadForTask). */
-    public static synchronized void mapDataStarted(String id) {
+    /** A pre-generation's map data download has started (MapRequests.downloadForTask): its ticket, which its reports carry. */
+    public static synchronized long mapDataStarted(String id) {
         Task t = tasks.get(id);
-        if (t == null) return;
+        if (t == null) return -1;
         t.downloadRunning = true;
         t.mapFraction = -1;
         broadcast();
+        return ++t.downloadTicket;
     }
 
     /** How far a pre-generation's map data download has got (0 to 1); the map's list shows it. */
-    public static synchronized void mapDataProgress(String id, float fraction) {
+    public static synchronized void mapDataProgress(String id, long ticket, float fraction) {
         Task t = tasks.get(id);
-        if (t == null || !t.downloadRunning) return;
+        if (t == null || !t.downloadRunning || ticket != t.downloadTicket) return;
         boolean changed = Math.round(t.mapFraction * 100) != Math.round(fraction * 100);
         t.mapFraction = fraction;
         if (changed) broadcast();
@@ -234,9 +241,9 @@ public final class PregenTasks {
      * Its map data download ended: in, or not needed ({@code ok}), or failed (it goes on with the online servers, Live). A
      * pre-generation waiting for it is queued and may start; a paused one stays paused.
      */
-    public static synchronized void mapDataDone(String id, boolean ok) {
+    public static synchronized void mapDataDone(String id, long ticket, boolean ok) {
         Task t = tasks.get(id);
-        if (t == null) return;
+        if (t == null || ticket != t.downloadTicket) return; // a download switched off or replaced since
         t.downloadRunning = false;
         t.downloadQueued = false;
         t.mapFraction = -1;
@@ -258,6 +265,7 @@ public final class PregenTasks {
         for (Task t : chosen) {
             if (t.download) {
                 if (t.downloadRunning) com.berg.orbis.osm.extract.MapDataJob.stop();
+                t.downloadTicket++;
                 t.download = false;
                 t.downloadRunning = false;
                 t.downloadQueued = false;
@@ -430,7 +438,7 @@ public final class PregenTasks {
                 }
                 if (next != null) {
                     next.downloadQueued = false;
-                    if (!com.berg.orbis.map.MapRequests.downloadForTask(server, next.who, next.id, next.area)) mapDataDone(next.id, false);
+                    if (!com.berg.orbis.map.MapRequests.downloadForTask(server, next.who, next.id, next.area)) mapDataDone(next.id, next.downloadTicket, false);
                 } else {
                     com.berg.orbis.map.MapRequests.deleteSharedFiles();
                 }

@@ -328,7 +328,7 @@ public final class MapRequests {
         double[] a = model.mapper().toLatLonExact(xr[0] * 16.0, area.firstRow() * 16.0);
         double[] b = model.mapper().toLatLonExact((xr[1] + 1) * 16.0, (area.lastRow() + 1) * 16.0);
         double[] box = {Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])};
-        com.berg.orbis.worldgen.PregenTasks.mapDataStarted(id);
+        long ticket = com.berg.orbis.worldgen.PregenTasks.mapDataStarted(id);
         java.nio.file.Path data = OrbisMod.dataDir();
         double mpb = model.cfg().metersPerBlock;
         Thread t = new Thread(() -> {
@@ -345,7 +345,7 @@ public final class MapRequests {
                         : "Map data on disk covers this area already (or no single file holds it): the pre-generation goes ahead.";
                 server.execute(() -> {
                     tell(server, who, note);
-                    com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, !failed);
+                    com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, !failed);
                 });
                 return;
             }
@@ -361,7 +361,7 @@ public final class MapRequests {
                 public void progress(String line, float fraction) {
                     mapDataLine = line;
                     mapDataFraction = fraction;
-                    com.berg.orbis.worldgen.PregenTasks.mapDataProgress(id, fraction);
+                    com.berg.orbis.worldgen.PregenTasks.mapDataProgress(id, ticket, fraction);
                 }
 
                 @Override
@@ -372,11 +372,11 @@ public final class MapRequests {
                     server.execute(() -> {
                         tell(server, who, ok ? message : message + " The pre-generation uses the online map servers.");
                         if (ok) Landmarks.rebuildSoon(server);
-                        com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ok);
+                        com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, ok);
                     });
                 }
             });
-            if (!started) server.execute(() -> com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, false));
+            if (!started) server.execute(() -> com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, false));
         }, "Orbis-map-data-plan");
         t.setDaemon(true);
         t.start();
