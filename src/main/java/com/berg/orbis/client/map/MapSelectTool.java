@@ -949,8 +949,8 @@ public final class MapSelectTool {
         }
     }
 
-    /** The count, size and time of the selection, above the Generate button. */
-    public void drawPanel(GuiGraphicsExtractor g, Font font, int screenW, int screenH) {
+    /** The count, size and time of the selection, above the Generate button, in text {@code ts} times the GUI's size. */
+    public void drawPanel(GuiGraphicsExtractor g, Font font, int screenW, int screenH, float ts) {
         if (!active || !canGenerate) return;
         ChunkSelection s = selection;
         List<String> lines = new ArrayList<>();
@@ -971,12 +971,18 @@ public final class MapSelectTool {
         }
         int w = 0;
         for (String l : lines) w = Math.max(w, font.width(l));
-        int x = screenW - w - 10, y = screenH - (canGenerate ? 62 : 40) - lines.size() * 10;
-        g.fill(x - 4, y - 4, screenW - 2, y + lines.size() * 10 + 1, 0xC0000000);
+        // Its bottom right corner just above Generate, the box drawn small from there.
+        g.pose().pushMatrix();
+        g.pose().translate(screenW - 2, screenH - (canGenerate ? 61 : 39));
+        g.pose().scale(ts, ts);
+        int bw = w + 10, bh = lines.size() * 10 + 5;
+        g.fill(-bw, -bh, 0, 0, 0xC0000000);
+        int y = -bh + 4;
         for (String l : lines) {
-            g.text(font, l, x, y, l.startsWith("\u26A0") ? 0xFFFFB020 : 0xFFFFFFFF);
+            g.text(font, l, -bw + 5, y, l.startsWith("\u26A0") ? 0xFFFFB020 : 0xFFFFFFFF);
             y += 10;
         }
+        g.pose().popMatrix();
     }
 
     /** The selection the ceiling check was made for, and its result (null while it runs or when it fits). */

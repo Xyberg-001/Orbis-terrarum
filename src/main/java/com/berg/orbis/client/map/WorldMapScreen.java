@@ -1081,17 +1081,24 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             if (found != null) pin(g, canvas.gui(found[0], found[1]), RED, foundName);
             drawPlayers(g);
             g.disableScissor();
-            drawScaleBar(g);
-            drawLimitLegend(g);
-            if (select != null) select.drawPanel(g, font, width, height);
-            if (canvas.contains(mouseX, mouseY) && menuItems.isEmpty()) drawReadout(g, mouseX, mouseY);
+            drawBottomStrip(g, mouseX, mouseY, canvas.contains(mouseX, mouseY) && menuItems.isEmpty());
+            if (select != null) select.drawPanel(g, font, width, height, textScale());
             String credit = canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION ? "Heights © Mapterhorn, names © Esri"
                     : canvas.layer == com.berg.orbis.client.MapTiles.Layer.STREET || canvas.layer == com.berg.orbis.client.MapTiles.Layer.STREET_DARK
                     ? com.berg.orbis.client.StreetTiles.CREDIT : "Map tiles © Esri";
-            com.berg.orbis.client.MapTiles.drawCredit(g, font, credit, width - 4, TOP_H + 3, width);
-            // Bottom right, above the bottom line (the readout).
+            float ts = textScale();
+            g.pose().pushMatrix();
+            g.pose().translate(width - 4, TOP_H + 3);
+            g.pose().scale(ts, ts);
+            com.berg.orbis.client.MapTiles.drawCredit(g, font, credit, 0, 0, Math.round(width / ts));
+            g.pose().popMatrix();
+            // Bottom right, above the bottom strip (or above Generate while a selection is drawn).
             if (canvas.layer == com.berg.orbis.client.MapTiles.Layer.ELEVATION) {
-                com.berg.orbis.client.ElevationTiles.drawLegend(g, font, width - 4, select != null && select.generateShown() ? height - 62 : height - 19);
+                g.pose().pushMatrix();
+                g.pose().translate(width - 4, select != null && select.generateShown() ? height - 62 : height - stripH() - 3);
+                g.pose().scale(ts, ts);
+                com.berg.orbis.client.ElevationTiles.drawLegend(g, font, 0, 0);
+                g.pose().popMatrix();
             }
         }
         g.fill(0, 0, width, TOP_H, TOP_BG);
@@ -1460,72 +1467,90 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         g.text(font, text, x, y, colour);
     }
 
-    /** A bar of a round number of blocks, with the real distance it stands for. */
-    /** Says what each shading is, above the scale bar: the hard limit's red, the grey haze when it is on, and the pre-generation left to do. */
-    private void drawLimitLegend(GuiGraphicsExtractor g) {
-        com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
-        boolean red = limit != null && limit.on() && !limit.area().isEmpty();
-        boolean grey = greyOut && BlockMapClient.available();
-        com.berg.orbis.worldgen.ChunkSelection pending = pendingArea();
-        boolean purple = pending != null && !pending.isEmpty();
-        if (!red && !grey && !purple) return;
-        String redText = Component.translatable("orbisterrarum.map.hardlimit").getString();
-        String greyText = Component.translatable("orbisterrarum.map.notyet").getString();
-        String purpleText = Component.translatable("orbisterrarum.map.pending").getString();
-        int rows = (red ? 1 : 0) + (grey ? 1 : 0) + (purple ? 1 : 0);
-        // Above the scale bar (its box starts at height - 42), lined up with it; where the tool strip comes down that
-        // far, beside the scale bar on the same bottom line instead of out over the map.
-        int bottom = height - 46, top = bottom - rows * 12 - 2;
-        int x = 8;
-        if (select != null && select.textLeft(top, bottom, 8) != 8) {
-            bottom = height - 25;
-            top = bottom - rows * 12 - 2;
-            x = scaleRight + 7;
-        }
-        top += 2;
-        int w = Math.max(Math.max(red ? font.width(redText) : 0, grey ? font.width(greyText) : 0), purple ? font.width(purpleText) : 0);
-        g.fill(x - 3, top - 2, x + w + 13, bottom, 0xA0000000);
-        int y = top;
-        if (red) {
-            g.fill(x, y + 1, x + 7, y + 8, LIMIT_SHADE | 0xFF000000);
-            g.outline(x, y + 1, 7, 7, LIMIT_EDGE);
-            g.text(font, redText, x + 10, y, WHITE);
-            y += 12;
-        }
-        if (grey) {
-            g.fill(x, y + 1, x + 7, y + 8, VEIL_SWATCH);
-            g.text(font, greyText, x + 10, y, WHITE);
-            y += 12;
-        }
-        if (purple) {
-            g.fill(x, y + 1, x + 7, y + 8, PENDING_FILL | 0xFF000000);
-            g.outline(x, y + 1, 7, 7, PENDING_EDGE);
-            g.text(font, purpleText, x + 10, y, WHITE);
-        }
+    /**
+     * The size of the map's information text (the bottom strip, the selection's figures, the credit, the elevation legend): as on GUI
+     * scale 2 whatever the GUI scale. A large GUI scale is for buttons; at 4 these lines covered a good part of the map.
+     */
+    private float textScale() {
+        return Math.min(1f, 2f / gs());
     }
 
-    /** Right edge of the scale bar's box as last drawn (the legend sits beside it when the strip leaves no room above). */
-    private int scaleRight = 8;
+    /** The bottom strip's height in GUI pixels. */
+    private int stripH() {
+        return Math.round(13 * textScale());
+    }
 
-    private void drawScaleBar(GuiGraphicsExtractor g) {
+    /** The chunks in view: {x0, z0, x1, z1}. */
+    private int[] viewChunks() {
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (double[] c : new double[][]{{canvas.left(), canvas.top()}, {canvas.right(), canvas.top()}, {canvas.left(), canvas.bottom()}, {canvas.right(), canvas.bottom()}}) {
+            double[] ll = canvas.latLonAt(c[0], c[1]);
+            double[] b = mapper.toBlockExact(ll[0], ll[1]);
+            minX = Math.min(minX, b[0]);
+            maxX = Math.max(maxX, b[0]);
+            minZ = Math.min(minZ, b[1]);
+            maxZ = Math.max(maxZ, b[1]);
+        }
+        return new int[]{(int) Math.floor(minX / 16), (int) Math.floor(minZ / 16), (int) Math.floor(maxX / 16), (int) Math.floor(maxZ / 16)};
+    }
+
+    /**
+     * One thin line along the bottom, in small text: a scale bar of a round number of blocks with the real distance, the key to the
+     * shadings on screen (hard limit, not generated, pre-generation still to do), and on the right what is under the cursor.
+     */
+    private void drawBottomStrip(GuiGraphicsExtractor g, int mouseX, int mouseY, boolean readout) {
+        float ts = textScale();
+        int h = stripH(), left = select != null ? select.textLeft(height - h, height, 0) : 0;
+        g.fill(left, height - h, width, height, 0xC0000000);
+        g.pose().pushMatrix();
+        g.pose().translate(left, height - h);
+        g.pose().scale(ts, ts);
+        int vw = Math.round((width - left) / ts), x = 6, y = 3;
+        // The scale bar: about 60 small pixels of a round number of blocks.
         double mpb = info.metersPerBlock();
-        double blocksPerPx = canvas.metresPerGuiPixel() / mpb;
-        double target = 80 * blocksPerPx;
+        double blocksPerPx = canvas.metresPerGuiPixel() * ts / mpb;
+        double target = 60 * blocksPerPx;
         double pow = Math.pow(10, Math.floor(Math.log10(target)));
         double nice = target / pow >= 5 ? 5 * pow : target / pow >= 2 ? 2 * pow : pow;
         int px = (int) Math.round(nice / blocksPerPx);
-        int y = height - 30, x = select != null ? select.textLeft(y - 12, y + 5, 8) : 8;
+        g.fill(x, y + 4, x + px, y + 5, WHITE);
+        g.fill(x, y + 1, x + 1, y + 8, WHITE);
+        g.fill(x + px - 1, y + 1, x + px, y + 8, WHITE);
+        x += px + 5;
         double metres = nice * mpb;
-        String text = String.format(Locale.ROOT, "%,.0f blocks (%s)", nice, metres >= 1000 ? String.format(Locale.ROOT, "%.1f km", metres / 1000) : String.format(Locale.ROOT, "%.0f m", metres));
-        scaleRight = x + Math.max(px, font.width(text)) + 4;
-        g.fill(x - 3, y - 12, scaleRight, y + 5, 0xA0000000);
-        g.text(font, text, x, y - 10, WHITE);
-        g.fill(x, y, x + px, y + 2, WHITE);
-        g.fill(x, y - 3, x + 1, y + 2, WHITE);
-        g.fill(x + px - 1, y - 3, x + px, y + 2, WHITE);
+        String scale = String.format(Locale.ROOT, "%,.0f blocks (%s)", nice, metres >= 1000 ? String.format(Locale.ROOT, "%.1f km", metres / 1000)
+                : String.format(Locale.ROOT, "%.0f m", metres));
+        g.text(font, scale, x, y, WHITE);
+        x += font.width(scale) + 14;
+        // The key, for the shadings on screen only.
+        com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
+        com.berg.orbis.worldgen.ChunkSelection pending = pendingArea();
+        int[] v = viewChunks();
+        if (limit != null && limit.on() && !limit.area().isEmpty()) {
+            x = key(g, x, y, LIMIT_SHADE | 0xFF000000, LIMIT_EDGE, "orbisterrarum.map.hardlimit");
+        }
+        if (greyOut && BlockMapClient.available()) x = key(g, x, y, VEIL_SWATCH, 0, "orbisterrarum.map.notyet");
+        if (pending != null && pending.intersects(v[0], v[1], v[2], v[3])) x = key(g, x, y, PENDING_FILL | 0xFF000000, PENDING_EDGE, "orbisterrarum.map.pending");
+        // What is under the cursor, on the right (cut short rather than over the key).
+        if (readout) {
+            String text = readout(mouseX, mouseY);
+            int rx = Math.max(x + 6, vw - 6 - font.width(text));
+            if (rx < vw - 12) g.text(font, font.plainSubstrByWidth(text, vw - 6 - rx), rx, y, WHITE);
+        }
+        g.pose().popMatrix();
     }
 
-    private void drawReadout(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+    /** One entry of the key: a swatch and its name; returns where the next one starts. */
+    private int key(GuiGraphicsExtractor g, int x, int y, int fill, int edge, String name) {
+        String text = Component.translatable(name).getString();
+        g.fill(x, y, x + 7, y + 7, fill);
+        if (edge != 0) g.outline(x, y, 7, 7, edge);
+        g.text(font, text, x + 10, y, WHITE);
+        return x + 10 + font.width(text) + 12;
+    }
+
+    /** What is under the cursor: lat/lon, block, distance and direction from you, height (elevation map), and whether it is generated. */
+    private String readout(int mouseX, int mouseY) {
         double[] ll = canvas.latLonAt(mouseX, mouseY);
         int[] b = mapper.toBlock(ll[0], ll[1]);
         List<String> parts = new ArrayList<>(List.of(
@@ -1547,11 +1572,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
                 if ((mask[bit >> 6] & (1L << (bit & 63))) == 0) parts.add(Component.translatable("orbisterrarum.map.notgenerated").getString());
             }
         }
-        String text = String.join("   ", parts);
-        int x = select != null ? select.textLeft(height - 15, height - 2, 8) : 8;
-        int w = Math.min(font.width(text), width - x - 8);
-        g.fill(x - 4, height - 15, x + w + 4, height - 2, 0xC0000000);
-        g.text(font, font.plainSubstrByWidth(text, width - x - 8), x, height - 12, WHITE);
+        return String.join("  ·  ", parts);
     }
 
     private static String compass(double dx, double dz) {
