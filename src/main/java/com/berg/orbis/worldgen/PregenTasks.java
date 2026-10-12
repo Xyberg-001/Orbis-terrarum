@@ -306,6 +306,12 @@ public final class PregenTasks {
         synchronized (PregenTasks.class) {
             // The cubic sweeper finished by itself.
             if (running != null && runningCubic && !PregenTask.isRunning() && !OrbisMod.stopping()) finished(running);
+            // Its rows done, each second (the chunk sweep reports them itself), so the purple shrinks there too.
+            PregenTask.CubicSweeper c = PregenTask.cubicSweeper;
+            if (running != null && runningCubic && c != null && c.running()) {
+                int row = c.doneRow();
+                if (row != Integer.MIN_VALUE) progress(running, row);
+            }
         }
     }
 

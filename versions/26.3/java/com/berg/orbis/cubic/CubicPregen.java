@@ -115,6 +115,12 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
     }
 
     @Override
+    public int doneRow() {
+        Run r = this.run;
+        return r == null ? Integer.MIN_VALUE : r.doneRow();
+    }
+
+    @Override
     public PregenTask.Snapshot snapshot() {
         Run r = this.run;
         if (r == null) return null;
@@ -177,6 +183,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         /** Columns walked (all their cubes asked for), and done in walking order with none missing before them. */
         final AtomicInteger columnsWalked = new AtomicInteger();
         int donePrefix;
+        /** Each band of TILE cube rows in walking order: {columns walked by its end, its last chunk row}. */
+        final int[][] bandEnds;
         final java.util.BitSet doneColumns = new java.util.BitSet();
         /** Full cubes still held (server thread). */
         final ArrayDeque<long[]> held = new ArrayDeque<>();
@@ -201,13 +209,31 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
             this.maxCube = Math.floorDiv(CubicApi.maxY(level), CubeTerrain.SIZE);
             this.progressFile = key == null ? null : level.getServer().getWorldPath(LevelResource.ROOT).resolve("orbis-pregen").resolve(key);
             int[] count = {0};
-            walk((index, x, z) -> count[0]++);
+            int firstCubeRow = Math.floorDiv(area.firstRow(), 2);
+            List<int[]> bands = new ArrayList<>(); // {columns walked by the band's end, its last chunk row}
+            walk((index, x, z) -> {
+                count[0]++;
+                int lastChunkRow = (firstCubeRow + Math.floorDiv(z - firstCubeRow, TILE) * TILE + TILE - 1) * 2 + 1;
+                if (bands.isEmpty() || bands.get(bands.size() - 1)[1] != lastChunkRow) bands.add(new int[]{0, lastChunkRow});
+                bands.get(bands.size() - 1)[0] = index + 1;
+            });
             this.total = count[0];
+            this.bandEnds = bands.toArray(new int[0][]);
             this.resumedFrom = readProgress();
             this.donePrefix = this.resumedFrom;
             this.bar = new ServerBossEvent(java.util.UUID.randomUUID(), Component.literal("Pre-generating " + label), BossEvent.BossBarColor.GREEN,
                     BossEvent.BossBarOverlay.PROGRESS);
             this.loadedAtStart = level.getChunkSource().getLoadedChunksCount();
+        }
+
+        /** The last chunk row of the bands whose columns are all done (the task list's progress), or Integer.MIN_VALUE. */
+        int doneRow() {
+            int row = Integer.MIN_VALUE;
+            for (int[] b : this.bandEnds) {
+                if (b[0] > this.donePrefix) break;
+                row = b[1];
+            }
+            return row;
         }
 
         void start() {

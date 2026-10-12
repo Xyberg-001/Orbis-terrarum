@@ -137,6 +137,11 @@ public final class PregenTask {
 
         /** Whether the level is a cubic one (asked of Cubic Worlds, so it is known before the first cube is made). */
         boolean cubic(ServerLevel level);
+
+        /** The last chunk row of the running sweep's area that is completely done (north to south), or Integer.MIN_VALUE for none yet. */
+        default int doneRow() {
+            return Integer.MIN_VALUE;
+        }
     }
 
     public static volatile CubicSweeper cubicSweeper;

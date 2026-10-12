@@ -2088,7 +2088,10 @@ rows already done. Players with the mod get the list as
 first time, encoded as the hard limit's, at most `AllowedAreaPayload.MAX_RUNS`
 runs a message); the buttons send `PregenControlPayload` with the task ids
 (operators only, checked by the server). In a cubic world the sweep is the
-cubic sweeper's: its task shows no progress until it finishes. The world preview
+cubic sweeper's (`cubic/CubicPregen`, versions/26.3): it walks bands of 16 chunk rows, and
+each second the task list takes the last chunk row of the bands whose cube columns are all
+done (`CubicSweeper.doneRow`), so its purple shrinks and its percentage moves as in a
+normal world. The world preview
 (`AreaPreviewScreen`) has the same tool through `client/map/MapView` (the
 preview's own map implements it; `MapCanvas` does on the world map), without
 Generate: right-drag pans there and a right-click still sets the spawn. Its
