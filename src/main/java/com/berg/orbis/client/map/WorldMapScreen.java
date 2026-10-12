@@ -65,8 +65,9 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     private boolean pressMoved;
     private static double lastScale = -1;
     /** The Minecraft layer's opacity: 0 off, then 35%, 70%, 100%. */
-    private static final int[] BLOCK_ALPHA = {0, 90, 180, 255};
-    private static int blockAlpha = 2;
+    /** The Minecraft blocks over the real map (on by default), drawn at this opacity so the real map still shows through. */
+    private static final int BLOCK_ALPHA = 180;
+    private static boolean blocksOn = true;
     private static boolean greyOut = true;
     private String layerHint;
 
@@ -122,7 +123,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         boolean markersInBar = width >= 560; // on a large GUI scale it sits under the bar, top left, instead
         // The bar, left to right with one gap everywhere: search box, Search, [Markers], Blocks, Grey, layer, Me. The box
         // takes the room up to 360; past that the gaps share what is left, so nothing bunches at one end.
-        int[] bw = markersInBar ? new int[]{56, 80, 96, 72, 96, 46} : new int[]{56, 96, 72, 96, 46};
+        int[] bw = markersInBar ? new int[]{56, 80, 72, 104, 96, 46} : new int[]{56, 72, 104, 96, 46};
         int sum = 0;
         for (int w : bw) sum += w;
         int boxW = Math.max(80, Math.min(360, width - 8 - sum - bw.length * 4));
@@ -149,13 +150,13 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             b.setMessage(markersLabel());
         }).bounds(markersInBar ? bx[bi++] : 4, markersInBar ? 2 : TOP_H + 4, 80, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.markers.tip"))).build());
         addRenderableWidget(Button.builder(blocksLabel(), b -> {
-            blockAlpha = (blockAlpha + 1) % BLOCK_ALPHA.length;
+            blocksOn = !blocksOn;
             b.setMessage(blocksLabel());
-        }).bounds(bx[bi++], 2, 96, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.blocks.tip"))).build());
+        }).bounds(bx[bi++], 2, 72, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.blocks.tip"))).build());
         addRenderableWidget(Button.builder(greyLabel(), b -> {
             greyOut = !greyOut;
             b.setMessage(greyLabel());
-        }).bounds(bx[bi++], 2, 72, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.grey.tip"))).build());
+        }).bounds(bx[bi++], 2, 104, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.map.grey.tip"))).build());
         if (canvas.layer.isStreet()) canvas.layer = MapTiles.Layer.street(OrbisMod.config().streetMapDark);
         addRenderableWidget(Button.builder(Component.literal(canvas.layer.label), b -> {
             canvas.layer = canvas.layer.next();
@@ -788,8 +789,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     }
 
     private Component blocksLabel() {
-        return blockAlpha == 0 ? Component.translatable("orbisterrarum.map.blocks.off")
-                : Component.translatable("orbisterrarum.map.blocks.on", Math.round(BLOCK_ALPHA[blockAlpha] * 100 / 255.0) + "%");
+        return Component.translatable(blocksOn ? "orbisterrarum.map.blocks.on" : "orbisterrarum.map.blocks.off");
     }
 
     private static final double[] MARKER_SCALES = {0.5, 0.75, 1.0, 1.5, 2.0, 3.0};
@@ -1119,7 +1119,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
      */
     private void drawMinecraftLayer(GuiGraphicsExtractor g) {
         layerHint = null;
-        if ((blockAlpha == 0 && !greyOut) || !BlockMapClient.available()) return;
+        if ((!blocksOn && !greyOut) || !BlockMapClient.available()) return;
         BlockMapClient.beginFrame(minecraft);
         double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
         double[][] corners = {{canvas.left(), canvas.top()}, {canvas.right(), canvas.top()}, {canvas.left(), canvas.bottom()}, {canvas.right(), canvas.bottom()}};
@@ -1149,14 +1149,14 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         }
         double mrx = mid[0] / 512 - 0.5, mrz = mid[1] / 512 - 0.5;
         order.sort((a, b) -> Double.compare(Math.hypot(a[0] - mrx, a[1] - mrz), Math.hypot(b[0] - mrx, b[1] - mrz)));
-        int colour = (BLOCK_ALPHA[blockAlpha] << 24) | 0xFFFFFF;
+        int colour = (BLOCK_ALPHA << 24) | 0xFFFFFF;
         canvas.beginOverlay(g);
         for (int[] r : order) {
             double[] a = physOfBlock(r[0] * 512.0, r[1] * 512.0), b = physOfBlock((r[0] + 1) * 512.0, (r[1] + 1) * 512.0);
             int x0 = (int) Math.round(Math.min(a[0], b[0])), y0 = (int) Math.round(Math.min(a[1], b[1]));
             int x1 = (int) Math.round(Math.max(a[0], b[0])), y1 = (int) Math.round(Math.max(a[1], b[1]));
             if (x1 <= x0 || y1 <= y0) continue;
-            if (blockAlpha > 0) {
+            if (blocksOn) {
                 net.minecraft.resources.Identifier id = BlockMapClient.tile(r[0], r[1], level);
                 if (id != null) {
                     g.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, id, x0, y0, 0f, 0f, x1 - x0, y1 - y0, size, size, size, size, colour);
