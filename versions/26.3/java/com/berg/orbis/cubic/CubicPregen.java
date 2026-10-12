@@ -195,6 +195,15 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         final java.util.HashSet<Long> asked = new java.util.HashSet<>();
 
         volatile long lastGcAsked;
+        /** Memory is short: the server thread lets go of the cubes held (the producer asks, the server thread does it). */
+        volatile boolean releaseHeld;
+        /** Cubes held, as last counted on the server thread (the producer reads it). */
+        volatile int heldCount;
+        /**
+         * The old generation's share in use with nothing of the sweep's in memory (no cube held or asked for, no writes queued): the
+         * players' and the game's. The sweep waits for memory only above it (plus a margin); 0 until such a reading.
+         */
+        volatile double memoryFloor;
         long lastLog;
         long lastChat;
         long lastSave;
@@ -430,13 +439,22 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         String mustWait() {
             if (CubicApi.pendingCubeWrites(this.level) > MAX_PENDING_WRITES) return "waiting for the disk";
             if (this.level.getChunkSource().getLoadedChunksCount() > this.loadedAtStart + MAX_LOADED) return "waiting for unloads";
-            if (oldGenAfterGc() > MAX_HEAP_FRACTION) {
+            double old = oldGenAfterGc();
+            if (old > Math.min(0.95, Math.max(MAX_HEAP_FRACTION, this.memoryFloor + 0.10))) {
+                // The cubes held for their neighbours go first: waiting while holding them stood the sweep still for good (a 4 GB
+                // server with a player in it, 12 Oct 2026: 15 minutes at 0 cubes/s).
+                this.releaseHeld = true;
                 // what was in use at the last collection: with nothing in flight nothing allocates, and without a collection the reading
                 // would never come down (the sweep stood still with the heap full of garbage)
                 long now = System.currentTimeMillis();
-                if (this.inFlight.get() == 0 && now - this.lastGcAsked > 10_000) {
+                boolean nothingOfOurs = this.inFlight.get() == 0 && this.heldCount == 0 && CubicApi.pendingCubeWrites(this.level) < 200;
+                if (nothingOfOurs && now - this.lastGcAsked > 10_000) {
                     this.lastGcAsked = now;
                     System.gc();
+                } else if (nothingOfOurs && now - this.lastGcAsked > 3_000) {
+                    // Collected with nothing of the sweep's in memory and still this full: it is the players' and the game's, and
+                    // waiting cannot free it. Carry on with a margin above it.
+                    this.memoryFloor = old;
                 }
                 return "waiting for memory";
             }
@@ -470,10 +488,13 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
                     columnDone(index);
                 }
             }
-            while (this.held.size() > KEEP_HELD) {
+            int keep = this.releaseHeld ? 0 : KEEP_HELD;
+            this.releaseHeld = false;
+            while (this.held.size() > keep) {
                 long[] c = this.held.pollFirst();
                 CubicApi.releaseCube(this.level, PregenTask.PREGEN_TICKET, (int) c[0], (int) c[1], (int) c[2]);
             }
+            this.heldCount = this.held.size();
             for (ServerPlayer p : this.level.getServer().getPlayerList().getPlayers()) {
                 if (!this.bar.getPlayers().contains(p)) this.bar.addPlayer(p);
             }
