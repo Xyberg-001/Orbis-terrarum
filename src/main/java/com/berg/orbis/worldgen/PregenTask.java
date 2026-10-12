@@ -292,7 +292,7 @@ public final class PregenTask {
             doneRow = Math.max(doneRow, saved.get("completedRow").getAsInt());
         }
         double km2 = selection.count() * 256.0 * model.cfg().metersPerBlock * model.cfg().metersPerBlock / 1e6;
-        String label = String.format(Locale.ROOT, "%s (%s km²)", PregenTasks.AUTO.equals(kind) ? "World area" : "Selection", km2 < 10 ? String.format(Locale.ROOT, "%.1f", km2) : String.format(Locale.ROOT, "%,.0f", km2));
+        String label = String.format(Locale.ROOT, "%s (%s km²)", PregenTasks.AUTO.equals(kind) ? "World area" : "Selection", km2Text(km2));
         Component reply = PregenTasks.submit(level, label, kind, selection, skipSea, doneRow, paused, "");
         warnIfTooLow(level, model, selection);
         return reply;
@@ -328,8 +328,13 @@ public final class PregenTask {
         active = t;
         tellNeeds(level);
         return Component.literal(String.format(Locale.ROOT,
-                "Pre-generating %s\n  %,d chunks, about %,.0f km², %,d chunk rows north to south.%s\n  Progress on the world map (B), where Pause and Stop are.%s",
-                task.label, chunks, km2, sweep.rowCount(), resumed, t.loadNote() + syncNote(level)));
+                "Pre-generating %s\n  %,d chunks, about %s km², %,d chunk rows north to south.%s\n  Progress on the world map (B), where Pause and Stop are.%s",
+                task.label, chunks, km2Text(km2), sweep.rowCount(), resumed, t.loadNote() + syncNote(level)));
+    }
+
+    /** An area in km²: one decimal under 10 (a small selection is not "0 km²"), whole numbers above. */
+    private static String km2Text(double km2) {
+        return km2 < 10 ? String.format(Locale.ROOT, "%.1f", km2) : String.format(Locale.ROOT, "%,.0f", km2);
     }
 
     /** The game's "sync chunk writes" option makes every chunk write a separate synchronous disk write. */
