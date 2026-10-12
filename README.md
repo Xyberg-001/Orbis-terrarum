@@ -43,18 +43,21 @@ where you want to spawn, and create the world. The other tabs (Features, Look & 
 
 ## Commands
 
-| Command | What it does |
-|---|---|
-| `/tpll <place or lat, lon>` | Teleport to a place or coordinates |
-| `/wherell` | Your latitude and longitude |
-| `/orbis pregen <km>` | Pre-generate everything within `<km>` of you |
-| `/orbis pregen area <place>` | Pre-generate a town or country by its outline |
-| `/orbis pregen status` / `stop` | Progress, or stop it |
-| `/orbis export aternos` | Make an upload of this world for an Aternos server |
-| `/orbis import <file.osm.pbf>` | Use a downloaded OpenStreetMap file instead of the online servers |
-| `/orbis settings [name] [value]` | The mod's settings, for servers |
+| Command | What it does | Who |
+|---|---|---|
+| `/tpll <place or lat, lon>` | Teleport to a place ("Eiffel Tower") or coordinates | op |
+| `/wherell` | Your latitude and longitude | everyone |
+| `/orbis pregen <km>` | Pre-generate everything within `<km>` of you | op |
+| `/orbis pregen at <lat> <lon> <km>` | The same around a coordinate | op |
+| `/orbis pregen area [all] <place>` | Pre-generate a town or country by its outline (`all`: islands and overseas parts too) | op |
+| `/orbis pregen status` / `stop` | Progress, or stop it | op |
+| `/orbis export aternos [orbis] [zip]` | Make an upload of this world for an Aternos server | op |
+| `/orbis import <file.osm.pbf>` | Use a downloaded OpenStreetMap file instead of the online servers | op |
+| `/orbis import-places <file.geojson>` | Add Overture place data | op |
+| `/orbis settings [name] [value]` | The mod's performance and network settings, for servers | op |
 
-All need operator rights except `/wherell`.
+Everything else is on the world map (B): What's here, the World window (**i**) with the real sky and hard limit switches, Download
+map data, Draw all, and Resume.
 
 ## Servers
 
