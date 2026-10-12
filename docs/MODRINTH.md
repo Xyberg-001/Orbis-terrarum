@@ -127,18 +127,31 @@ Fixed
 Other world types stay plain vanilla.
 
 ### Commands
-| Command | What it does |
-|---|---|
-| `/tpll <place or lat, lon>` | Teleport to a place or coordinates |
-| `/wherell` | Your latitude and longitude |
-| `/orbis pregen <km>` | Pre-generate everything within `<km>` of you |
-| `/orbis pregen area <place>` | Pre-generate a town or country by its outline |
-| `/orbis pregen status` / `stop` | Progress, or stop it |
-| `/orbis export aternos` | Make an upload of this world for an Aternos server |
-| `/orbis import <file.osm.pbf>` | Use a downloaded OpenStreetMap file instead of the online servers |
-| `/orbis settings [name] [value]` | The mod's settings, for servers |
 
-All need operator rights except `/wherell`.
+| Command | What it does | Who |
+|---|---|---|
+| `/tpll <place or lat, lon>` | Teleport to a place ("Eiffel Tower") or coordinates | op |
+| `/wherell` | Your latitude and longitude | everyone |
+| `/orbis here` | What is where you stand: place, elevation, climate, road, building | everyone |
+| `/orbis info` | The world's place, scale, height and border | everyone |
+| `/orbis pregen <km>` | Pre-generate everything within `<km>` of you | op |
+| `/orbis pregen at <lat> <lon> <km>` | The same around a coordinate | op |
+| `/orbis pregen area [all] <place>` | Pre-generate a town or country by its outline (`all`: islands and overseas parts too) | op |
+| `/orbis pregen status` / `stop` / `resume` | Progress, stop, carry on | op |
+| `/orbis pregen map [place]` | Write a map of what is generated; `/orbismap` opens it in your browser | op |
+| `/orbis hardlimit on` / `off` | Keep the world inside the pre-generated area | op |
+| `/orbis sky` | Show the real sky switches | op |
+| `/orbis daylight` / `weather` / `seasons` / `snow` / `clockhours` `on` / `off` | Switch a part of the real sky in this world | op |
+| `/orbis map render` / `status` | Draw all generated land into the world map's Blocks layer | op |
+| `/orbis prefetch <0-6>` | Download map data around you ahead of time | everyone |
+| `/orbis mapdata` / `mapdata stop` | Download OpenStreetMap's file for the land around you | op |
+| `/orbis import <file.osm.pbf>` | Use a downloaded OpenStreetMap file instead of the online servers | op |
+| `/orbis import-places <file.geojson>` | Add Overture place data | op |
+| `/orbis export aternos [orbis] [zip]` | Make an upload of this world for an Aternos server | op |
+| `/orbis landmarks` | Rebuild the landmark advancements | op |
+| `/orbis settings [name] [value]` | The mod's performance and network settings, for servers | op |
+
+The world map (B) does most of these with a click.
 
 ### Servers
 Install the mod on the server only and set `level-type=orbisterrarum\:earth` in `server.properties` before the first start. Easiest: create and pre-generate the world in singleplayer, then upload it.
