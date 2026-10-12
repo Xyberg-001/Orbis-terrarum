@@ -47,21 +47,20 @@ where you want to spawn, and create the world. The other tabs (Features, Look & 
 |---|---|---|
 | `/tpll <place or lat, lon>` | Teleport to a place ("Eiffel Tower") or coordinates | op |
 | `/wherell` | Your latitude and longitude | everyone |
-| `/orbis pregen <km>` | Pre-generate everything within `<km>` of you | op |
+| `/orbis pregen <km>` | Pre-generate everything within `<km>` of you (server consoles; on the map: Select area, Generate) | op |
 | `/orbis pregen at <lat> <lon> <km>` | The same around a coordinate | op |
 | `/orbis pregen area [all] <place>` | Pre-generate a town or country by its outline (`all`: islands and overseas parts too) | op |
 | `/orbis pregen status` / `stop` | Progress, or stop it | op |
-| `/orbis export aternos [orbis] [zip]` | Make an upload of this world for an Aternos server | op |
-| `/orbis settings [name] [value]` | The mod's performance and network settings, for servers | op |
+| `/orbis settings [name] [value]` | The mod's performance and network settings, for servers (singleplayer: Mod Menu) | op |
 
 Everything else is on the world map (B): What's here, the World window (**i**) with the real sky and hard limit switches, Download
-map data, Draw all, and Resume.
+map data, Draw all, Export for Aternos, and Resume.
 
 ## Servers
 
 - Install the mod on the server only; set `level-type=orbisterrarum\:earth` in `server.properties` before the first start.
 - Easiest: create and pre-generate the world in singleplayer, then upload it.
-- Aternos: `/orbis export aternos` makes the upload and a how-to file.
+- Aternos: **Export for Aternos** in the world map's World window (**i**) makes the upload and a how-to file.
 
 ## Tested on
 

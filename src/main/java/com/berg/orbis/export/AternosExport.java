@@ -43,7 +43,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 /**
- * {@code /orbis export aternos [orbis] [zip]}: a copy of this world ready to upload to Aternos (the world itself is
+ * Export for Aternos (the world map's World window; "plain" or "orbis", one zip or not): a copy of this world ready to upload to Aternos (the world itself is
  * only read). Aternos takes a world upload of at most 1 GB and gives a server 4 GB; its Files page takes raw region
  * files but does not unpack zips.
  * <ul>
@@ -76,7 +76,7 @@ public final class AternosExport {
     private AternosExport() {}
 
     public static Component start(MinecraftServer server, boolean forOrbis, boolean zipOnly) {
-        if (PregenTask.isRunning()) return Component.literal("A pre-generation is running: export once it is done (or /orbis pregen stop).");
+        if (PregenTask.isRunning()) return Component.literal("A pre-generation is running: export once it is done (or stop it on the world map).");
         if (!RUNNING.compareAndSet(false, true)) return Component.literal("An export is already running.");
         ServerLevel ow = server.overworld();
         server.saveEverything(true, true, true);

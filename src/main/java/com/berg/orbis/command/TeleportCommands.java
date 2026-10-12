@@ -17,15 +17,15 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import java.util.Locale;
 
 /**
- * The commands with no world map equivalent (the map does the rest since 1.1.0): /tpll and /wherell (also /orbis tpll, /orbis where),
- * /orbis pregen (for server consoles), /orbis export aternos and /orbis settings. Map data from Geofabrik is Download map data on the
- * world map (and the offer when a world is created), at every scale.
+ * The commands the world map cannot do for everyone: /tpll (the map's Teleport runs it, and operators without the mod use it) and
+ * /wherell (players without the mod), and for server consoles /orbis pregen and /orbis settings. The rest is on the world map since
+ * 1.1.0 (What's here, the World window's switches, Download map data, Draw all, Export for Aternos, Select area and Generate).
  */
 public class TeleportCommands {
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            // /tpll and /wherell stay as short aliases (the convention other Earth mods use).
+            // /tpll and /wherell, the names other Earth mods use.
             // Teleporting is for operators, like vanilla /tp.
             dispatcher.register(Commands.literal("tpll")
                     .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
@@ -44,21 +44,6 @@ public class TeleportCommands {
                                     .then(Commands.argument("value", StringArgumentType.greedyString())
                                             .executes(ctx -> reply(ctx, setting(StringArgumentType.getString(ctx, "name"),
                                                     StringArgumentType.getString(ctx, "value")))))))
-                    .then(Commands.literal("tpll")
-                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
-                            .then(Commands.argument("target", StringArgumentType.greedyString())
-                                    .executes(TeleportCommands::teleportToTarget)))
-                    .then(Commands.literal("where").executes(TeleportCommands::reportLatLon))
-                    .then(Commands.literal("export")
-                            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
-                            .then(Commands.literal("aternos")
-                                    .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), false, false)))
-                                    .then(Commands.literal("zip")
-                                            .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), false, true))))
-                                    .then(Commands.literal("orbis")
-                                            .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), true, false)))
-                                            .then(Commands.literal("zip")
-                                                    .executes(ctx -> reply(ctx, com.berg.orbis.export.AternosExport.start(ctx.getSource().getServer(), true, true)))))))
                     .then(Commands.literal("pregen")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                             .then(Commands.literal("stop").executes(ctx -> reply(ctx, PregenTask.stop())))

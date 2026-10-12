@@ -83,7 +83,7 @@ public final class MapRequests {
             case "here" -> here(player, req);
             case "about" -> answer(player, "about", req.arg(), about(server, player));
             case "landmarks" -> answer(player, "landmarks", req.arg(), landmarks(server, player));
-            case "sky", "drawall", "mapdata", "mapdata-stop" -> {
+            case "sky", "drawall", "mapdata", "mapdata-stop", "export" -> {
                 if (!op(player)) {
                     say(player, Component.literal("Only operators can change this world."));
                     return;
@@ -92,6 +92,8 @@ public final class MapRequests {
                     case "sky" -> sky(server, req.arg());
                     case "drawall" -> BlockMapService.renderAll(server);
                     case "mapdata" -> mapData(server, player, req);
+                    // Export for Aternos: "plain" or "orbis", then ",zip" for a single zip
+                    case "export" -> com.berg.orbis.export.AternosExport.start(server, req.arg().startsWith("orbis"), req.arg().endsWith(",zip"));
                     default -> {
                         MapDataJob.stop();
                         yield Component.literal("Stopping the map data download (it carries on next time).");
