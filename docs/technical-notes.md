@@ -17,11 +17,6 @@ mapping" for what happens above 1500 m).
 
 ## Installing
 
-*Orbis terrarum* is Latin for "the circle of the lands", the Roman name for
-the whole known world. The mod was called TellusPlus until 0.3.0; an existing
-`config/tellusplus` folder (with its caches) is migrated automatically and
-worlds created under the old name still load.
-
 Put `orbisterrarum-<version>.jar` in `mods/` together with Fabric API. The
 settings screens are built with **YetAnotherConfigLib** (`yet_another_config_lib_v3`),
 which comes inside the mod jar since 1.1.0 (a nested jar, `META-INF/jars/`; the
