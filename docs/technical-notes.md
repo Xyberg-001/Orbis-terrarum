@@ -2054,7 +2054,24 @@ operator level, rebuilds the same `ChunkSelection` and runs
 `PregenTask.startSelection`: an area sweep (`new AreaSweep(selection,
 outline)`, rows straight from the runs, no widening), with progress in `orbis-pregen/selection-<fingerprint>.json` so the same
 selection resumes. Shapes are kept per world in
-`config/orbisterrarum/map-selections.json`. The world preview
+`config/orbisterrarum/map-selections.json`.
+
+**What is left to do, in purple** (`worldgen/PendingPregen`, 1.1.1): the area of the
+sweep not finished yet, running or stopped (by Stop, or put aside as the server
+stopped), less the rows already on disk (the sweep goes north to south, so the
+rows after the last flushed one are what is left). Kept in
+`orbis-pregen/pending.json` (label, kind, Skip open sea, last row done) and
+`pending-area.json` (`ChunkSelection.toJson`, written once at the start on a
+writer thread), removed when the sweep finishes. Players with the mod get it as
+`net/PendingAreaPayload` on joining and at the start (the whole area, encoded as
+the hard limit's), then only the last row done as it moves (every 10 s with the
+progress file); an area over `AllowedAreaPayload.MAX_RUNS` runs is not shown. The
+world map fills the rows left translucent purple (`WorldMapScreen.drawPending`,
+as the selection being drawn is green) with an edge when chunks are big enough,
+and the legend says "Pre-generation still to do". When the world opens with a
+stopped map selection left, Resume is offered again (`PregenTask.offerResume`)
+and carries on from its progress file; the automatic pre-generation resumes by
+itself as before (`kind: auto`). Cubic worlds' sweeps are not tracked yet. The world preview
 (`AreaPreviewScreen`) has the same tool through `client/map/MapView` (the
 preview's own map implements it; `MapCanvas` does on the world map), without
 Generate: right-drag pans there and a right-click still sets the spawn. Its

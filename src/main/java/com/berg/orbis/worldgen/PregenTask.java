@@ -169,6 +169,13 @@ public final class PregenTask {
         return c != null && c.running() ? c.snapshot() : null;
     }
 
+    /** After a restart, a stopped sweep left in the world (PendingPregen) to offer for Resume; null: none. */
+    static synchronized void offerResume(String label, java.util.function.Function<ServerLevel, Component> again) {
+        restart = again;
+        restartLabel = label;
+        stoppedByHand = again != null;
+    }
+
     /** The name of the sweep an operator stopped and can resume, or null. */
     public static String resumable() {
         return stoppedByHand && restart != null && !isRunning() ? restartLabel : null;
@@ -453,6 +460,7 @@ public final class PregenTask {
         if (spanMin <= spanMax) t.widenRegionCache((spanMax - spanMin + 1) * 16);
         t.startAreaProducer(model);
         active = t;
+        PendingPregen.begin(level, label, PendingPregen.AREA, area, null, startRow - 1);
         tellNeeds(level);
 
         String extractNote;
@@ -467,7 +475,7 @@ public final class PregenTask {
                     + (whole ? "." : String.format(Locale.ROOT, " (it covers lat %.1f..%.1f, lon %.1f..%.1f; the few regions outside that come from Overpass).",
                     ex.south(), ex.north(), ex.west(), ex.east()));
         } else {
-            extractNote = " WARNING: no local extract covers this area, so every map region will be fetched from Overpass one by one -- slow, and the public servers throttle. Import the country first: see README, 'Country map worlds'.";
+            extractNote = " WARNING: no local extract covers this area, so every map region will be fetched from Overpass one by one -- slow, and the public servers throttle. Download map data first (world map, World window).";
         }
         double km2 = outline.totalKm2();
         return Component.literal(String.format(Locale.ROOT,
@@ -528,6 +536,7 @@ public final class PregenTask {
         t.widenRegionCache((xr[1] - xr[0] + 1) * 16);
         t.startAreaProducer(model);
         active = t;
+        PendingPregen.begin(level, "the selection drawn on the map", PendingPregen.SELECTION, selection, skipSea, startRow - 1);
         warnIfTooLow(level, model, selection);
         tellNeeds(level);
         return Component.literal(String.format(Locale.ROOT,
@@ -898,9 +907,11 @@ public final class PregenTask {
         if (progressFile == null) return;
         try {
             if (finished) {
+                PendingPregen.finished();
                 Files.deleteIfExists(progressFile);
                 return;
             }
+            PendingPregen.progress(flushedRow);
             WorldModel model = OrbisMod.model();
             if (model == null) return;
             Files.createDirectories(progressFile.getParent());

@@ -18,6 +18,8 @@ public class OrbisClient implements ClientModInitializer {
     public static volatile com.berg.orbis.net.AllowedAreaPayload allowedArea;
     /** The server's pre-generation, for the world map's progress bar (idle when none runs or the server has no Orbis). */
     public static volatile com.berg.orbis.net.PregenStatusPayload pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
+    /** The pre-generation left to do on the server, shaded purple on the world map (always with its area; empty: none). */
+    public static volatile com.berg.orbis.net.PendingAreaPayload pendingArea = com.berg.orbis.net.PendingAreaPayload.NONE;
 
     @Override
     public void onInitializeClient() {
@@ -38,6 +40,9 @@ public class OrbisClient implements ClientModInitializer {
                 (payload, context) -> allowedArea = payload);
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PregenStatusPayload.TYPE,
                 (payload, context) -> pregenStatus = payload);
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PendingAreaPayload.TYPE,
+                (payload, context) -> pendingArea = payload.area() != null ? payload
+                        : new com.berg.orbis.net.PendingAreaPayload(payload.doneRow(), pendingArea.area())); // progress only
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.MapAnswerPayload.TYPE,
                 (payload, context) -> context.client().execute(() -> {
                     if (context.client().gui.screen() instanceof com.berg.orbis.client.map.MapAnswerSink sink) sink.answer(payload);
@@ -76,6 +81,7 @@ public class OrbisClient implements ClientModInitializer {
             worldInfo = null;
             allowedArea = null;
             pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
+            pendingArea = com.berg.orbis.net.PendingAreaPayload.NONE;
             mc.execute(() -> com.berg.orbis.client.map.BlockMapClient.clear(mc));
         });
         System.out.println("[orbis] Client ready: world settings via Create New World > Customize"

@@ -482,6 +482,7 @@ public class OrbisMod implements ModInitializer {
         });
         com.berg.orbis.worldgen.AutoPregen.register();
         com.berg.orbis.worldgen.HardLimit.register();
+        com.berg.orbis.worldgen.PendingPregen.register(); // the pre-generation left to do, shaded purple on the world map
         com.berg.orbis.worldgen.PregenStatus.register(); // the pre-generation's progress and controls on the world map
         com.berg.orbis.map.MapRequests.register(); // the world map's What's here, World window and landmark pins
         // A selection drawn on the world map (operators only).

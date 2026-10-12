@@ -866,6 +866,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             drawMinecraftLayer(g);
             drawOutsideLimit(g);
             drawOutsideBorder(g);
+            drawPending(g);
             if (select != null && select.active) select.draw(g, font, mouseX, mouseY);
             g.enableScissor(canvas.left(), canvas.top(), canvas.right(), canvas.bottom());
             drawSpawn(g);
@@ -967,6 +968,8 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
 
     /** Outside the hard limit: a dark red tint (the not-generated haze is light grey, and never drawn there). */
     private static final int LIMIT_SHADE = 0x9C3A0A12, LIMIT_EDGE = 0xFFF87171, VEIL_SWATCH = 0xFFF5A04A;
+    /** The pre-generation left to do: translucent purple, as the selection being drawn is green. */
+    private static final int PENDING_FILL = 0x58A855F7, PENDING_EDGE = 0xFFC084FC;
 
     /**
      * With the server's hard limit on: everything outside the allowed area darkened (it never generates), with a red
@@ -1026,6 +1029,64 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     }
 
     /**
+     * The pre-generation the server has not finished (running, stopped, or left when it closed): the rows of its area after the
+     * last one done, in purple, with an edge when zoomed in far enough to see chunks.
+     */
+    private void drawPending(GuiGraphicsExtractor g) {
+        com.berg.orbis.net.PendingAreaPayload pending = com.berg.orbis.client.OrbisClient.pendingArea;
+        com.berg.orbis.worldgen.ChunkSelection a = pending.area();
+        if (a == null || a.isEmpty() || pending.doneRow() >= a.lastRow()) return;
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (double[] c : new double[][]{{canvas.left(), canvas.top()}, {canvas.right(), canvas.top()}, {canvas.left(), canvas.bottom()}, {canvas.right(), canvas.bottom()}}) {
+            double[] ll = canvas.latLonAt(c[0], c[1]);
+            double[] b = mapper.toBlockExact(ll[0], ll[1]);
+            minX = Math.min(minX, b[0]);
+            maxX = Math.max(maxX, b[0]);
+            minZ = Math.min(minZ, b[1]);
+            maxZ = Math.max(maxZ, b[1]);
+        }
+        int cx0 = (int) Math.floor(minX / 16) - 1, cx1 = (int) Math.floor(maxX / 16) + 1;
+        int firstLeft = Math.max(a.firstRow(), pending.doneRow() + 1);
+        int from = Math.max((int) Math.floor(minZ / 16) - 1, firstLeft);
+        int to = Math.min((int) Math.floor(maxZ / 16) + 1, a.lastRow());
+        if (from > to) return;
+        double rowPx = Math.abs(physOfBlock(0, 16)[1] - physOfBlock(0, 0)[1]);
+        int step = Math.max(1, (int) Math.ceil(1.0 / Math.max(1e-6, rowPx)));
+        canvas.beginOverlay(g);
+        for (int cz = from; cz <= to; cz += step) {
+            int[] runs = a.rawRuns(cz);
+            if (runs == null) continue;
+            int last = Math.min(to, cz + step - 1);
+            for (int i = 0; i < runs.length; i += 2) {
+                if (runs[i + 1] >= cx0 && runs[i] <= cx1) shadeBlocks(g, Math.max(runs[i], cx0), cz, Math.min(runs[i + 1], cx1), last, PENDING_FILL);
+            }
+        }
+        if (step == 1 && rowPx >= 2) {
+            int t = Math.max(1, (int) Math.round(rowPx / 12));
+            for (int cz = from; cz <= to; cz++) {
+                int[] runs = a.rawRuns(cz);
+                if (runs == null) continue;
+                for (int i = 0; i < runs.length; i += 2) {
+                    if (runs[i + 1] < cx0 || runs[i] > cx1) continue;
+                    edgeLine(g, runs[i] * 16.0, cz * 16.0, runs[i] * 16.0, (cz + 1) * 16.0, t, PENDING_EDGE);
+                    edgeLine(g, (runs[i + 1] + 1) * 16.0, cz * 16.0, (runs[i + 1] + 1) * 16.0, (cz + 1) * 16.0, t, PENDING_EDGE);
+                }
+                for (int side = 0; side < 2; side++) {
+                    // the first row left has an edge on its north side even where the area goes on (those rows are done)
+                    int[] other = side == 0 && cz == firstLeft && firstLeft > a.firstRow() ? null : a.rawRuns(side == 0 ? cz - 1 : cz + 1);
+                    int[] open = other == null ? runs : com.berg.orbis.worldgen.ChunkSelection.difference(runs, other);
+                    double ez = (side == 0 ? cz : cz + 1) * 16.0;
+                    for (int i = 0; i < open.length; i += 2) {
+                        int x0 = Math.max(open[i], cx0), x1 = Math.min(open[i + 1], cx1);
+                        if (x0 <= x1) edgeLine(g, x0 * 16.0, ez, (x1 + 1) * 16.0, ez, t, PENDING_EDGE);
+                    }
+                }
+            }
+        }
+        canvas.endOverlay(g);
+    }
+
+    /**
      * Beyond the world border, shaded as outside the allowed area: in a cubic world it is much nearer than vanilla's (Cubic Worlds packs
      * positions with more bits for height), and the far side of the Earth can lie beyond it.
      */
@@ -1068,10 +1129,14 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
 
     /** A straight edge of the allowed area (block coordinates), {@code t} physical pixels thick. */
     private void edgeLine(GuiGraphicsExtractor g, double xa, double za, double xb, double zb, int t) {
+        edgeLine(g, xa, za, xb, zb, t, LIMIT_EDGE);
+    }
+
+    private void edgeLine(GuiGraphicsExtractor g, double xa, double za, double xb, double zb, int t, int colour) {
         double[] p = physOfBlock(xa, za), q = physOfBlock(xb, zb);
         int x0 = (int) Math.round(Math.min(p[0], q[0])), x1 = (int) Math.round(Math.max(p[0], q[0]));
         int y0 = (int) Math.round(Math.min(p[1], q[1])), y1 = (int) Math.round(Math.max(p[1], q[1]));
-        g.fill(x0 - t / 2, y0 - t / 2, Math.max(x1, x0 + 1) + (t + 1) / 2, Math.max(y1, y0 + 1) + (t + 1) / 2, LIMIT_EDGE);
+        g.fill(x0 - t / 2, y0 - t / 2, Math.max(x1, x0 + 1) + (t + 1) / 2, Math.max(y1, y0 + 1) + (t + 1) / 2, colour);
     }
 
     private double[] physOfBlock(double x, double z) {
@@ -1162,15 +1227,18 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     }
 
     /** A bar of a round number of blocks, with the real distance it stands for. */
-    /** Says what each shading is, above the scale bar: the hard limit's red, and the grey haze when it is on. */
+    /** Says what each shading is, above the scale bar: the hard limit's red, the grey haze when it is on, and the pre-generation left to do. */
     private void drawLimitLegend(GuiGraphicsExtractor g) {
         com.berg.orbis.net.AllowedAreaPayload limit = com.berg.orbis.client.OrbisClient.allowedArea;
         boolean red = limit != null && limit.on() && !limit.area().isEmpty();
         boolean grey = greyOut && BlockMapClient.available();
-        if (!red && !grey) return;
+        com.berg.orbis.net.PendingAreaPayload pending = com.berg.orbis.client.OrbisClient.pendingArea;
+        boolean purple = pending.area() != null && !pending.area().isEmpty() && pending.doneRow() < pending.area().lastRow();
+        if (!red && !grey && !purple) return;
         String redText = Component.translatable("orbisterrarum.map.hardlimit").getString();
         String greyText = Component.translatable("orbisterrarum.map.notyet").getString();
-        int rows = (red ? 1 : 0) + (grey ? 1 : 0);
+        String purpleText = Component.translatable("orbisterrarum.map.pending").getString();
+        int rows = (red ? 1 : 0) + (grey ? 1 : 0) + (purple ? 1 : 0);
         // Above the scale bar (its box starts at height - 42), lined up with it; where the tool strip comes down that
         // far, beside the scale bar on the same bottom line instead of out over the map.
         int bottom = height - 46, top = bottom - rows * 12 - 2;
@@ -1181,7 +1249,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             x = scaleRight + 7;
         }
         top += 2;
-        int w = Math.max(red ? font.width(redText) : 0, grey ? font.width(greyText) : 0);
+        int w = Math.max(Math.max(red ? font.width(redText) : 0, grey ? font.width(greyText) : 0), purple ? font.width(purpleText) : 0);
         g.fill(x - 3, top - 2, x + w + 13, bottom, 0xA0000000);
         int y = top;
         if (red) {
@@ -1193,6 +1261,12 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
         if (grey) {
             g.fill(x, y + 1, x + 7, y + 8, VEIL_SWATCH);
             g.text(font, greyText, x + 10, y, WHITE);
+            y += 12;
+        }
+        if (purple) {
+            g.fill(x, y + 1, x + 7, y + 8, PENDING_FILL | 0xFF000000);
+            g.outline(x, y + 1, 7, 7, PENDING_EDGE);
+            g.text(font, purpleText, x + 10, y, WHITE);
         }
     }
 

@@ -519,6 +519,7 @@
   "orbisterrarum.map.select.clear.tip": "Deselect everything (Ctrl+D)",
   "orbisterrarum.map.hardlimit": "Outside the hard limit: never generates",
   "orbisterrarum.map.notyet": "Not generated yet",
+  "orbisterrarum.map.pending": "Pre-generation still to do",
   "orbisterrarum.map.select.expand": "Expand selection",
   "orbisterrarum.map.select.expand.tip": "Expand selection (hold Ctrl for a small step)",
   "orbisterrarum.map.select.shrink": "Shrink selection",

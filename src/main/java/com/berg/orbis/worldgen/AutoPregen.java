@@ -146,6 +146,7 @@ public final class AutoPregen {
     /** Called right after a start (nothing else was running, see begin), so the active task is ours if there is one. */
     private static Component launch(MinecraftServer server, Component message, String what) {
         started = PregenTask.active();
+        if (started != null) PendingPregen.markAuto();
         System.out.println("[orbis] Automatic pre-generation of " + what + ": " + message.getString());
         if (started != null) say(server, "Automatic pre-generation of " + what + " (chosen when the world was created):");
         server.getPlayerList().broadcastSystemMessage(message, false);
