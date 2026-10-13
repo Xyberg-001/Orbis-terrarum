@@ -13,17 +13,17 @@ at Y -1700, so a column's Y is roughly `elevation - 1700` (see "Vertical
 mapping" for what happens above 1500 m).
 
 
-> **Versions.** 1.1.0 (11 October 2026) replaced a first 1.1.0 build of 3 October that was only on GitHub. Where these notes say "before 1.1.0", worlds made with that first build count as before.
+> **Versions.** 2.0.0 (13 October 2026) is the first full release, a complete overhaul of the 1.0.0 beta; it was published as 1.1.0 for two days (11 to 13 October) and replaced a first 1.1.0 build of 3 October that was only on GitHub. Where these notes say "before 2.0.0", worlds made with those 1.1.0 builds of 3 October count as before.
 
 ## Installing
 
 Put `orbisterrarum-<version>.jar` in `mods/` together with Fabric API. The
 settings screens are built with **YetAnotherConfigLib** (`yet_another_config_lib_v3`),
-which comes inside the mod jar since 1.1.0 (a nested jar, `META-INF/jars/`; the
+which comes inside the mod jar since 2.0.0 (a nested jar, `META-INF/jars/`; the
 port kit puts in the build for each Minecraft version from `libs/yacl/<mc>/`).
 It is LGPL-3.0-or-later and included unmodified: `META-INF/licenses/YetAnotherConfigLib/`
 holds its notice (version, source) and the LGPL and GPL texts, and a newer copy
-in `mods/` replaces it (Fabric loads the newest). Before 1.1.0 it was optional
+in `mods/` replaces it (Fabric loads the newest). Before 2.0.0 it was optional
 and creating a world without it failed (the location presets were a YACL type,
 read by the world generator map). **Mod Menu** stays optional: without it the
 Mod Menu settings are reached only through `config/orbisterrarum/orbisterrarum.json`
@@ -182,7 +182,7 @@ in step with this section whenever a source is added or changes.
   downloaded, and the survey test does not cache the zoom-13 tile in memory
   (at a zoom-13 world it would be served uncorrected).
   Only new worlds: `WorldSettings.bareEarthTerrain` defaults to false, so a
-  world saved before 1.1.0 (no entry) keeps Copernicus and its new chunks
+  world saved before 2.0.0 (no entry) keeps Copernicus and its new chunks
   meet its old ones; `fromConfig` gives a new world the config's value
   (true). A dedicated server whose world has no stored settings takes the
   terrain from its config, so config version 18 switches it off there on
@@ -362,7 +362,7 @@ Minecraft allows at most 4064 blocks between the floor and the ceiling of a
 dimension; Everest alone is 8 849 m. The world therefore uses the full
 Y -2032..2031 range with sea level at Y -1700 (3 731 blocks for mountains,
 332 for the sea floor) and converts metres to Y in one of two modes
-(`verticalMode`). Since 1.1.0 this is not a setting: a new world gets **relative**,
+(`verticalMode`). Since 2.0.0 this is not a setting: a new world gets **relative**,
 or **compress** where its scale leaves room for Everest under the ceiling's
 squeeze (about 1:3.2 and coarser, so the 1:32 country map; at such scales relative
 would lower Tibet for nothing) or where the high-altitude window applies.
@@ -380,11 +380,11 @@ A world keeps the mode it was made with.
   blocks lower than Everest, as it should be.
 - **compress** — no regional shift, only the smooth squeeze near the ceiling
   (and floor): 1:1 throughout wherever the world has room.
-- **clamp** (worlds made before 1.1.0 only, mostly 1:32 country maps) — plain 1:1
+- **clamp** (worlds made before 2.0.0 only, mostly 1:32 country maps) — plain 1:1
   cut off at Y 2031. Removed as a choice with compress: at any scale where it is
   safe, compress is the same, and at 1:1 it cut every mountain above 3.7 km flat.
 
-**High-altitude window** (1.1.0, `WorldHeight.window`, new singleplayer worlds
+**High-altitude window** (2.0.0, `WorldHeight.window`, new singleplayer worlds
 with an automatic height). The engine's 4 064 blocks cannot grow (a block
 position keeps 12 bits for Y, on every client), but anchored to sea level a
 mountain world wastes much of them: around Everest the ground within 16 km
@@ -425,7 +425,7 @@ and a window must put it there (between the floor and -1968 it is not one).
 Terrain, "Mountain worlds: true heights", default on, also per world) turns
 it off for a mountain world meant to reach the sea.
 
-**Uniform heights** (1.1.0, `uniformHeights`, Advanced → Terrain, default off,
+**Uniform heights** (2.0.0, `uniformHeights`, Advanced → Terrain, default off,
 per world). Every height divided by one factor, `heightSquash` (real metres
 per block of height over the scale's own, `OrbisConfig.verticalMetersPerBlock`),
 in mode compress with a 64-block squeeze under the ceiling: no region is
@@ -903,7 +903,7 @@ Kartverket's surface model (building heights) stays.
   (ocean variants by temperature and depth, river, beach, swamp, forest,
   taiga, jungle, desert, peaks, snowy variants…). Snow layers / ice where the
   estimated temperature is below `snowTemperatureC`.
-- Mountains by relief (`reliefBiomes`, worlds made with 1.1.0 or later): the
+- Mountains by relief (`reliefBiomes`, worlds made with 2.0.0 or later): the
   highest and lowest ground within 500 m (nine coarse samples 500 m apart,
   the same measurement the Deep Dark uses). A column of natural cover (no
   town, farm, park, water or sand, no building) in the upper 60% of 300 m or
@@ -1144,7 +1144,7 @@ worlds pick it up for the regions they load next, and the file is deleted
 unless `keepDownloadedMapFiles`. Measured: Malta end to end in under a
 minute (8 MB file, 6 MB kept); Geofabrik gave 165 KB/s from India, so Norway
 (1.3 GB) takes over two hours there, shown as time left in the toast.
-The world map's **Map data: Download** (beside Generate, 1.1.1; a World window
+The world map's **Map data: Download** (beside Generate, 2.0.0; a World window
 button until then) does the same for the selection before it is pre-generated, for
 operators; Stop on its entry in the pre-generation list stops it (the part is continued
 next time, or started again when 12 h old).
@@ -1205,7 +1205,7 @@ stuck one.
 - Landmark schematics are pasted per chunk as an override layer.
 
 ## Commands
-Only the commands the world map cannot do for everyone remain (since 1.1.0; the map (B) does What's
+Only the commands the world map cannot do for everyone remain (since 2.0.0; the map (B) does What's
 here, the world's facts and your position, Teleport, the real sky switches, the hard limit, Draw all, Download map
 data, Export for Aternos, Pre-generation with Resume and the generated-area haze, and the landmarks
 rebuild themselves).
@@ -1227,7 +1227,7 @@ Written with defaults on first start. Key settings:
 | `elevationSources` | USGS 3DEP, Kartverket DTM 1 m | GeoTIFF terrain services with coverage boxes |
 | `surfaceModelSources` | 12 national services | lidar surface models for measured building and tree heights (Kartverket's only with `lidarSurfaceModel`; `stacSearch`/`stacAsset`/`crs` for files in a national grid) |
 | `lidarSurfaceModel` | false | the surface model on its own (without `useHighResElevation`'s terrain services); per world |
-| `kartverketWhenReachable` | true | with `lidarSurfaceModel` off, Kartverket's surface model is used anyway while it answers from this network (`ImageServiceDemSource.useWhenReachable`: an 8 x 8 pixel GetCoverage of central Bergen on first use from a generation thread, two tries; a yes is trusted for 15 min across the models a world creation builds, a no is asked again after 2 min. GetCapabilities was the probe until it answered 502 Bad Gateway on 4 Oct 2026 while tiles worked, and an Oslo world was generated without the surface model). Kartverket answered directly from India on 4 Oct 2026 (12/12 tiles, 1.6 s each) after weeks of needing a VPN. Per world; worlds made before 1.1.0 have no entry and stay off, config v18 turns it off on dedicated servers. Rejected as a VPN-free stand-in the same day: ArcticDEM 2 m (satellite stereo) measured buildings about 40 % too low against Kartverket over 3,349 Bergen buildings (median error 4.4 m, 22 % within a storey; OSM tags 3.9 m, 32 %), and OpenTopography's copy of Kartverket's models is for academics and paying members only |
+| `kartverketWhenReachable` | true | with `lidarSurfaceModel` off, Kartverket's surface model is used anyway while it answers from this network (`ImageServiceDemSource.useWhenReachable`: an 8 x 8 pixel GetCoverage of central Bergen on first use from a generation thread, two tries; a yes is trusted for 15 min across the models a world creation builds, a no is asked again after 2 min. GetCapabilities was the probe until it answered 502 Bad Gateway on 4 Oct 2026 while tiles worked, and an Oslo world was generated without the surface model). Kartverket answered directly from India on 4 Oct 2026 (12/12 tiles, 1.6 s each) after weeks of needing a VPN. Per world; worlds made before 2.0.0 have no entry and stay off, config v18 turns it off on dedicated servers. Rejected as a VPN-free stand-in the same day: ArcticDEM 2 m (satellite stereo) measured buildings about 40 % too low against Kartverket over 3,349 Bergen buildings (median error 4.4 m, 22 % within a storey; OSM tags 3.9 m, 32 %), and OpenTopography's copy of Kartverket's models is for academics and paying members only |
 | `dataFolder` | "" | where downloads and imports are kept (every cache, extracts, places, heights, lake depths, map tiles); empty = the config folder; absolute, `~/...` or relative to the game folder. Nothing is moved when it changes: the log lists the folders still in the config folder. The config file, landmarks, schematics and map marks stay in the config folder |
 | `useAerialImagery` | true | sample orthophoto colours |
 | `imagerySources` | 21 national services, NAIP, Esri World Imagery | tile layers with coverage boxes (smallest box first) |
@@ -1252,7 +1252,7 @@ Written with defaults on first start. Key settings:
 | `climateOverride` | "" | `arid` or `humid` |
 | `snowTemperatureC`, `temperatureOffsetC` | 0.5, 0 | snow line tuning |
 | `metersPerStorey` | 3 | real metres per floor for buildings known only by floor count, and the blocks between floors inside (walkable at every scale); grand buildings at least 4 |
-| `buildingHeights` | auto | `walkable`: one block a metre (three a storey) at any scale; `scale`: true to scale like the terrain (a 4-storey house is 6 blocks at 1:2, 3 at 1:4); `auto`: walkable at 1:2 and finer, true to scale coarser. Per world: worlds made before 1.1.0 have no entry and stay `scale` (1.1.0 made every height true to scale; a Bergen 1:2 world from 29 Sep, made before that, stands 3-10 blocks higher on a fifth of its columns, in steps of 1.5 blocks a storey). Every metre-to-block conversion of a building (tags, registers, atlas, lidar walls and roofs, min_height) goes through `FeatureRasterizer.buildingBlocks`. Also: a `building:part` with no height tags of its own is measured like a building (atlas, registers, lidar) instead of taking the storey guess, and a part outside every building outline counts as a building; the atlas falls back to the tallest atlas building inside a big outline when none is within 20 m of its centre |
+| `buildingHeights` | auto | `walkable`: one block a metre (three a storey) at any scale; `scale`: true to scale like the terrain (a 4-storey house is 6 blocks at 1:2, 3 at 1:4); `auto`: walkable at 1:2 and finer, true to scale coarser. Per world: worlds made before 2.0.0 have no entry and stay `scale` (2.0.0 made every height true to scale; a Bergen 1:2 world from 29 Sep, made before that, stands 3-10 blocks higher on a fifth of its columns, in steps of 1.5 blocks a storey). Every metre-to-block conversion of a building (tags, registers, atlas, lidar walls and roofs, min_height) goes through `FeatureRasterizer.buildingBlocks`. Also: a `building:part` with no height tags of its own is measured like a building (atlas, registers, lidar) instead of taking the storey guess, and a part outside every building outline counts as a building; the atlas falls back to the tallest atlas building inside a big outline when none is within 20 m of its centre |
 
 ## Testing
 
@@ -1296,7 +1296,7 @@ Written with defaults on first start. Key settings:
   height changed.
 - 0.3.0 added the world settings screen (YetAnotherConfigLib), per-world
   settings stored in the generator, Nominatim place search, Mod Menu
-  integration and `terrainOnlyBeyondBlocks` (removed in 1.1.0: the far view
+  integration and `terrainOnlyBeyondBlocks` (removed in 2.0.0: the far view
   options feed Distant Horizons and Voxy from Orbis's own data). The settings codec was
   round-tripped through NBT offline; the screens themselves compile against
   the real YACL/Mod Menu jars but were not opened in-game by the author.
@@ -1436,7 +1436,7 @@ No extra software or DNS change is needed on the player's side.
   the lowest corner of the footprint, so on a slope most sides face into
   the hill), and the three cells in front of the door are stepped down or
   up to the sill so the way out is walkable.
-- **Doors are chosen last** (1.1.0), once every footprint and
+- **Doors are chosen last** (2.0.0), once every footprint and
   `building:part` is in the raster. Chosen while each building was drawn,
   a door often opened onto a neighbour drawn after it or had a part's wall
   drawn over the room behind it: in central Bergen 411 of 773 doors had a
@@ -1589,11 +1589,11 @@ No extra software or DNS change is needed on the player's side.
   ```
   pip install overturemaps
   python -m overturemaps download --bbox=5.05,60.20,5.65,60.55 -f geojson --type=place -o bergen-places.geojson
-  java -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.PlacesImporter bergen-places.geojson --out config/orbisterrarum/places
+  java -cp mods/orbisterrarum-2.0.0+26.3.jar com.berg.orbis.osm.PlacesImporter bergen-places.geojson --out config/orbisterrarum/places
   ```
 
   (from the Minecraft instance folder, with the game closed or before the
-  area generates; there is no in-game command for it since 1.1.0). Each place becomes an OSM-style tagged node from its Overture
+  area generates; there is no in-game command for it since 2.0.0). Each place becomes an OSM-style tagged node from its Overture
   category (restaurant, bar, hotel, museum, gym, pharmacy, supermarket,
   clothing store, hairdresser, bank, school, church, office, ...); places
   without a name, with an unusable category or with confidence below 0.35
@@ -1622,7 +1622,7 @@ No extra software or DNS change is needed on the player's side.
   4 deep attempts per chunk, they need a cave wall to attach to), amethyst
   geodes (1 in 24 chunks), fossils, water and lava springs, glow lichen.
   Mineshafts keep vanilla's cave-spider spawners (1 corridor in 23 has one).
-- **Underground layout 2** (`undergroundVersion`, worlds made with 1.1.0 or
+- **Underground layout 2** (`undergroundVersion`, worlds made with 2.0.0 or
   later; older worlds keep layout 1 so their new chunks meet the old caves,
   and a dedicated server's existing config is migrated to 1):
   - *Roof by surroundings* (`UndergroundBand.roofDepth`): the band top is the
@@ -1717,7 +1717,7 @@ Norwegian peaks stand about 75 blocks above the sea.
    instance folder (the one with `mods/` and `config/`):
 
    ```
-   java -Xmx4g -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf"
+   java -Xmx4g -cp mods/orbisterrarum-2.0.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf"
    ```
 
    or in game: Map data: Download beside Generate on the world map (or the offer when the world is
@@ -1740,7 +1740,7 @@ Norwegian peaks stand about 75 blocks above the sea.
    Example, Bergen for Aternos:
 
    ```
-   java -Xmx12g -cp mods/orbisterrarum-1.1.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf" --full --name bergen-full --bbox 60.20 5.05 60.55 5.65
+   java -Xmx12g -cp mods/orbisterrarum-2.0.0+26.3.jar com.berg.orbis.osm.extract.ExtractImporter "E:\Software dev projects\Orbis Terrarum\data\norway-latest.osm.pbf" --full --name bergen-full --bbox 60.20 5.05 60.55 5.65
    ```
 3. **Create the world**: Customize → World → *World type:
    Country map 1:32*. That sets 32 m per block, the transverse Mercator
@@ -1803,7 +1803,7 @@ pedestrian streets as light streets, footpaths and tracks as fixed-width dashes,
 thin; national and regional borders; then labels, most important first, each claiming its space (places,
 water names, peaks with heights, street names upright along their longest straight piece from 14, named
 places as dots coloured by kind from 15 by rank, all from 17, house numbers from 18). Names are the local ones
-in Latin letters, else `name_en`, `name:latin` or `name_int`. Drawing takes about half a second a tile, so a drawn tile is kept as a PNG in `map-tile-cache/street-v1/` (named `.img` so the cache trim counts it) and read back in 20-60 ms while it is newer than its source tile; `STYLE` is bumped when the drawing changes. A source tile is decoded once for all the finer tiles drawn from it (the last 8, shared by the drawing threads), and a finer tile only draws the features whose bounds reach into it (a zoom-17 tile is a 64th of its zoom-14 source). Places carry a white symbol in their dot by kind (bag, trolley, fork and knife, cup, glass, bed, cross, pill, mortarboard, book, columns, star, film, bus, train, boat, plane, P, $, pump, church cross, tree, ball, envelope, shield), drawn with Java2D shapes. The night street map (`orbis-street-dark`, `Layer.STREET_DARK`; a button at the map's right edge, shown with the street map, with a 12-pixel sun (light) or crescent moon (dark) drawn over it for the mode the map is in (the font's ☾ read as a "C"), switches it and remembers the choice in `streetMapDark`; the layer button skips it) is the same drawing with every colour looked up in `StreetTiles.DARK` (streets a little lighter than the ground, as on Google's night map; places' colours lightened; a dark halo), cached in `street-dark-v2/`. Footpaths and sidewalks are quiet white lines with a faint edge (red dashes for each of Oslo's mapped sidewalks covered the centre); cycleways blue, steps short grey dashes, tracks brown dashes. The world map's not-generated haze is orange (0x80F5A04A; grey until 4 Oct 2026, lost on the light street map), its button "Not generated: on/off". The Minecraft blocks over the map (Blocks: on/off, on by default) are drawn fully opaque (an opacity cycle until 1.1.1). The elevation layer
+in Latin letters, else `name_en`, `name:latin` or `name_int`. Drawing takes about half a second a tile, so a drawn tile is kept as a PNG in `map-tile-cache/street-v1/` (named `.img` so the cache trim counts it) and read back in 20-60 ms while it is newer than its source tile; `STYLE` is bumped when the drawing changes. A source tile is decoded once for all the finer tiles drawn from it (the last 8, shared by the drawing threads), and a finer tile only draws the features whose bounds reach into it (a zoom-17 tile is a 64th of its zoom-14 source). Places carry a white symbol in their dot by kind (bag, trolley, fork and knife, cup, glass, bed, cross, pill, mortarboard, book, columns, star, film, bus, train, boat, plane, P, $, pump, church cross, tree, ball, envelope, shield), drawn with Java2D shapes. The night street map (`orbis-street-dark`, `Layer.STREET_DARK`; a button at the map's right edge, shown with the street map, with a 12-pixel sun (light) or crescent moon (dark) drawn over it for the mode the map is in (the font's ☾ read as a "C"), switches it and remembers the choice in `streetMapDark`; the layer button skips it) is the same drawing with every colour looked up in `StreetTiles.DARK` (streets a little lighter than the ground, as on Google's night map; places' colours lightened; a dark halo), cached in `street-dark-v2/`. Footpaths and sidewalks are quiet white lines with a faint edge (red dashes for each of Oslo's mapped sidewalks covered the centre); cycleways blue, steps short grey dashes, tracks brown dashes. The world map's not-generated haze is orange (0x80F5A04A; grey until 4 Oct 2026, lost on the light street map), its button "Not generated: on/off". The Minecraft blocks over the map (Blocks: on/off, on by default) are drawn fully opaque (an opacity cycle until 2.0.0). The elevation layer
 (`client/ElevationTiles`, also in the world generator map) is drawn here from
 Mapterhorn's terrain tiles, the heights the world is built from, sharing the
 generator's `dem-cache` (files and `.missing` markers): a hypsometric tint
@@ -1879,7 +1879,7 @@ scale, projection, world id; `net/WorldInfoPayload`) when they join, only if the
 has Orbis Terrarum installed, so friends without the mod still join with plain
 Minecraft. Tiles use the same disk cache as the area preview.
 
-### The map instead of commands (1.1.0)
+### The map instead of commands (2.0.0)
 
 Most `/orbis` commands moved onto the map, behind as little screen furniture as
 possible: one **i** button (the World window), cards that appear only on a
@@ -1900,7 +1900,7 @@ place you asked about, and landmark names only when zoomed in or hovered.
   carry the question's id, so a late answer for a card no longer shown is
   dropped; changes answer with a `msg` line for the map.
 - **Map data: Live / Download** (beside Generate, `MapSelectTool.source`, kept while the
-  game runs; 1.1.1, replacing the World window's Download map data button). Live:
+  game runs; 2.0.0, replacing the World window's Download map data button). Live:
   the online servers are asked while the sweep runs. Download: Generate sends
   `PregenSelectionPayload.downloadMapData`; `MapRequests.generateWithMapData` lists the
   selection at once as a task in the DOWNLOADING state (`PregenTasks.State`, shown
@@ -1943,7 +1943,7 @@ are sent to players only within `displayFrameRange` blocks (48 by default; `mixi
 on `ChunkMap.TrackedEntity.getEffectiveRange`). Frames players hang are not locked and keep vanilla's reach.
 It works on the server, so it also helps players without the mod, and in worlds furnished before.
 
-The commands the map replaced are gone in 1.1.0 (see Commands), and so are `/orbis import`
+The commands the map replaced are gone in 2.0.0 (see Commands), and so are `/orbis import`
 (Download map data handles every scale) and `/orbis import-places` (the places importer runs
 outside the game).
 
@@ -2078,7 +2078,7 @@ outline)`, rows straight from the runs, no widening), with progress in `orbis-pr
 selection resumes. Shapes are kept per world in
 `config/orbisterrarum/map-selections.json`.
 
-**The list of pre-generations** (`worldgen/PregenTasks`, 1.1.1): every
+**The list of pre-generations** (`worldgen/PregenTasks`, 2.0.0): every
 pre-generation not finished yet is a task, listed in a dropdown behind a button
 on the map's right edge under the World button (the button shows only while
 there are any; a chunk-grid icon with a count, and a thin progress line under
@@ -2104,7 +2104,7 @@ The sweep (`PregenTask.runTask`, an area sweep over the task's chunks) gives
 its rows on disk to the task every 10 s (`PregenTasks.progress`), so a pause,
 crash or restart carries on at the next row; the task that was running when
 the world closed carries on by itself 5 s after it opens. Older progress files
-(`selection-<fingerprint>.json`, `<place>.json`, from 1.1.0) give a new task's
+(`selection-<fingerprint>.json`, `<place>.json`, from 2.0.0) give a new task's
 rows already done. Players with the mod get the list as
 `net/PregenTasksPayload` (on joining and at every change; each area only the
 first time, encoded as the hard limit's, at most `AllowedAreaPayload.MAX_RUNS`
@@ -2156,7 +2156,7 @@ their light (SkyLight, BlockLight) and heightmaps, marked `isLightOn` false
 (since 5 Oct 2026): Minecraft rebuilds missing heightmaps as it reads a chunk
 and relights a chunk saved as not lit when it loads (the light steps run for
 loaded chunks too), both checked in 26.2 and 26.3. That was 22% of the
-terrain: Bergen 1:2 (1.1.0) went from 2.36 to 1.85 GB of terrain and fitted
+terrain: Bergen 1:2 (2.0.0) went from 2.36 to 1.85 GB of terrain and fitted
 whole (520,292 chunks, 2.81 GB of data, 2.4 GB on disk, 536 s on 12 threads;
 every sampled chunk readable, unlit, without heightmaps), where before the
 far ends of the strip were left out. The budget counts the chunks as written.
