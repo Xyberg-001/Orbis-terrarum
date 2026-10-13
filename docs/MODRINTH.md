@@ -126,7 +126,7 @@ Fixed
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.
 - **World map (B):** street, satellite and elevation map of your world, with search and teleport.
 - **Fast pre-generation** of a whole area before you play.
-- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft.
+- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft. The world map (B) and the settings screens need the mod on the player's own game too.
 
 ### Getting started
 1. Install Fabric API and the Orbis Terrarum jar for your Minecraft version (26.2 or 26.3). **Mod Menu** is recommended, for the settings.
