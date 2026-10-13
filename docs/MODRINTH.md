@@ -36,7 +36,7 @@ Two uploads, one jar per Minecraft version (the same changelog for both):
 | Field | 26.3 | 26.2 |
 |---|---|---|
 | File | `orbisterrarum-1.1.0+26.3.jar` | `orbisterrarum-1.1.0+26.2.jar` |
-| Version number | `1.1.0+26.3` | `1.1.0+26.2` |
+| Version number | `1.1.0` | `1.1.0` (the title tells the two apart) |
 | Version title | Orbis Terrarum 1.1.0 (26.3) | Orbis Terrarum 1.1.0 (26.2) |
 | Release channel | Release | Release |
 | Loaders | Fabric | Fabric |
