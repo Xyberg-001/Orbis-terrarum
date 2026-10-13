@@ -36,12 +36,12 @@ Two uploads, one jar per Minecraft version (the same changelog for both):
 | Field | 26.3 | 26.2 |
 |---|---|---|
 | File | `orbisterrarum-1.1.0+26.3.jar` | `orbisterrarum-1.1.0+26.2.jar` |
-| Version number | `1.1.0+26.3` | `1.1.0+26.2` |
+| Version number | `1.1.0` | `1.1.0` (the title tells the two apart) |
 | Version title | Orbis Terrarum 1.1.0 (26.3) | Orbis Terrarum 1.1.0 (26.2) |
 | Release channel | Release | Release |
 | Loaders | Fabric | Fabric |
 | Game versions | 26.3 | 26.2 |
-| Dependencies | Fabric API — required; Mod Menu — optional (YetAnotherConfigLib comes inside the jar, LGPL, unmodified) | the same |
+| Dependencies | Fabric API — required; Mod Menu — required (it opens the settings; YetAnotherConfigLib comes inside the jar, LGPL, unmodified) | the same |
 
 Changelog:
 
@@ -129,7 +129,7 @@ Fixed
 - **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft. The world map (B) and the settings screens need the mod on the player's own game too.
 
 ### Getting started
-1. Install Fabric API and the Orbis Terrarum jar for your Minecraft version (26.2 or 26.3). **Mod Menu** is recommended, for the settings.
+1. Install Fabric API, **Mod Menu** and the Orbis Terrarum jar for your Minecraft version (26.2 or 26.3). Mod Menu opens the settings (map data and storage folder, performance, logging); a server doesn't need it, it uses `/orbis settings`.
 2. **Create New World → World Type: Orbis Terrarum → Customize**, open the **World generator map**, search a place or right-click where you want to spawn, and create the world.
 
 Other world types stay plain vanilla.
