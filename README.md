@@ -14,7 +14,7 @@ coastlines, rivers, every building, roads, bridges, railways and forests. Minecr
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.
 - **World map (B):** street, satellite and elevation map of your world, with search and teleport.
 - **Fast pre-generation** of a whole area before you play.
-- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft.
+- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft. The world map (B) and the settings screens need the mod on the player's own game too.
 
 ## Install
 
@@ -30,6 +30,8 @@ New areas need an internet connection while they generate; everything downloaded
 where you want to spawn, and create the world. The other tabs (Features, Look & Climate, Data Sources, Advanced) have sensible defaults.
 
 ## World map (B)
+
+Players need the mod installed on their own game to open it (on a server too); without it they play normally, just without the map.
 
 | Action | How |
 |---|---|
