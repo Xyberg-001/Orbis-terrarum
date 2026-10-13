@@ -20,7 +20,7 @@ coastlines, rivers, every building, roads, bridges, railways and forests. Minecr
 
 1. **Fabric API** for your Minecraft version.
 2. `orbisterrarum-<version>+<minecraft>.jar` in `mods/`.
-3. Recommended: **Mod Menu**, for the settings.
+3. **Mod Menu**: needed to open the settings (map data and storage folder, performance, logging). A server doesn't need it: it uses `/orbis settings`.
 
 New areas need an internet connection while they generate; everything downloaded is cached.
 
