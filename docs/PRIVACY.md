@@ -5,7 +5,7 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 | Service | Used for | Sent |
 |---|---|---|
 | Mapterhorn (tiles.mapterhorn.com) | Terrain elevation; the Elevation map layer | Tile coordinates |
-| OpenGeoHub (s3.opengeohub.org) | Bare-earth terrain (GEDTM30) where no national survey exists, for worlds made with 1.1.0 or later | Byte ranges of one global file |
+| OpenGeoHub (s3.opengeohub.org) | Bare-earth terrain (GEDTM30) where no national survey exists, for worlds made with 2.0.0 or later | Byte ranges of one global file |
 | Open Waters Seascape (tiles.openwaters.io) | Sea floor; sea depths on the Elevation map layer | Tile coordinates |
 | Geofabrik (download.geofabrik.de) | OpenStreetMap's file for the region holding a new world's area, only when you agree at Create (or press Download map data on the world map); the region list once a month | The region file's name |
 | Overpass API mirrors (overpass-api.de, overpass.kumi.systems, overpass.private.coffee, overpass.openstreetmap.fr) | OpenStreetMap buildings, roads, water | Bounding box of the area |

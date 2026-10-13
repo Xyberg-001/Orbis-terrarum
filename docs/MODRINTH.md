@@ -1,10 +1,10 @@
-# Modrinth upload kit — Orbis Terrarum 1.1.0
+# Modrinth upload kit — Orbis Terrarum 2.0.0
 
 Everything to paste into Modrinth's project settings and "Upload version" forms.
 The description below is the project body (Modrinth renders Markdown).
 
-1.0.0 (28 Sep 2026) was the beta; 1.1.0 (11 Oct 2026) is the first full release, a major overhaul. (A first 1.1.0
-build of 3 Oct was on GitHub only; this 1.1.0 replaces it.) On Modrinth, 1.0.0 stays
+1.0.0 (28 Sep 2026) was the beta; 2.0.0 (13 Oct 2026) is the first full release, a complete overhaul. (It was
+published as 1.1.0 for two days, 11 to 13 Oct, after a first 1.1.0 build of 3 Oct that was on GitHub only.) On Modrinth, 1.0.0 stays
 in the **Beta** channel (Versions → 1.0.0 → Edit → Release channel, if it was ever set to Release), and its
 title can read "Orbis Terrarum 1.0.0 (beta)". The git tag `v1.0.0` stays as it is.
 
@@ -35,9 +35,9 @@ Two uploads, one jar per Minecraft version (the same changelog for both):
 
 | Field | 26.3 | 26.2 |
 |---|---|---|
-| File | `orbisterrarum-1.1.0+26.3.jar` | `orbisterrarum-1.1.0+26.2.jar` |
-| Version number | `1.1.0` | `1.1.0` (the title tells the two apart) |
-| Version title | Orbis Terrarum 1.1.0 (26.3) | Orbis Terrarum 1.1.0 (26.2) |
+| File | `orbisterrarum-2.0.0+26.3.jar` | `orbisterrarum-2.0.0+26.2.jar` |
+| Version number | `2.0.0` | `2.0.0` (the title tells the two apart) |
+| Version title | Orbis Terrarum 2.0.0 (26.3) | Orbis Terrarum 2.0.0 (26.2) |
 | Release channel | Release | Release |
 | Loaders | Fabric | Fabric |
 | Game versions | 26.3 | 26.2 |
