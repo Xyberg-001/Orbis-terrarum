@@ -20,8 +20,8 @@ title can read "Orbis Terrarum 1.0.0 (beta)". The git tag `v1.0.0` stays as it i
 | Client side | Optional (settings screens, area preview and the B world map) |
 | Server side | Required (it generates the world) |
 | License | All Rights Reserved (`LicenseRef-All-Rights-Reserved`), matching `LICENSE` and `fabric.mod.json` |
-| Source code | https://github.com/Xyberg-001/orbis-terrarum |
-| Issues | https://github.com/Xyberg-001/orbis-terrarum/issues |
+| Source code | https://github.com/Xyberg-001/Orbis-terrarum |
+| Issues | https://github.com/Xyberg-001/Orbis-terrarum/issues |
 | External system interactions | While the game runs, the mod copies its bundled WebP image decoder into the system temp folder. Its caches and downloaded map data stay inside the Minecraft folder unless you choose another data folder in its settings (Mod Menu → Orbis Terrarum); Map data: Download saves OpenStreetMap files from Geofabrik there. It reads and writes no other files outside the Minecraft folder. |
 | **Contains AI-generated content** | **Tick it.** Modrinth rule 6.1 requires it: a substantial part of the code and this description were produced with an AI assistant. |
 | Icon | `E:\Software dev projects\Orbis Terrarum\art\Orbis terrarum icon.png` (800×800, 241 KiB; limit 256 KiB). The jar carries the same artwork at 128×128. |
