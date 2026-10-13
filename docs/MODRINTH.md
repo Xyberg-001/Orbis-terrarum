@@ -22,6 +22,7 @@ title can read "Orbis Terrarum 1.0.0 (beta)". The git tag `v1.0.0` stays as it i
 | License | All Rights Reserved (`LicenseRef-All-Rights-Reserved`), matching `LICENSE` and `fabric.mod.json` |
 | Source code | https://github.com/Xyberg-001/orbis-terrarum |
 | Issues | https://github.com/Xyberg-001/orbis-terrarum/issues |
+| External system interactions | While the game runs, the mod copies its bundled WebP image decoder into the system temp folder. Its caches and downloaded map data stay inside the Minecraft folder unless you choose another data folder in its settings (Mod Menu → Orbis Terrarum); Map data: Download saves OpenStreetMap files from Geofabrik there. It reads and writes no other files outside the Minecraft folder. |
 | **Contains AI-generated content** | **Tick it.** Modrinth rule 6.1 requires it: a substantial part of the code and this description were produced with an AI assistant. |
 | Icon | `E:\Software dev projects\Orbis Terrarum\art\Orbis terrarum icon.png` (800×800, 241 KiB; limit 256 KiB). The jar carries the same artwork at 128×128. |
 | Gallery | Real in-game screenshots only (e.g. Bergen from above, a street with buildings, a bridge, the B map). |
@@ -63,15 +64,21 @@ New
 - Pre-generation planned when the world is created: select the area on the map
   (rectangle, ellipse, lasso, expand/shrink, skip open sea), generate it on creation,
   and keep the world to it with a hard limit.
-- Much faster pre-generation, and a resumed one skips what is already there.
-- The world map (B) does most of the work the commands did: search a place and
-  teleport there or select its outline (its largest part or all of it); right-click
-  What's here (place, elevation, climate, road, building); landmarks as pins, ticked
-  once found; the i window with the world's facts, the real sky switches, the hard
-  limit, Draw all for the Blocks layer and Download map data; pre-generation progress
-  with Stop and Resume. The /orbis commands it replaces are gone.
-- Map data from Geofabrik: when you create a world (or with Download map data on the
-  world map), Orbis fetches OpenStreetMap's file for its region, keeps only your area (a
+- Much faster pre-generation, and a resumed one skips what is already there. On a
+  server it gets slower when memory is short, and Download puts the region's whole file
+  on the server's storage (see the description).
+- The world map (B) does the work the commands did: search a place and teleport there
+  or select its outline (its largest part or all of it); right-click What's here
+  (place, elevation, climate, road, building); landmarks as pins, ticked once found;
+  the i window with the world's facts, the real sky switches, the hard limit, Draw all
+  for the Blocks layer and Export for Aternos. Only /orbis settings is left, for servers.
+- Pre-generation list on the world map: every unfinished pre-generation is listed under
+  a button on the right (also after a restart) and shaded purple where it still has to
+  go; choose them to Resume, Pause or Stop them one by one, and new ones queue behind
+  the one running. Each uses Live map data (the online servers) or Download (the
+  Geofabrik file first), switchable when one of them fails.
+- Map data from Geofabrik: when you create a world (or with Map data: Download beside
+  Generate), Orbis fetches OpenStreetMap's file for its region, keeps only your area (a
   country-scale world keeps the whole country's main features) and reads the map from disk.
 - Far view with Voxy in singleplayer: land shown from the map data before it exists.
 - Mountains at 1:1: an area high above the sea (the Himalaya) gets the world's height
