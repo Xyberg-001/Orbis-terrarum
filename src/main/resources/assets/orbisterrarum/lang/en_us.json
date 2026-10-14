@@ -119,7 +119,7 @@
   "orbisterrarum.preview.none": "Nothing selected yet",
   "orbisterrarum.preview.spawn": "Spawn (0, 0)",
   "orbisterrarum.enderEye.searching": "The eye of ender is still looking for a stronghold: use it again in a moment",
-  "orbisterrarum.preview.cubicReach": "Cubic world: it reaches %s km from the spawn each way, and the shaded land lies beyond its border. A smaller scale (more metres a block) reaches farther.",
+  "orbisterrarum.preview.cubicReach": "Cubic world: it ends %s km from the spawn in every direction, so the land shaded dark red can't be generated. A smaller scale (more metres a block) reaches farther.",
   "orbisterrarum.preview.in": "will be generated",
   "orbisterrarum.preview.out": "not generated",
   "orbisterrarum.preview.extent": "Size in blocks",

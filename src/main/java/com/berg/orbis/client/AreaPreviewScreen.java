@@ -638,6 +638,16 @@ public final class AreaPreviewScreen extends Screen {
     private void drawReachNote(GuiGraphicsExtractor g) {
         int reach = cubicReach();
         if (reach == 0) return;
+        // Only while some of the map shows land beyond it (it was shown over the Himalaya, 8,000 km inside the border).
+        boolean beyondInView = false;
+        for (double fx = 0; fx <= 1 && !beyondInView; fx += 0.5) {
+            for (double fy = 0; fy <= 1 && !beyondInView; fy += 0.5) {
+                double[] ll = latLonAt(fx * mapRight(), TOP_H + fy * (height - TOP_H));
+                double[] b = mapper.toBlockExact(ll[0], ll[1]);
+                beyondInView = Math.abs(b[0]) > reach || Math.abs(b[1]) > reach;
+            }
+        }
+        if (!beyondInView) return;
         String s = Component.translatable("orbisterrarum.preview.cubicReach",
                 String.format(Locale.ROOT, "%,.0f", reach * mpb / 1000.0)).getString();
         int left = select != null ? select.textLeft(0, height, 4 + MapSelectTool.STRIP_W + 8) : 4 + MapSelectTool.STRIP_W + 8;
@@ -855,13 +865,23 @@ public final class AreaPreviewScreen extends Screen {
             }
         }
         y += 4;
+        // Room for the longer of the two notes, and for the limit's note even while it is off: the text is drawn at the largest size
+        // that fits, and switching Generate on creation (or Only the selection) changed that size.
         boolean on = generateOn.getAsBoolean();
-        for (FormattedCharSequence l : font.split(Component.translatable(on ? "orbisterrarum.preview.generate.note.on" : "orbisterrarum.preview.generate.note.off"), w)) {
-            if (draw) g.text(font, l, 0, y, on ? GREEN : AMBER);
-            y += 10;
+        List<FormattedCharSequence> note = font.split(Component.translatable(on ? "orbisterrarum.preview.generate.note.on" : "orbisterrarum.preview.generate.note.off"), w);
+        int noteRows = Math.max(font.split(Component.translatable("orbisterrarum.preview.generate.note.on"), w).size(),
+                font.split(Component.translatable("orbisterrarum.preview.generate.note.off"), w).size());
+        int yNote = y;
+        for (FormattedCharSequence l : note) {
+            if (draw) g.text(font, l, 0, yNote, on ? GREEN : AMBER);
+            yNote += 10;
         }
-        if (limitOn.getAsBoolean()) {
-            for (FormattedCharSequence l : font.split(Component.translatable("orbisterrarum.preview.limit.note"), w)) {
+        y += noteRows * 10;
+        List<FormattedCharSequence> limitNote = font.split(Component.translatable("orbisterrarum.preview.limit.note"), w);
+        if (!limitOn.getAsBoolean()) {
+            y += limitNote.size() * 10;
+        } else {
+            for (FormattedCharSequence l : limitNote) {
                 if (draw) g.text(font, l, 0, y, AMBER);
                 y += 10;
             }
