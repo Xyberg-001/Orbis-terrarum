@@ -172,6 +172,8 @@ public final class WorldSettings {
     public int undergroundVersion = 1;
     /** OrbisConfig.reliefBiomes; false for worlds made before it existed (their biomes must meet their new chunks). */
     public boolean reliefBiomes = false;
+    /** OrbisConfig.surveyedTunnels; false for worlds made before it existed (their tunnels must meet their new chunks). */
+    public boolean surveyedTunnels = false;
 
     public static WorldSettings fromConfig(OrbisConfig c) {
         WorldSettings s = new WorldSettings();
@@ -264,6 +266,7 @@ public final class WorldSettings {
         s.bareEarthTerrain = c.bareEarthTerrain;
         s.undergroundVersion = c.undergroundVersion;
         s.reliefBiomes = c.reliefBiomes;
+        s.surveyedTunnels = c.surveyedTunnels;
         return s;
     }
 
@@ -357,6 +360,7 @@ public final class WorldSettings {
         c.bareEarthTerrain = bareEarthTerrain;
         c.undergroundVersion = undergroundVersion;
         c.reliefBiomes = reliefBiomes;
+        c.surveyedTunnels = surveyedTunnels;
     }
 
     /** The installation config with this world's settings applied (a copy; the base is untouched). */

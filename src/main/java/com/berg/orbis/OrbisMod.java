@@ -696,6 +696,8 @@ public class OrbisMod implements ModInitializer {
                     return Double.NaN;
                 }
             });
+            // Surveyed heights (tunnel floors) to block Y as the terrain's are.
+            rasterizer.setMetresToY((metres, bx, bz) -> vertical.toY(metres, (int) Math.floor(bx), (int) Math.floor(bz)));
             // The terrain tiles under a region, all at once, before its roads and water read them point by point.
             rasterizer.setTerrainPrefetch(box -> tiles.prefetch(cfg.demZoom, box[0], box[1], box[2], box[3]));
             // The surface model's tiles under a region's buildings, fetched in parallel before the buildings are measured.
@@ -788,7 +790,7 @@ public class OrbisMod implements ModInitializer {
                 }
                 if (!maps.isEmpty()) rasterizer.setBedrock(new com.berg.orbis.geology.Rocks(maps));
             }
-            if (cfg.nvdbRoadWidths) rasterizer.setNvdb(new com.berg.orbis.osm.NvdbRoads.Store(data.resolve("nvdb-cache")));
+            if (cfg.nvdbRoadWidths || cfg.surveyedTunnels) rasterizer.setNvdb(new com.berg.orbis.osm.NvdbRoads.Store(data.resolve("nvdb-cache")));
             if (cfg.nvdbRoadWidths && cfg.roadSources != null && !cfg.roadSources.isEmpty()) {
                 com.berg.orbis.osm.RoadDatabases roads = new com.berg.orbis.osm.RoadDatabases(cfg, data.resolve("road-db-cache"));
                 if (!roads.isEmpty()) rasterizer.setRoadDatabases(roads);

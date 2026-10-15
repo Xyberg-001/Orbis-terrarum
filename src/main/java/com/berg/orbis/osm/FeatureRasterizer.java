@@ -145,6 +145,17 @@ public final class FeatureRasterizer {
         this.elevationMeters = metres;
     }
 
+    /** Block Y of a real height in metres at a column, by the world's vertical mapping (as the terrain's). */
+    public interface MetresToY {
+        double y(double metres, double blockX, double blockZ);
+    }
+
+    private volatile MetresToY metresToY;
+
+    public void setMetresToY(MetresToY f) {
+        this.metresToY = f;
+    }
+
     /** Real elevation in metres at a block column (NaN when unknown). */
     private double metresAt(int x, int z) {
         Elevation m = elevationMeters;
@@ -1589,6 +1600,7 @@ public final class FeatureRasterizer {
     }
 
     private void rasterizeTransport(RegionRaster r, List<OsmWay> ways, NvdbRoads.Index nvdbIndex, List<Cover> covers) {
+        TunnelHeights surveyed = new TunnelHeights(r);
         List<OsmWay> lines = new ArrayList<>();
         for (OsmWay w : ways) {
             if (transportKind(w.tags()) != null) lines.add(w);
@@ -1746,7 +1758,7 @@ public final class FeatureRasterizer {
             // next one (whether a far end is a portal is only known near that end). A portal end is merely
             // assumed a little deeper than it will be.
             double[] pre = tunnelProfile(r, null, p, preHalf, Math.max(1e-6, len), e0 - tunnelCover, e1 - tunnelCover,
-                    other -> false, endCovers, 0, 0);
+                    other -> false, endCovers, 0, 0, surveyed.along(w, p, Math.max(1e-6, len)));
             if (inA) nodeTunnel.merge(a, pre[0], Math::min);
             if (inB) nodeTunnel.merge(b, pre[pre.length - 1], Math::min);
             if (DEBUG_TUNNELS) {
@@ -1867,7 +1879,8 @@ public final class FeatureRasterizer {
                         boolean in0 = interiorTunnelNode(k0, tunnelEndCount, groundEnds), in1 = interiorTunnelNode(k1, tunnelEndCount, groundEnds);
                         double s0 = in0 ? nodeTunnel.getOrDefault(k0, e0 - tunnelCover) : e0;
                         double s1 = in1 ? nodeTunnel.getOrDefault(k1, e1 - tunnelCover) : e1;
-                        deckProfile = tunnelProfile(r, rf, pts, fullHalf, wayLen, s0, s1, isApproach, covers, in0 ? 0 : portalMargin, in1 ? 0 : portalMargin);
+                        deckProfile = tunnelProfile(r, rf, pts, fullHalf, wayLen, s0, s1, isApproach, covers, in0 ? 0 : portalMargin, in1 ? 0 : portalMargin,
+                                surveyed.along(way, pts, wayLen));
                         // Every way through an interior node meets it at the agreed floor: whatever this way alone
                         // would dig deeper near the node (a street above it, a building the node pass did not see)
                         // is ramped back up to the node at the usual grade rather than left as a step.
@@ -2188,7 +2201,8 @@ public final class FeatureRasterizer {
     private final double tunnelCover;
 
     /**
-     * Road height along a tunnel: a straight line between the two portals,
+     * Road height along a tunnel: its surveyed heights where a road database has
+     * them ({@link TunnelHeights}), else a straight line between the two portals,
      * pushed down wherever it would come too close to the ground above
      * ({@link #tunnelCover} over the whole width of the tunnel, so a
      * hillside falling away beside it does not open the wall) or to a street
@@ -2250,7 +2264,7 @@ public final class FeatureRasterizer {
 
     private double[] tunnelProfile(RegionRaster r, RoadFeature rf, List<double[]> pts, double halfWidth, double wayLen,
                                    double y0, double y1, java.util.function.Predicate<RoadFeature> isApproach, List<Cover> covers,
-                                   int margin0, int margin1) {
+                                   int margin0, int margin1, double[] surveyed) {
         int n = (int) Math.ceil(wayLen) + 1;
         double[] cap = new double[n];
         Arrays.fill(cap, Double.POSITIVE_INFINITY);
@@ -2317,12 +2331,168 @@ public final class FeatureRasterizer {
         });
         for (int i = 1; i < n; i++) cap[i] = Math.min(cap[i], cap[i - 1] + RAMP_GRADE);
         for (int i = n - 2; i >= 0; i--) cap[i] = Math.min(cap[i], cap[i + 1] + RAMP_GRADE);
+        double[] line = guideLine(n, y0, y1, surveyed);
         double[] y = new double[n];
-        for (int i = 0; i < n; i++) {
-            double straight = n == 1 ? y0 : y0 + (y1 - y0) * ((double) i / (n - 1));
-            y[i] = Math.min(straight, cap[i]);
-        }
+        for (int i = 0; i < n; i++) y[i] = Math.min(line[i], cap[i]);
         return y;
+    }
+
+    /**
+     * The floor the tunnel follows before the cover pushes it down: a straight line between the two ends, or, where a road database
+     * surveyed the tunnel, the surveyed floor's shape with its ends moved onto the same two heights (the difference shared out
+     * along the way). The ends stay where the portals and the floors agreed with the neighbouring tunnel ways put them: the
+     * surveyed heights there differ by a block or more, and a road meeting the tunnel stepped.
+     */
+    private static double[] guideLine(int n, double y0, double y1, double[] surveyed) {
+        double[] line = new double[n];
+        if (surveyed == null || surveyed.length != n || n < 2) {
+            for (int i = 0; i < n; i++) line[i] = n == 1 ? y0 : y0 + (y1 - y0) * ((double) i / (n - 1));
+            return line;
+        }
+        // The surveyed floor along the whole way: straight across what is missing, held level past the first and last point
+        double[] sv = new double[n];
+        int prev = -1;
+        for (int i = 0; i < n; i++) {
+            if (Double.isNaN(surveyed[i])) continue;
+            if (prev < 0) {
+                for (int k = 0; k < i; k++) sv[k] = surveyed[i];
+            } else {
+                for (int k = prev + 1; k < i; k++) sv[k] = surveyed[prev] + (surveyed[i] - surveyed[prev]) * ((double) (k - prev) / (i - prev));
+            }
+            sv[i] = surveyed[i];
+            prev = i;
+        }
+        if (prev < 0) {
+            for (int i = 0; i < n; i++) line[i] = y0 + (y1 - y0) * ((double) i / (n - 1));
+            return line;
+        }
+        for (int k = prev + 1; k < n; k++) sv[k] = surveyed[prev];
+        double d0 = y0 - sv[0], d1 = y1 - sv[n - 1];
+        for (int i = 0; i < n; i++) {
+            double f = (double) i / (n - 1);
+            line[i] = sv[i] + d0 * (1 - f) + d1 * f;
+        }
+        return line;
+    }
+
+    /**
+     * Heights a road database surveyed along this region's tunnels (Norway's NVDB tunnel bores), per block along a tunnel way.
+     * The bores come whole for every region a tunnel crosses, so each draws the same floor. One per transport pass (the
+     * rasteriser serves several regions at once).
+     */
+    private final class TunnelHeights {
+        private final RegionRaster r;
+        private List<double[][]> bores; // each point: block x, block z, metres
+        private boolean loaded;
+        private final Map<Long, double[]> byWay = new HashMap<>();
+
+        TunnelHeights(RegionRaster r) {
+            this.r = r;
+        }
+
+        /** Block Y along the way (NaN where nothing was surveyed), or null when no bore runs along it. */
+        double[] along(OsmWay way, List<double[]> pts, double wayLen) {
+            int n = (int) Math.ceil(wayLen) + 1;
+            double[] known = byWay.get(way.id());
+            if (known != null && known.length == n) return known;
+            if (byWay.containsKey(way.id()) && known == null) return null;
+            double[] y = compute(pts, n);
+            byWay.put(way.id(), y);
+            return y;
+        }
+
+        private List<double[][]> bores() {
+            if (loaded) return bores;
+            loaded = true;
+            NvdbRoads.Store store = nvdb;
+            if (store == null || metresToY == null || !cfg.surveyedTunnels) return null;
+            double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
+            double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
+            double south = Math.min(a[0], b[0]), north = Math.max(a[0], b[0]), west = Math.min(a[1], b[1]), east = Math.max(a[1], b[1]);
+            if (!NvdbRoads.inNorway(south, west, north, east)
+                    || !com.berg.orbis.config.DataSources.covers("nvdb-roads", south, west, north, east)) return null;
+            List<NvdbRoads.Bore> got = store.tunnels(south, west, north, east);
+            if (got == null || got.isEmpty()) return null;
+            List<double[][]> out = new ArrayList<>();
+            for (NvdbRoads.Bore bore : got) {
+                double[][] line = new double[bore.latLonZ().size()][];
+                for (int i = 0; i < line.length; i++) {
+                    double[] q = bore.latLonZ().get(i);
+                    double[] xz = mapper.toBlockExact(q[0], q[1]);
+                    line[i] = new double[]{xz[0], xz[1], q[2]};
+                }
+                out.add(line);
+            }
+            bores = out;
+            return bores;
+        }
+
+        private double[] compute(List<double[]> pts, int n) {
+            List<double[][]> all = bores();
+            if (all == null) return null;
+            // The bore this way is: the one nearest most of its length. Each point on its own took whichever was nearest, and a
+            // tube of a twin tunnel took the other tube's floor in places, 8 blocks deeper (Nygårdstunnelen).
+            int[] votes = new int[all.size()];
+            walk(pts, n, all, -1, (ai, bore, metres, px, pz) -> votes[bore]++);
+            int best = -1;
+            for (int b = 0; b < votes.length; b++) if (votes[b] > 0 && (best < 0 || votes[b] > votes[best])) best = b;
+            if (best < 0) return null;
+            double[] y = new double[n];
+            Arrays.fill(y, Double.NaN);
+            int[] found = {0};
+            walk(pts, n, all, best, (ai, bore, metres, px, pz) -> {
+                double by = metresToY.y(metres, px, pz);
+                if (Double.isNaN(by)) return;
+                if (Double.isNaN(y[ai])) found[0]++;
+                y[ai] = by;
+            });
+            int count = found[0];
+            // Too little of the way along a bore: not this tunnel's (a way crossing one, or a short stretch beside it)
+            return count >= 3 && count >= 0.3 * n ? y : null;
+        }
+
+        private interface Hit {
+            void at(int ai, int bore, double metres, double px, double pz);
+        }
+
+        /** Every block along the way: the nearest bore running its way within reach (only {@code only}, when 0 or more). */
+        private void walk(List<double[]> pts, int n, List<double[][]> all, int only, Hit hit) {
+            double reach = Math.max(3.0, mapper.blocks(8.0));
+            double cosMax = Math.cos(Math.toRadians(35.0));
+            double along = 0;
+            for (int i = 0; i + 1 < pts.size(); i++) {
+                double[] p0 = pts.get(i), p1 = pts.get(i + 1);
+                double len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+                if (len < 1e-9) continue;
+                double ux = (p1[0] - p0[0]) / len, uz = (p1[1] - p0[1]) / len;
+                for (double s = 0; s <= len; s += 1.0) {
+                    int ai = (int) Math.max(0, Math.min(n - 1, Math.round(along + s)));
+                    double px = p0[0] + ux * s, pz = p0[1] + uz * s;
+                    double best = reach, metres = Double.NaN;
+                    int bestBore = -1;
+                    for (int bi = only < 0 ? 0 : only; bi < (only < 0 ? all.size() : only + 1); bi++) {
+                        double[][] line = all.get(bi);
+                        for (int j = 0; j + 1 < line.length; j++) {
+                            double[] a = line[j], b = line[j + 1];
+                            double dx = b[0] - a[0], dz = b[1] - a[1], l2 = dx * dx + dz * dz;
+                            if (l2 < 1e-9) continue;
+                            // the bore's direction along the way's (either way round): a ramp leaving it is not this way's
+                            double l = Math.sqrt(l2);
+                            if (Math.abs((dx * ux + dz * uz) / l) < cosMax) continue;
+                            double t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / l2));
+                            double d = Math.hypot(a[0] + dx * t - px, a[1] + dz * t - pz);
+                            if (d < best) {
+                                best = d;
+                                metres = a[2] + (b[2] - a[2]) * t;
+                                bestBore = bi;
+                            }
+                        }
+                    }
+                    if (bestBore >= 0) hit.at(ai, bestBore, metres, px, pz);
+                }
+                along += len;
+            }
+        }
     }
 
     /**

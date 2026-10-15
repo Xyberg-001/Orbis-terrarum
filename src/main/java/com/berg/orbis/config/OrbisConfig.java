@@ -21,7 +21,7 @@ import java.util.List;
 public class OrbisConfig {
 
     /** Bumped when defaults change in a way that an old file should pick up (network settings, world height). */
-    public static final int CURRENT_CONFIG_VERSION = 18;
+    public static final int CURRENT_CONFIG_VERSION = 19;
     public int configVersion = CURRENT_CONFIG_VERSION;
 
     /** Fixed by data/minecraft/dimension_type/overworld.json: the engine maximum of Y -2032..2031. */
@@ -160,6 +160,12 @@ public class OrbisConfig {
      * is snowy all year, Windswept Savanna in dry ones. New worlds take this value; a world keeps its own.
      */
     public boolean reliefBiomes = true;
+    /**
+     * Road tunnels follow the heights a national road database surveyed along them (Norway's NVDB tunnel bores), where it has
+     * them: their real rises and dips inside the mountain, not a straight line between the portals. New worlds take this value;
+     * a world keeps its own.
+     */
+    public boolean surveyedTunnels = true;
     /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
@@ -1002,6 +1008,10 @@ public class OrbisConfig {
             undergroundVersion = 1;
             reliefBiomes = false;
             kartverketWhenReachable = false;
+        }
+        if (configVersion < 19 && dedicatedServer()) {
+            // As above: a server's world keeps its tunnels (set surveyedTunnels to true for a new world).
+            surveyedTunnels = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.
