@@ -267,6 +267,9 @@ public final class Landmarks {
     /** Writes the datapack for these landmarks; returns the number of advancements. */
     public static int writePack(List<Landmark> chosen, OrbisConfig cfg, CoordinateMapper mapper, Path dir) throws IOException {
         Path adv = dir.resolve("data").resolve("orbisterrarum").resolve("advancement");
+        // The last build's advancements go first: a landmark no longer among those chosen (new map data changes them) stayed in the tab
+        // and on the map, though the Grand Tour no longer asked for it; switched off, the whole tab stayed.
+        clearAdvancements(adv);
         Files.createDirectories(adv.resolve("landmark"));
         var gson = new GsonBuilder().setPrettyPrinting().create();
 
@@ -308,7 +311,10 @@ public final class Landmarks {
         int count = 0;
         for (Landmark l : chosen) {
             String slug = slug(l.name);
-            if (slug.isEmpty() || !slugs.add(slug)) continue;
+            // A name in another script (Эльбрус, 富士山, Ακρόπολη) has no Latin letters to keep: named by its hash instead (it was
+            // skipped, and a world in Russia, Japan or Greece had an empty tab)
+            if (slug.isEmpty()) slug = "place_" + Integer.toHexString(l.name.hashCode());
+            if (!slugs.add(slug)) continue;
             int[] b = mapper.toBlock(l.lat, l.lon);
             int radius = (int) Math.max(4, Math.round((l.kind.equals("peak") ? 60 : 30) / cfg.metersPerBlock));
             JsonObject a = new JsonObject();
@@ -467,6 +473,20 @@ public final class Landmarks {
         r.addProperty("min", min);
         r.addProperty("max", max);
         return r;
+    }
+
+    /** Removes the advancements a previous build wrote (the landmarks, the root and the Grand Tour). */
+    private static void clearAdvancements(Path adv) throws IOException {
+        Path landmarks = adv.resolve("landmark");
+        if (Files.isDirectory(landmarks)) {
+            try (var files = Files.list(landmarks)) {
+                for (Path f : (Iterable<Path>) files::iterator) {
+                    if (f.getFileName().toString().endsWith(".json")) Files.deleteIfExists(f);
+                }
+            }
+        }
+        Files.deleteIfExists(adv.resolve("root.json"));
+        Files.deleteIfExists(adv.resolve("grand_tour.json"));
     }
 
     static String slug(String name) {

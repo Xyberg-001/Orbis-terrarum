@@ -132,6 +132,11 @@ public final class PregenTask {
 
         boolean running();
 
+        /** Whether the last sweep stopped on an error (its progress kept), not at the end of its area. */
+        default boolean lastFailed() {
+            return false;
+        }
+
         /** Where the running sweep has got, for the world map; null when none runs. */
         Snapshot snapshot();
 
@@ -181,6 +186,8 @@ public final class PregenTask {
     private final java.util.ArrayDeque<ChunkPos> held = new java.util.ArrayDeque<>();
     private final AtomicInteger inFlight = new AtomicInteger();
     private volatile boolean producerDone, stopRequested;
+    /** Why the sweep thread stopped before the end of the area (an error), or null. */
+    private volatile String failure;
     /** Why the producer is paused right now, or null. */
     private volatile String waiting;
     /** Rows whose chunks have all left memory (their writes are queued), and of those the rows the disk has. */
@@ -371,7 +378,8 @@ public final class PregenTask {
             DiskChunks disk = new DiskChunks(level);
             try {
                 walkArea(model, true, (cx, row) -> {
-                    if (disk.finished(cx, row)) {
+                    // A chunk the hard limit left empty is on disk as finished too: asked for, it is generated properly now
+                    if (disk.finished(cx, row) && !HardLimit.emptied(cx, row)) {
                         skippedExisting.incrementAndGet();
                         return;
                     }
@@ -384,6 +392,7 @@ public final class PregenTask {
             } catch (RuntimeException e) {
                 System.err.println("[orbis] Area sweep failed: " + e);
                 e.printStackTrace();
+                failure = e.toString();
             } finally {
                 producerFinishedAt = System.currentTimeMillis();
                 producerDone = true;
@@ -475,7 +484,7 @@ public final class PregenTask {
         for (int cz = Math.max(c0z, startRow); cz <= Math.min(c1z, sweep.lastRow()); cz++) {
             for (int[] range : sweep.rowRanges(cz)) {
                 for (int cx = Math.max(range[0], c0x); cx <= Math.min(range[1], c1x); cx++) {
-                    if (!disk.finished(cx, cz)) return true;
+                    if (!disk.finished(cx, cz) || HardLimit.emptied(cx, cz)) return true;
                 }
             }
         }
@@ -984,6 +993,18 @@ public final class PregenTask {
             return;
         }
         if (++barTicks % 20 == 0) showBar(server, t);
+        if (t.failure != null) {
+            // The sweep thread died: stopped with its progress kept, not finished (that deleted the task, and the rest
+            // of the area was never generated).
+            PregenTasks.Task task = t.task;
+            stop();
+            PregenTasks.failed(task);
+            Component msg = Component.literal("Pre-generation of " + t.label + " stopped by an error (" + t.failure
+                    + "). Its progress is kept: resume it on the world map (B).");
+            System.err.println("[orbis] " + msg.getString());
+            server.getPlayerList().broadcastSystemMessage(msg, false);
+            return;
+        }
         if (t.step()) {
             active = null;
             lastFinished = t;

@@ -137,7 +137,7 @@ public final class ImageryProvider {
         if (sources.isEmpty()) return -1;
         double[] f = DemTileProvider.latLonToTileFraction(lat, lon, zoom);
         int tx = (int) Math.floor(f[0]), ty = (int) Math.floor(f[1]);
-        Tile tile = tile(tx, ty, lat, lon);
+        Tile tile = tile(Math.floorMod(tx, 1 << zoom), ty, lat, lon); // round the globe past ±180°
         if (tile == null || tile == MISSING || tile.size == 0) return -1;
         int size = tile.size;
         int px = (int) ((f[0] - tx) * size), py = (int) ((f[1] - ty) * size);

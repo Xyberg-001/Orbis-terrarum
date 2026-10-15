@@ -103,16 +103,32 @@ public final class WorldModel {
      * to sea level, and the chunk would be saved flat for good.
      */
     public boolean terrainReady(int minBlockX, int minBlockZ) {
+        return terrainReady(minBlockX - 4, minBlockZ - 4, minBlockX + 19, minBlockZ + 19);
+    }
+
+    /** Whether the terrain tiles under a block box can all be read right now (see {@link #terrainReady(int, int)}). */
+    public boolean terrainReady(int minX, int minZ, int maxX, int maxZ) {
         com.berg.orbis.dem.DemTileProvider tiles = terrainTiles;
         if (tiles == null) return true;
         int z = terrainZoom;
         java.util.Set<Long> seen = new java.util.HashSet<>();
-        for (int[] c : new int[][]{{minBlockX - 4, minBlockZ - 4}, {minBlockX + 19, minBlockZ - 4}, {minBlockX - 4, minBlockZ + 19}, {minBlockX + 19, minBlockZ + 19}}) {
+        // Points 64 blocks apart and the far edges: closer than any tile is wide, so every tile under the box is met.
+        java.util.List<int[]> points = new java.util.ArrayList<>();
+        for (int x = minX; ; x = Math.min(x + 64, maxX)) {
+            for (int zz = minZ; ; zz = Math.min(zz + 64, maxZ)) {
+                points.add(new int[]{x, zz});
+                if (zz >= maxZ) break;
+            }
+            if (x >= maxX) break;
+        }
+        for (int[] c : points) {
             double[] ll = mapper.toLatLon(c[0], c[1]);
-            double n = Math.pow(2, z);
-            int tx = (int) Math.floor((ll[1] + 180) / 360 * n);
-            double lat = Math.toRadians(ll[0]);
-            int ty = (int) Math.floor((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n);
+            // The tile the sampler reads: latitude clamped to the map's ±85.05° as it does, longitude wrapped round ±180°
+            // (unclamped and unwrapped, a polar or Fiji world asked for tiles that do not exist and was never ready)
+            double[] f = com.berg.orbis.dem.DemTileProvider.latLonToTileFraction(ll[0], ll[1], z);
+            int n = 1 << z;
+            int tx = Math.floorMod((int) Math.floor(f[0]), n);
+            int ty = Math.max(0, Math.min(n - 1, (int) Math.floor(f[1])));
             if (!seen.add(((long) tx << 32) ^ (ty & 0xffffffffL))) continue;
             try {
                 tiles.getTile(z, tx, ty);

@@ -233,7 +233,7 @@ public final class VerticalMapping {
         private double sample(double lat, double lon) {
             double[] frac = DemTileProvider.latLonToTileFraction(lat, lon, ZOOM);
             int tx = (int) Math.floor(frac[0]), ty = (int) Math.floor(frac[1]);
-            float[][] tile = tiles.getTile(ZOOM, tx, ty);
+            float[][] tile = tiles.getTile(ZOOM, Math.floorMod(tx, 1 << ZOOM), ty); // round the globe past ±180°
             int size = tile.length;
             int px = Math.min(size - 1, Math.max(0, (int) ((frac[0] - tx) * size)));
             int py = Math.min(size - 1, Math.max(0, (int) ((frac[1] - ty) * size)));

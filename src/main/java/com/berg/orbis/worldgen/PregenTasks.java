@@ -365,6 +365,20 @@ public final class PregenTasks {
         nextDue = true;
     }
 
+    /**
+     * The sweep stopped on an error: the task stays, paused with its progress, to be resumed (it was reported finished and
+     * deleted, and the rest of its area was never generated). The next queued one does not start by itself: it would meet
+     * the same error.
+     */
+    static synchronized void failed(Task t) {
+        if (t == null) return;
+        if (running == t) running = null;
+        if (!tasks.containsKey(t.id)) return;
+        t.state = State.PAUSED;
+        writeMeta(t);
+        broadcast();
+    }
+
     /** The task whose sweep runs now, or null. */
     public static synchronized Task running() {
         return running;
@@ -450,7 +464,11 @@ public final class PregenTasks {
                 }
             }
             // The cubic sweeper finished by itself.
-            if (running != null && runningCubic && !PregenTask.isRunning() && !OrbisMod.stopping()) finished(running);
+            if (running != null && runningCubic && !PregenTask.isRunning() && !OrbisMod.stopping()) {
+                PregenTask.CubicSweeper sweeper = PregenTask.cubicSweeper;
+                if (sweeper != null && sweeper.lastFailed()) failed(running);
+                else finished(running);
+            }
             // Its rows done, each second (the chunk sweep reports them itself), so the purple shrinks there too.
             PregenTask.CubicSweeper c = PregenTask.cubicSweeper;
             if (running != null && runningCubic && c != null && c.running()) {
@@ -528,7 +546,7 @@ public final class PregenTasks {
         WRITER.execute(() -> {
             try {
                 Files.createDirectories(f.getParent());
-                Files.writeString(f, json, StandardCharsets.UTF_8);
+                HardLimit.writeAtomic(f, json);
             } catch (IOException e) {
                 System.err.println("[orbis] Could not save a pre-generation's area: " + e.getMessage());
             }
@@ -553,7 +571,7 @@ public final class PregenTasks {
         WRITER.execute(() -> {
             try {
                 Files.createDirectories(f.getParent());
-                Files.writeString(f, json, StandardCharsets.UTF_8);
+                HardLimit.writeAtomic(f, json);
             } catch (IOException e) {
                 System.err.println("[orbis] Could not save a pre-generation: " + e.getMessage());
             }
