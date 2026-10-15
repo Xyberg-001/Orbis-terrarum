@@ -237,6 +237,26 @@ public final class BlockMapClient {
         if (m.bits != null && java.util.Arrays.equals(m.bits, bits)) return;
         m.bits = bits.clone();
         veil(mc, m, rx, rz);
+        evictVeils(mc);
+    }
+
+    /** Veils kept on the GPU at most (each region's bits stay: a veil let go is drawn again from them when shown). */
+    private static final int MAX_VEILS = 1024;
+    /** A veil let go: made again from the bits when the region is shown. */
+    private static final Object RELEASED = new Object();
+
+    /** Lets the veils not shown for longest go: every region ever shown or counted kept one for the whole session. */
+    private static void evictVeils(Minecraft mc) {
+        List<Mask> held = new ArrayList<>();
+        for (Mask m : MASKS.values()) if (m.grey != null) held.add(m);
+        if (held.size() <= MAX_VEILS) return;
+        held.sort((a, b) -> Long.compare(a.used, b.used));
+        for (int i = 0; i < held.size() - MAX_VEILS + 64; i++) {
+            Mask m = held.get(i);
+            mc.getTextureManager().release(m.grey);
+            m.grey = null;
+            m.limit = RELEASED;
+        }
     }
 
     /** Light grey haze over the region's ungenerated chunks inside the hard limit (outside it the map shades red). */

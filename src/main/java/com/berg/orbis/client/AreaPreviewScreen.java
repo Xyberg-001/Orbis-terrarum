@@ -585,10 +585,16 @@ public final class AreaPreviewScreen extends Screen {
                     continue;
                 }
                 boolean drawn = false;
+                // The nearest coarser tile on the GPU, asked for down the levels while the finer one could not be had (as the world
+                // map does: asking only the level above left the elevation map empty two zooms past its finest)
+                boolean below = tiles.failed(service, z, x, ty);
                 for (int k = 1; k <= 8 && z - k >= 0; k++) {
                     int pz = z - k, pxT = x >> k, pyT = ty >> k;
-                    Identifier pid = tiles.get(service, pz, pxT, pyT, k == 1 && tiles.failed(service, z, x, ty));
-                    if (pid == null) continue;
+                    Identifier pid = tiles.get(service, pz, pxT, pyT, below);
+                    if (pid == null) {
+                        below = below && tiles.failed(service, pz, pxT, pyT);
+                        continue;
+                    }
                     float sub = 1f / (1 << k);
                     float u0 = (x - (pxT << k)) * sub, v0 = (ty - (pyT << k)) * sub;
                     g.blit(pid, sx0, sy0, sx1, sy1, u0, u0 + sub, v0, v0 + sub);

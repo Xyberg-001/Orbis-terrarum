@@ -166,9 +166,11 @@ public final class MapSelectTool {
     public void setScale(CoordinateMapper mapper, double metersPerBlock) {
         this.mapper = mapper;
         this.metersPerBlock = metersPerBlock;
-        for (int i = 0; i < shapes.size(); i++) {
+        for (int i = shapes.size() - 1; i >= 0; i--) {
             Shape s = shape(shapes.get(i).subtract(), shapes.get(i).latLon());
+            // too small for a chunk at this scale: gone (kept as it was, a 100 m rectangle at 1:1 still covered 100 blocks at 1:64)
             if (s != null) shapes.set(i, s);
+            else shapes.remove(i);
         }
         fitBudget();
         recompute();
@@ -198,18 +200,41 @@ public final class MapSelectTool {
      * Add joins it, Subtract cuts it out. The largest parts only, when a country has hundreds of islands.
      */
     public void addOutline(List<double[][]> polygons) {
+        putOutline(polygons, false);
+    }
+
+    /**
+     * Swaps the shapes the last outline put in for this outline's (a place's largest part for all of its parts, or back), leaving
+     * everything else as it is: taking back the last change took back whatever was last (a rectangle drawn since, an Expand).
+     */
+    public void swapOutline(List<double[][]> polygons) {
+        putOutline(polygons, true);
+    }
+
+    /** The shapes the last outline put in (see {@link #swapOutline}). */
+    private List<Shape> outlineShapes = List.of();
+
+    private void putOutline(List<double[][]> polygons, boolean replacing) {
         cancel();
         List<double[][]> parts = new ArrayList<>(polygons);
         parts.sort((a, b) -> Double.compare(bboxArea(b), bboxArea(a)));
         if (parts.size() > 60) parts = parts.subList(0, 60);
         boolean subtract = mode == Mode.SUBTRACT;
         remember();
-        if (mode == Mode.NEW) shapes.clear();
+        if (replacing) {
+            List<Shape> old = outlineShapes;
+            shapes.removeIf(s -> old.stream().anyMatch(o -> o.latLon() == s.latLon())); // a simplified copy keeps its points
+        } else if (mode == Mode.NEW) {
+            shapes.clear();
+        }
+        List<Shape> added = new ArrayList<>();
         for (double[][] p : parts) {
             Shape s = shape(subtract, p);
             if (s == null || (subtract && shapes.isEmpty())) continue;
             shapes.add(s);
+            added.add(s);
         }
+        outlineShapes = added;
         fitBudget();
         changed();
     }
@@ -759,8 +784,14 @@ public final class MapSelectTool {
     private void undo() {
         cancel();
         if (!history.isEmpty()) {
+            // Made again from their places on Earth: the scale or the spawn may have changed since (the preview's), and the old
+            // blocks drew the shape hundreds of kilometres off (and an Expand after it saved that place)
             shapes.clear();
-            shapes.addAll(history.removeLast());
+            for (Shape old : history.removeLast()) {
+                Shape s = shape(old.subtract(), old.latLon());
+                if (s != null) shapes.add(s);
+            }
+            fitBudget();
         } else if (!shapes.isEmpty()) {
             shapes.remove(shapes.size() - 1);
         } else {
@@ -1048,13 +1079,23 @@ public final class MapSelectTool {
         counted = true;
         if (!BlockMapClient.available() || s.count() > 4_000_000) return;
         long n = 0;
+        // Each region's mask asked for once (per chunk, with the regions not known yet each looked for in the list of those wanted,
+        // a 30 km selection at 1:1 froze the game for seconds whenever it changed)
+        java.util.Map<Long, long[]> masks = new java.util.HashMap<>();
+        long[] none = new long[0];
         for (int cz = s.firstRow(); cz <= s.lastRow(); cz++) {
             int[] runs = s.rawRuns(cz);
             if (runs == null) continue;
             for (int i = 0; i < runs.length; i += 2) {
                 for (int cx = runs[i]; cx <= runs[i + 1]; cx++) {
-                    long[] mask = BlockMapClient.mask(Math.floorDiv(cx, 32), Math.floorDiv(cz, 32));
-                    if (mask == null) continue;
+                    int rx = Math.floorDiv(cx, 32), rz = Math.floorDiv(cz, 32);
+                    long rk = ((long) rx << 32) ^ (rz & 0xffffffffL);
+                    long[] mask = masks.get(rk);
+                    if (mask == null) {
+                        mask = BlockMapClient.mask(rx, rz);
+                        masks.put(rk, mask == null ? none : mask);
+                    }
+                    if (mask == null || mask == none) continue;
                     int bit = Math.floorMod(cz, 32) * 32 + Math.floorMod(cx, 32);
                     if ((mask[bit >> 6] & (1L << (bit & 63))) != 0) n++;
                 }
