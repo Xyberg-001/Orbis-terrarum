@@ -851,16 +851,32 @@ public class OrbisConfig {
             cfg.save(file);
             return cfg;
         } catch (IOException | RuntimeException e) {
-            System.err.println("[orbis] Could not read config " + file + ": " + e + " -- using defaults");
+            // Kept beside it before anything is written over it: the next save (any setting changed) wrote the defaults over a
+            // file with one typo in it, and every setting in it was lost.
+            String backup = file.getFileName() + ".unreadable-" + System.currentTimeMillis();
+            try {
+                if (Files.exists(file)) Files.copy(file, file.resolveSibling(backup));
+            } catch (IOException copyFailed) {
+                backup = null;
+            }
+            System.err.println("[orbis] Could not read config " + file + ": " + e + " -- using defaults"
+                    + (backup != null ? "; the file is kept as " + backup + " (fix it and put it back)" : ""));
             OrbisConfig cfg = new OrbisConfig();
             cfg.sanitize();
             return cfg;
         }
     }
 
+    /** Written to a file beside it, then moved over it: a crash leaves the old settings or the new ones, never half a file. */
     public void save(Path file) throws IOException {
         Files.createDirectories(file.getParent());
-        Files.writeString(file, GSON.toJson(this));
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, GSON.toJson(this));
+        try {
+            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /** Deep copy (used for the "effective" config of a world and for editing screens). */

@@ -242,6 +242,7 @@ public class DemTileProvider implements TileSource {
             Path cached = cacheDir.resolve(zoom + "_" + x + "_" + y + (legacyLayout ? ".png" : ".tile"));
             Path missing = cacheDir.resolve(zoom + "_" + x + "_" + y + ".missing");
             byte[] pngBytes;
+            boolean fresh = false;
             if (Files.exists(cached)) {
                 pngBytes = Files.readAllBytes(cached);
             } else if (Files.exists(missing)) {
@@ -254,9 +255,18 @@ public class DemTileProvider implements TileSource {
                     Files.write(missing, new byte[0]);
                     return fromParent(zoom, x, y);
                 }
-                writeCached(cached, pngBytes);
+                fresh = true;
             }
-            float[][] tile = decodeTerrarium(pngBytes);
+            // Cached only once it decodes, and a cached copy that does not is thrown away: a cut-short body or a page from a
+            // captive portal (HTTP 200) was kept and read again on every try, so the terrain there was never ready.
+            float[][] tile;
+            try {
+                tile = decodeTerrarium(pngBytes);
+            } catch (IOException | RuntimeException e) {
+                if (!fresh) Files.deleteIfExists(cached);
+                throw e;
+            }
+            if (fresh) writeCached(cached, pngBytes);
             if (zoom > 0 && !plausible(tile)) {
                 // A mis-decoded image (TwelveMonkeys 3.12 scrambled one lossless Mapterhorn WebP into +-32768 m, which
                 // built a 2 km stone pillar): trust the coarser tile over heights no place on Earth has.
