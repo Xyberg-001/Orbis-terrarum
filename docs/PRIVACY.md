@@ -23,7 +23,7 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 | Lake surveys: Finland's SYKE (paikkatiedot.ymparisto.fi), Minnesota DNR (enterprise.gisdata.mn.gov), Ontario MNRF (ws.lioservices.lrc.gov.on.ca) | Depth contours of lakes inside that state or province | Bounding box of the area |
 | Road databases: IGN BD TOPO (data.geopf.fr), Digiroad (avoinapi.vaylapilvi.fi), FHWA HPMS (geo.dot.gov), BC Digital Road Atlas (openmaps.gov.bc.ca) | Road widths and lanes, only for areas inside that country or state, at 1:2 or finer | Bounding box of the area |
 | Building registers: IGN BD TOPO (data.geopf.fr), 3DBAG (data.3dbag.nl), GURS (ipi.eprostor.gov.si), Stadt Wien (data.wien.gv.at), NYC Open Data (data.cityofnewyork.us) | Building heights and floors, only for areas inside that country or city | Bounding box of the area |
-| Kartverket / Geonorge (wcs.geonorge.no), Statens vegvesen NVDB (nvdbapiles.atlas.vegvesen.no) | Norway only: lidar building heights (only when switched on), road widths | Bounding box / tile coordinates |
+| Kartverket / Geonorge (wcs.geonorge.no), Statens vegvesen NVDB (nvdbapiles.atlas.vegvesen.no) | Norway only: lidar building heights (only when switched on), road widths, tunnel heights | Bounding box / tile coordinates |
 | USGS National Map (imagery.nationalmap.gov) | USA only: NAIP imagery | Tile coordinates |
 | Google (8.8.8.8) and Cloudflare (1.1.1.1) DNS-over-HTTPS | Only if your system DNS fails to resolve one of the hosts above | The host name |
 

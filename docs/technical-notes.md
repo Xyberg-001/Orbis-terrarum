@@ -690,7 +690,20 @@ Kartverket's surface model (building heights) stays.
   at the same grade, continuing through split ways. Stone-brick underside,
   railings (stone wall / fence / iron bars by road type), pillars every 12 m
   where nothing runs below.
-- `tunnel=yes` → the road between the two portals is pushed down wherever it
+- `tunnel=yes` → the road follows a guide line: a straight line between the
+  two portals, or in Norway (new worlds from 2.0.1, world setting
+  `surveyedTunnels`) the shape of the floor NVDB surveyed in the tunnel.
+  NVDB's tunnel bores (object type 67, Tunnelløp, fetched per region beside
+  the road widths and cached as `*_tunnels.json.gz` in nvdb-cache/) carry a
+  height every few metres; each tunnel way takes the one bore nearest most of
+  its length (twin tubes lie at different depths), the gaps are joined
+  straight, and the ends are moved onto the same heights as before (the
+  portal's ground, or the floor agreed at a node with the next tunnel way),
+  the difference shared out along the way, so nothing steps where the tunnel
+  meets another road. NVDB returns a bore whole, so every region a tunnel
+  crosses draws the same floor. On the 1:1 and 1:2 Bergen road tests it moves
+  about a third of the tunnel cells by 1–5 blocks and thins the rock over
+  them less often. The guide line is then pushed down wherever it
   would come within 6.5 blocks of the ground above it, across its whole
   width (so a hillside falling away beside it does not open the wall), of a
   street crossing above, or of the floor of a building it passes under,
