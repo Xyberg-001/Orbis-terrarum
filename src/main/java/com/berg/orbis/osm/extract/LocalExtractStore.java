@@ -105,6 +105,20 @@ public final class LocalExtractStore {
                             } catch (RuntimeException | IOException e) {
                                 System.err.println("[orbis] Extract " + dir.getFileName() + ": its outline is unreadable (" + e + "); its box is used");
                             }
+                        } else if (o.has("source") && o.get("source").getAsString().endsWith("-latest.osm.pbf")) {
+                            // Downloaded before the outline was kept with it: its region's, from Geofabrik's index on disk
+                            String id = o.get("source").getAsString().replace("-latest.osm.pbf", "");
+                            for (Geofabrik.Region r : Geofabrik.regionsOnDisk(root.resolveSibling("extracts-src"))) {
+                                if (r.id().equals(id) && r.polygons() != null && !r.polygons().isEmpty()) {
+                                    outline = r.polygons();
+                                    try {
+                                        Files.writeString(outlineFile, Geofabrik.outlineJson(outline), StandardCharsets.UTF_8);
+                                    } catch (IOException e) {
+                                        // used from memory this session; written next time
+                                    }
+                                    break;
+                                }
+                            }
                         }
                         found.add(new Extract(
                                 o.has("name") ? o.get("name").getAsString() : dir.getFileName().toString(), dir,

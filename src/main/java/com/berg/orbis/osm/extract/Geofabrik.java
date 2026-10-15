@@ -105,6 +105,18 @@ public final class Geofabrik {
         return regions;
     }
 
+    /** The regions from the copy on disk only (never the network), or an empty list when there is none. */
+    static synchronized List<Region> regionsOnDisk(Path cacheDir) {
+        if (regions != null) return regions;
+        Path file = cacheDir.resolve("geofabrik-index.json");
+        try {
+            if (Files.isRegularFile(file)) return regions = parse(Files.readString(file, StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) {
+            System.err.println("[orbis] Geofabrik's index on disk is unreadable: " + e);
+        }
+        return List.of();
+    }
+
     static List<Region> parse(String json) {
         List<Region> out = new ArrayList<>();
         for (JsonElement fe : JsonParser.parseString(json).getAsJsonObject().getAsJsonArray("features")) {
