@@ -360,8 +360,12 @@ public class OrbisMod implements ModInitializer {
         newConfig.sanitizeValues();
         config = newConfig;
         saveConfigFile();
-        modelSettings = null; // network / data-source settings changed: force a rebuild
-        modelFor(WorldSettings.fromConfig(config));
+        WorldSettings running = modelSettings;
+        modelSettings = null; // network / data-source settings changed: the next model is built afresh
+        // Rebuilt now only for an Orbis world open in this game or server, with that world's own settings. Anywhere
+        // else (the title screen, someone else's server) the next world builds its own: rebuilding here fetched and
+        // drew the last singleplayer world's spawn area in the background while the player was on a server.
+        if (levelHeight != 0 && running != null) modelFor(running);
     }
 
     /** The mod used to be called TellusPlus: carry its config folder (and the valuable caches inside) over once. */
