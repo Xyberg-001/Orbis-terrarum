@@ -2174,7 +2174,8 @@ default): world_gen_settings' overworld generator becomes flat cold ocean
 (bedrock, stone, 4 gravel, 20 water up to the sea level), world_border.dat
 goes round the kept chunks' square, the frame-lock datapack is added (with
 this version's pack format; it had 26.2's 107 alone) and orbis-map dropped.
-The world's placement for the map goes in that pack as a chat type,
+The world's placement for the map goes in a pack of its own, `orbis-map-info`
+(it shared the frame lock's until 2.0.1, so switching the lock off took the map with it), as a chat type,
 `orbisterrarum:world_info`, whose translation key carries origin, scale,
 projection and world id (`WorldInfoPayload.encode`): chat types are synced to
 every player by any server, plain Minecraft never uses this one, and an Orbis

@@ -781,13 +781,21 @@ public final class AternosExport {
         Files.createDirectories(pack.resolve("data/orbis_lock/function"));
         Files.createDirectories(pack.resolve("data/minecraft/tags/function"));
         com.google.gson.JsonObject meta = new com.google.gson.JsonObject(), packInfo = new com.google.gson.JsonObject();
-        packInfo.addProperty("description", "Orbis Terrarum: locks the museum and shop display frames; where the world sits on Earth, for the map");
+        packInfo.addProperty("description", "Orbis Terrarum: locks the museum and shop display frames");
         com.berg.orbis.worldgen.WorldHeight.putPackFormat(packInfo); // this version's format (107 alone was 26.2's)
         meta.add("pack", packInfo);
         Files.writeString(pack.resolve("pack.mcmeta"), new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(meta), StandardCharsets.UTF_8);
         if (mapInfo != null) {
-            // The world's placement for the Orbis map of players who have the mod (the server does not need it).
-            Path chat = pack.resolve("data/orbisterrarum/chat_type");
+            // The world's placement for the Orbis map of players who have the mod (the server does not need it), in a
+            // pack of its own: switching the frame lock off (to let players take what the frames hold) took the map with it.
+            Path mapPack = stage.resolve("datapacks").resolve("orbis-map-info");
+            com.google.gson.JsonObject mapMeta = new com.google.gson.JsonObject(), mapPackInfo = new com.google.gson.JsonObject();
+            mapPackInfo.addProperty("description", "Orbis Terrarum: where the world sits on Earth, for the map (no gameplay changes)");
+            com.berg.orbis.worldgen.WorldHeight.putPackFormat(mapPackInfo);
+            mapMeta.add("pack", mapPackInfo);
+            Files.createDirectories(mapPack);
+            Files.writeString(mapPack.resolve("pack.mcmeta"), new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(mapMeta), StandardCharsets.UTF_8);
+            Path chat = mapPack.resolve("data/orbisterrarum/chat_type");
             Files.createDirectories(chat);
             Files.writeString(chat.resolve("world_info.json"), "{\n  \"chat\": {\"parameters\": [\"sender\", \"content\"], \"translation_key\": \""
                     + mapInfo + "\"},\n  \"narration\": {\"parameters\": [\"sender\", \"content\"], \"translation_key\": \"chat.type.text.narrate\"}\n}\n",
@@ -911,7 +919,9 @@ public final class AternosExport {
         t.append(forOrbis
                 ? "Made for a server that runs Orbis Terrarum (same version as here): the world keeps its generator and settings.\n\n"
                 : "Made for a plain Minecraft server (no Orbis needed; the server needs the same Minecraft version): outside the upload the world is flat\n"
-                + "open sea, the world border goes round the uploaded area, and a small datapack locks the museum and shop display frames.\n\n");
+                + "open sea, the world border goes round the uploaded area, and a small datapack locks the museum and shop display frames\n"
+                + "(orbis-display-lock; /datapack disable \"file/orbis-display-lock\" lets players take what they hold).\n"
+                + "The Orbis map finds the world through a second datapack, orbis-map-info: keep that one on.\n\n");
         t.append("The terrain was uploaded without its lighting (about a fifth of its size): the server works the light out the first\n"
                 + "time each area is visited, so the first walk or flight through a new area loads a little slower than later ones.\n\n");
         t.append("1. On aternos.org, stop the server, then Worlds -> Upload and choose ").append(zip.getFileName()).append(".\n");
