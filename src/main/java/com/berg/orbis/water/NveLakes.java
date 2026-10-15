@@ -102,6 +102,9 @@ public final class NveLakes {
             }
         } catch (IOException | InterruptedException | RuntimeException e) {
             failed(e);
+            // Not kept: kept, the lake had no soundings for the whole session, and its regions built meanwhile got a plain bowl
+            // while those built after a restart got the surveyed bed (a step inside the lake)
+            return result;
         }
         soundings.put(lakeId, result);
         return result;

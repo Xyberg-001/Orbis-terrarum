@@ -437,7 +437,7 @@ public final class Transit {
         if (r.building[idx] != 0 || r.water[idx] != 0) return;
         RoadFeature here = r.roadAt(idx);
         if (here != null && r.roadDistAt(idx) <= here.halfWidth) return; // on the track / the road itself
-        int surface = level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
+        int surface = Decorator.groundY(level, x, z);
         if (surface <= cfg.minY || surface + 4 >= cfg.maxY()) return;
         if (!level.getBlockState(pos.set(x, surface, z)).isSolid()) return;
         level.setBlock(pos.set(x, surface + 1, z), Blocks.STONE_BRICK_WALL.defaultBlockState(), 3);

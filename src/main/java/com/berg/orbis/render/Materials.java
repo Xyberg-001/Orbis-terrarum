@@ -411,9 +411,14 @@ public final class Materials {
         return halfB > 12 ? RoofShape.FLAT : (r < 50 ? RoofShape.GABLED : r < 70 ? RoofShape.HIPPED : RoofShape.FLAT);
     }
 
-    public static int roofHeightBlocks(Map<String, String> tags, RoofShape shape, double halfA, double halfB, int storeyBlocks) {
+    public static int roofHeightBlocks(Map<String, String> tags, RoofShape shape, double halfA, double halfB, int storeyBlocks,
+                                       java.util.function.DoubleUnaryOperator metresToBlocks) {
         double explicit = OsmTags.parseLength(tags.get("roof:height"), Double.NaN);
-        if (!Double.isNaN(explicit) && explicit > 0) return (int) Math.max(1, Math.round(explicit));
+        // In blocks as the walls are (as metres, at 4 m a block a roof tagged 8 m stood 8 blocks on a house 3 blocks tall), and no
+        // taller than a 60 m roof (a mistyped tag)
+        if (!Double.isNaN(explicit) && explicit > 0) {
+            return (int) Math.max(1, Math.round(metresToBlocks.applyAsDouble(Math.min(explicit, 60.0))));
+        }
         int roofLevels = OsmTags.parseInt(tags.get("roof:levels"), -1);
         if (roofLevels > 0 && shape != RoofShape.FLAT) return Math.max(1, roofLevels * storeyBlocks);
         double b = Math.max(1.0, halfB);

@@ -130,7 +130,8 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
      * without locks); the ConcurrentHashMap it replaces keyed columns by a Long whose hash was qx ^ qz, so every
      * column on a diagonal shared a bucket, the buckets turned into trees, and lookups were 4% of generation.
      */
-    private record Column(long key, Holder<Biome> biome, int bandTop, Holder<Biome> cave, boolean deepDark) {
+    /** {@code withMap}: worked out with the column's map data loaded (or with no map data in this world). */
+    private record Column(long key, Holder<Biome> biome, int bandTop, Holder<Biome> cave, boolean deepDark, boolean withMap) {
     }
 
     public RealWorldBiomeSource(HolderGetter<Biome> biomes) {
@@ -172,7 +173,7 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
         long key = (((long) qx) << 32) ^ (qz & 0xffffffffL);
         int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> (64 - CACHE_BITS));
         Column c = columnCache[slot];
-        if (c == null || c.key != key) {
+        if (c == null || c.key != key || stale(c, qx, qz)) {
             c = column(qx, qz, key);
             columnCache[slot] = c;
         }
@@ -198,7 +199,7 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
         long key = (((long) qx) << 32) ^ (qz & 0xffffffffL);
         int slot = (int) ((key * 0x9E3779B97F4A7C15L) >>> (64 - CACHE_BITS));
         Column c = columnCache[slot];
-        if (c == null || c.key != key) {
+        if (c == null || c.key != key || stale(c, qx, qz)) {
             // Outside the hard limit the chunk stays empty: any biome will do, without asking the map.
             if (com.berg.orbis.worldgen.HardLimit.blocks(qx >> 2, qz >> 2)) return fallback;
             c = column(qx, qz, key);
@@ -212,7 +213,7 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
             WorldModel model = OrbisMod.model();
             bandTop = model == null ? UNKNOWN : model.band().peek(qx >> 2, qz >> 2);
             if (bandTop == UNKNOWN) return c.biome;
-            columnCache[slot] = c = new Column(key, c.biome, bandTop, c.cave, c.deepDark);
+            columnCache[slot] = c = new Column(key, c.biome, bandTop, c.cave, c.deepDark, c.withMap);
         }
         int y = qy << 2;
         int v;   // the Y in the band's vanilla frame (vanilla's -64..63)
@@ -234,6 +235,16 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
         return model != null && Math.abs(y - model.terrainHeight((qx << 2) + 2, (qz << 2) + 2)) > 16;
     }
 
+    /**
+     * A column worked out before its map data was loaded (asked first by the far view, or by a structure's biome check, which do not
+     * wait for it) whose map data is loaded now: its rivers, sea and forests were plains or taiga for as long as it was kept.
+     */
+    private static boolean stale(Column c, int qx, int qz) {
+        if (c.withMap) return false;
+        WorldModel model = OrbisMod.model();
+        return model != null && model.rasterIfLoaded((qx << 2) + 2, (qz << 2) + 2) != null;
+    }
+
     /** The surface biome of a column and, in layout 2, the cave biome under it. */
     private Column column(int qx, int qz, long key) {
         int x = (qx << 2) + 2, z = (qz << 2) + 2;
@@ -242,7 +253,8 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
         Pick p = pick(x, z, relief);
         Holder<Biome> h = holders.get(p);
         if (h == null) h = p == Pick.DAPPLED_FOREST ? holders.getOrDefault(Pick.FOREST, fallback) : fallback;
-        if (model == null || model.cfg().undergroundVersion < 2) return new Column(key, h, UNKNOWN, null, false);
+        boolean withMap = model == null || model.regions() == null || model.rasterIfLoaded(x, z) != null;
+        if (model == null || model.cfg().undergroundVersion < 2) return new Column(key, h, UNKNOWN, null, false, withMap);
         // Deep Dark mostly under mountains, as in vanilla (its low-erosion, deep ground): half the underground where
         // the ground rises and falls 420 m or more within half a kilometre, 3% under flat land, in between by relief.
         boolean dd = deepDark != null && patch(x, z, 320, 0x5C7L) > DEEP_DARK_FLAT + (DEEP_DARK_MOUNTAINS - DEEP_DARK_FLAT) * mountains(relief);
@@ -252,7 +264,7 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
         Holder<Biome> cave = null;
         if (lush > 0 && lush >= drip) cave = lushCaves;
         else if (drip > 0) cave = dripstoneCaves;
-        return new Column(key, h, UNKNOWN, cave, dd);
+        return new Column(key, h, UNKNOWN, cave, dd, withMap);
     }
 
     /**

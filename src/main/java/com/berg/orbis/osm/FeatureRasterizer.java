@@ -2727,7 +2727,7 @@ public final class FeatureRasterizer {
             levels = defaultLevels(type, halfA, halfB, area.id());
         }
         RoofShape shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
-        int roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
+        int roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
         // A part that says nothing of its own height is measured like a building (lidar, registers, the atlas by its
         // position) instead of falling to the storey guess: Nordahl Grieg school in Bergen is mapped as untagged
         // parts inside a school outline, and every part stood two storeys high over the measured whole.
@@ -2785,7 +2785,7 @@ public final class FeatureRasterizer {
                     levels = Math.max(1, (int) Math.round(buildingBlocks(heightM) / storey));
                     if (tags.get("roof:shape") == null) {
                         shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
-                        roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
+                        roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
                     }
                 }
             }
@@ -2804,7 +2804,7 @@ public final class FeatureRasterizer {
                     levels = hit.floors() > 0 ? hit.floors() : Math.max(1, (int) Math.round(hm / storeyM));
                     if (tags.get("roof:shape") == null) {
                         shape = hit.flatRoof() ? RoofShape.FLAT : Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
-                        roofHeight = shape == RoofShape.FLAT ? 0 : Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
+                        roofHeight = shape == RoofShape.FLAT ? 0 : Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
                     }
                     // A height to the gutter: the roof stands on top of it.
                     heightM = hit.eaveHeight() && shape != RoofShape.FLAT ? hm + roofHeight * cfg.metersPerBlock : hm;
@@ -2825,7 +2825,7 @@ public final class FeatureRasterizer {
                 levels = Math.max(1, (int) Math.round(buildingBlocks(h) / storey));
                 if (tags.get("roof:shape") == null) {
                     shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
-                    roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey);
+                    roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
                 }
             }
         }
