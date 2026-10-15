@@ -334,11 +334,26 @@ public final class OrbisHttp {
         java.nio.file.Path part = target.resolveSibling(target.getFileName() + ".part");
         java.nio.file.Files.createDirectories(target.toAbsolutePath().getParent());
         long have = java.nio.file.Files.exists(part) ? java.nio.file.Files.size(part) : 0;
+        // Which version of the file the part holds (its ETag or Last-Modified): a part continued after the file changed on the server
+        // (Geofabrik's daily update) spliced two files into one that could not be read, and it was used for 30 days.
+        java.nio.file.Path partVersion = part.resolveSibling(part.getFileName() + ".version");
+        String version = null;
+        if (have > 0) {
+            try {
+                version = java.nio.file.Files.exists(partVersion) ? java.nio.file.Files.readString(partVersion).trim() : null;
+            } catch (IOException e) {
+                version = null;
+            }
+            if (version == null || version.isEmpty()) have = 0; // a part of unknown version is started again
+        }
         HttpResponse<InputStream> r = null;
         for (int hop = 0; hop < 6; hop++) {
             HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30)).GET();
             if (headers != null) headers.forEach(b::header);
-            if (have > 0) b.header("Range", "bytes=" + have + "-");
+            if (have > 0) {
+                b.header("Range", "bytes=" + have + "-");
+                b.header("If-Range", version); // the rest only while it is the same file, else the whole new one (200)
+            }
             r = CLIENT.send(b.build(), HttpResponse.BodyHandlers.ofInputStream());
             String next = redirect(r);
             if (next == null) break;
@@ -351,6 +366,11 @@ public final class OrbisHttp {
             throw new IOException("HTTP " + status + " for " + url);
         }
         boolean append = status == 206 && have > 0;
+        if (!append) {
+            java.net.http.HttpHeaders h = r.headers();
+            String v = h.firstValue("etag").or(() -> h.firstValue("last-modified")).orElse("");
+            java.nio.file.Files.writeString(partVersion, v);
+        }
         long length = r.headers().firstValueAsLong("content-length").orElse(-1);
         long total = length < 0 ? -1 : append ? have + length : length;
         long[] done = {append ? have : 0};
@@ -397,6 +417,7 @@ public final class OrbisHttp {
             throw new IOException(String.format(Locale.ROOT, "download stopped at %,d of %,d bytes (it continues next time)", done[0], total));
         }
         java.nio.file.Files.move(part, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        java.nio.file.Files.deleteIfExists(partVersion);
     }
 
     // ------------------------------------------------------------------ DNS over HTTPS

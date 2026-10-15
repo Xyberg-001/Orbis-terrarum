@@ -105,6 +105,7 @@ public final class MapDataJob {
         String place = plan.region().name();
         Path src = dataDir.resolve("extracts-src");
         Path pbf = src.resolve(plan.region().id() + "-latest.osm.pbf");
+        boolean[] importing = {false};
         try {
             boolean have = Files.isRegularFile(pbf) && System.currentTimeMillis() - Files.getLastModifiedTime(pbf).toMillis() < 30L * 24 * 3600 * 1000;
             if (!have) {
@@ -128,8 +129,12 @@ public final class MapDataJob {
             }
             listener.progress(plan.profile() == ExtractImporter.Profile.MAP ? "Keeping the main features of " + place + "..."
                     : "Keeping this world's area...", -1f);
+            importing[0] = true;
             ExtractImporter.Summary s = ExtractImporter.importFile(pbf, dataDir.resolve("extracts"), plan.profile(),
                     plan.storeName(), plan.box(), msg -> listener.progress(msg, -1f));
+            if (plan.region().polygons() != null && !plan.region().polygons().isEmpty()) {
+                Files.writeString(s.dir().resolve(LocalExtractStore.OUTLINE_FILE), Geofabrik.outlineJson(plan.region().polygons()), java.nio.charset.StandardCharsets.UTF_8);
+            }
             LocalExtractStore.get(dataDir.resolve("extracts")).rescan();
             long kept = folderBytes(s.dir());
             if (!keepFile) Files.deleteIfExists(pbf);
@@ -141,6 +146,13 @@ public final class MapDataJob {
             listener.finished("Map data for " + place + " needs more memory than the game has (give Minecraft more, or select a smaller"
                     + " area); the online map servers are used instead.", false);
         } catch (Throwable e) {
+            // A file that could not be read is fetched afresh next time (it was kept and read again for 30 days)
+            if (importing[0]) {
+                try {
+                    Files.deleteIfExists(pbf);
+                } catch (java.io.IOException ignored) {
+                }
+            }
             listener.finished("Map data for " + place + " could not be fetched (" + e.getMessage()
                     + "); the online map servers are used instead.", false);
         } finally {

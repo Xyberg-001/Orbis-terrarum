@@ -739,8 +739,10 @@ public final class ExtractImporter {
     private static void addToCells(Map<Long, Pb.IntList> cells, int[] box, int entry) {
         int c0 = ExtractTiles.cellIndex(box[0]), c1 = ExtractTiles.cellIndex(box[2]);
         int d0 = ExtractTiles.cellIndex(box[1]), d1 = ExtractTiles.cellIndex(box[3]);
-        // A single broken way spanning the planet must not be copied into thousands of cells.
-        if ((long) (c1 - c0 + 1) * (d1 - d0 + 1) > 400) return;
+        // A single broken way spanning the planet must not be copied into thousands of cells. A relation (entry < 0) may be far
+        // bigger: the largest lakes are (Ladoga about 640 cells, Superior 2,400, the Caspian 7,200), and they were left out.
+        long cellsSpanned = (long) (c1 - c0 + 1) * (d1 - d0 + 1);
+        if (cellsSpanned > (entry < 0 ? 20_000 : 400)) return;
         for (int c = c0; c <= c1; c++) {
             for (int d = d0; d <= d1; d++) {
                 cells.computeIfAbsent(((long) c << 32) | (d & 0xffffffffL), k -> new Pb.IntList()).add(entry);

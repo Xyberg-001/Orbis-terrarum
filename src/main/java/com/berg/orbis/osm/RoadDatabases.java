@@ -201,11 +201,13 @@ public final class RoadDatabases {
         }
     }
 
-    /** One road a line: width (empty if unknown), lanes (negative: counting both directions, -100 none), lat, lon pairs. */
+    /** One road a line: width (empty if unknown), lanes ("b" first: counting both directions; -1 unknown), lat, lon pairs. */
     private static void write(Path file, List<NvdbRoads.Segment> list) throws IOException {
         StringBuilder sb = new StringBuilder();
         for (NvdbRoads.Segment seg : list) {
-            int lanes = seg.bothWays() ? (seg.lanes() > 0 ? -seg.lanes() : -100) : seg.lanes();
+            // Both directions: "b" and the lane count ("b-1" unknown). As a negative number, one lane both ways (-1) read back as
+            // "lanes unknown, one way", and the lanes changed after the first session.
+            String lanes = seg.bothWays() ? "b" + (seg.lanes() > 0 ? seg.lanes() : -1) : String.valueOf(seg.lanes());
             sb.append(Double.isNaN(seg.widthM()) ? "" : String.format(Locale.ROOT, "%.2f", seg.widthM())).append(' ').append(lanes);
             for (double[] p : seg.latLon()) sb.append(' ').append(String.format(Locale.ROOT, "%.6f %.6f", p[0], p[1]));
             sb.append('\n');
@@ -223,9 +225,17 @@ public final class RoadDatabases {
             if (p.length < 6) continue;
             List<double[]> pts = new ArrayList<>();
             for (int i = 2; i + 1 < p.length; i += 2) pts.add(new double[]{Double.parseDouble(p[i]), Double.parseDouble(p[i + 1])});
-            int l = Integer.parseInt(p[1]);
-            boolean both = l < -1;
-            int lanes = l == -100 ? -1 : both ? -l : l;
+            boolean both;
+            int lanes;
+            if (p[1].startsWith("b")) {
+                both = true;
+                lanes = Integer.parseInt(p[1].substring(1));
+            } else {
+                // files written before 2.0.1: both directions as a negative count (-100: unknown)
+                int l = Integer.parseInt(p[1]);
+                both = l < -1;
+                lanes = l == -100 ? -1 : both ? -l : l;
+            }
             out.add(new NvdbRoads.Segment(pts, p[0].isEmpty() ? Double.NaN : Double.parseDouble(p[0]), lanes, both));
         }
         return out;

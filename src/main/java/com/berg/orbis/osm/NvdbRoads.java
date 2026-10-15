@@ -370,7 +370,7 @@ public final class NvdbRoads {
                             double[] near = nearest(lines.get(idx), p[0], p[1]);
                             if (near[0] > matchBlocks) continue;
                             double db = Math.abs(((near[1] - bearing) % 180 + 270) % 180 - 90); // 0 = parallel
-                            if (90 - db > MATCH_BEARING_DEG && db > MATCH_BEARING_DEG) continue;
+                            if (db > MATCH_BEARING_DEG) continue; // across it (only 35-55 degrees was turned away: a bridge took the motorway under it)
                             double w = widths.get(idx);
                             if (!Double.isNaN(w) && near[0] < bestWd) {
                                 bestWd = near[0];

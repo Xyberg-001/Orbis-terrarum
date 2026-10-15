@@ -274,8 +274,10 @@ public class OsmDataProvider {
                 throw new IOException("HTTP " + resp.status() + ": " + body.substring(0, Math.min(160, body.length())));
             }
             String body = new String(resp.body(), StandardCharsets.UTF_8);
-            // Overpass returns HTTP 200 with a "remark" when it ran out of time/memory.
-            if (body.length() < 4000 && body.contains("\"remark\"") && body.contains("runtime error")) {
+            // Overpass returns HTTP 200 with a "remark" when it ran out of time/memory, also after printing part of the answer: whatever
+            // its size (a cut-short answer cached as the region's was missing its later ways and lakes for good). The remark comes last.
+            String tail = body.length() > 4000 ? body.substring(body.length() - 4000) : body;
+            if (tail.contains("\"remark\"") && tail.contains("runtime error")) {
                 throw new IOException("Overpass runtime error: " + body.replace('\n', ' '));
             }
             if (!body.contains("\"elements\"")) {

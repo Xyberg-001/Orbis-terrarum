@@ -39,6 +39,43 @@ public final class Geofabrik {
         }
     }
 
+    /** Whether the outline holds the whole box: its corners, the middles of its sides and its centre. */
+    static boolean holds(List<List<double[][]>> polygons, double south, double west, double north, double east) {
+        Region r = new Region("", "", "", 0, polygons);
+        double midLat = (south + north) / 2, midLon = (west + east) / 2;
+        double[][] points = {{south, west}, {south, east}, {north, west}, {north, east},
+                {south, midLon}, {north, midLon}, {midLat, west}, {midLat, east}, {midLat, midLon}};
+        for (double[] p : points) if (!r.contains(p[0], p[1])) return false;
+        return true;
+    }
+
+    /** The outline as JSON: polygons of rings of [lon, lat]. */
+    static String outlineJson(List<List<double[][]>> polygons) {
+        JsonArray out = new JsonArray();
+        for (List<double[][]> polygon : polygons) {
+            JsonArray rings = new JsonArray();
+            for (double[][] ring : polygon) {
+                JsonArray pts = new JsonArray();
+                for (double[] p : ring) {
+                    JsonArray xy = new JsonArray();
+                    xy.add(p[0]);
+                    xy.add(p[1]);
+                    pts.add(xy);
+                }
+                rings.add(pts);
+            }
+            out.add(rings);
+        }
+        return out.toString();
+    }
+
+    /** An outline written by {@link #outlineJson}. */
+    static List<List<double[][]>> outlineFrom(String json) {
+        List<List<double[][]>> polygons = new ArrayList<>();
+        for (JsonElement poly : com.google.gson.JsonParser.parseString(json).getAsJsonArray()) polygons.add(rings(poly.getAsJsonArray()));
+        return polygons;
+    }
+
     private static volatile List<Region> regions;
 
     private Geofabrik() {

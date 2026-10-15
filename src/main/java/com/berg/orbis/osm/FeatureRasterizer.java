@@ -256,7 +256,11 @@ public final class FeatureRasterizer {
                 if (heights != null && cfg.atlasBuildingHeights && !heights.isEmpty()) {
                     double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
                     double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
-                    atlas = heights.load(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]));
+                    // 300 m round the region: a building across its edge, its atlas point in the next region, took the storey guess here
+                    // and the atlas height there (two heights, a step at the border)
+                    double padLat = 300.0 / 111_320.0, padLon = padLat / Math.max(0.05, Math.cos(Math.toRadians((a[0] + b[0]) / 2)));
+                    atlas = heights.load(Math.min(a[0], b[0]) - padLat, Math.min(a[1], b[1]) - padLon,
+                            Math.max(a[0], b[0]) + padLat, Math.max(a[1], b[1]) + padLon);
                 }
                 rasterizeBuildings(r, areasBigFirst, atlas);
             }
@@ -1069,21 +1073,43 @@ public final class FeatureRasterizer {
             Map<String, String> tags = area.tags();
 
             // Sample elevation at shoreline vertices so the lake gets ONE flat
-            // surface. Only vertices near this region are used: a 40 km lake
-            // would otherwise pull in DEM tiles from its far shore.
-            List<Double> samples = new ArrayList<>();
-            int budget = 24;
-            int near = 512;
+            // surface. The vertices nearest this region are used: a 40 km lake
+            // would otherwise pull in DEM tiles from its far shore. Every vertex is
+            // looked at (only every 400th of Mjøsa's was, so half its shore regions
+            // found none), and a region in the middle of a wide lake, far from any
+            // shore, takes the nearest ones however far: with no sample it was put
+            // at sea level and turned into sea, a trench 100 m deep.
+            double midX = r.originX + r.stride / 2.0, midZ = r.originZ + r.stride / 2.0;
+            List<double[]> shore = new ArrayList<>();
             for (List<LatLon> ring : area.outers()) {
-                int step = Math.max(1, ring.size() / 48);
-                for (int i = 0; i < ring.size() && budget > 0; i += step) {
-                    double[] b = mapper.toBlockExact(ring.get(i).lat(), ring.get(i).lon());
-                    if (b[0] < r.originX - near || b[0] > r.originX + r.stride + near
-                            || b[1] < r.originZ - near || b[1] > r.originZ + r.stride + near) continue;
-                    double e = elevationAt(b[0], b[1]);
-                    if (!Double.isNaN(e)) samples.add(e);
-                    budget--;
+                for (LatLon v : ring) {
+                    double[] b = mapper.toBlockExact(v.lat(), v.lon());
+                    double dx = Math.max(0, Math.abs(b[0] - midX) - r.stride / 2.0), dz = Math.max(0, Math.abs(b[1] - midZ) - r.stride / 2.0);
+                    shore.add(new double[]{b[0], b[1], dx * dx + dz * dz});
                 }
+            }
+            // Up to 24 spread along the shore within reach, in the shore's own order (regions that reach the same shore pick the
+            // same points, so a lake across a region border has one surface), else the 8 nearest
+            double near2 = 512.0 * 512.0;
+            List<double[]> reach = new ArrayList<>();
+            for (double[] v : shore) if (v[2] <= near2) reach.add(v);
+            List<double[]> picked = new ArrayList<>();
+            if (!reach.isEmpty()) {
+                int step = Math.max(1, reach.size() / 24);
+                for (int i = 0; i < reach.size() && picked.size() < 24; i += step) picked.add(reach.get(i));
+            } else {
+                shore.sort((a, b) -> Double.compare(a[2], b[2]));
+                for (int i = 0; i < Math.min(8, shore.size()); i++) picked.add(shore.get(i));
+            }
+            List<Double> samples = new ArrayList<>();
+            for (double[] b : picked) {
+                double e = elevationAt(b[0], b[1]);
+                if (!Double.isNaN(e)) samples.add(e);
+            }
+            // No terrain at the shore either (tiles failing): the terrain under the region's middle, which over a lake is its surface
+            if (samples.isEmpty()) {
+                double e = elevationAt(midX, midZ);
+                if (!Double.isNaN(e)) samples.add(e);
             }
             double surface = samples.isEmpty() ? cfg.waterLevelY() : median(samples);
             boolean atSea = kind == WaterFeature.Kind.SEA || isTidal(tags) || surface <= cfg.waterLevelY() + 1.0;
@@ -3210,7 +3236,7 @@ public final class FeatureRasterizer {
                 dataByte = treeSpecies(tags);
                 double h = OsmTags.parseLength(tags.get("height"), Double.NaN);
                 if (!Double.isNaN(h) && h > 0) {
-                    int hb = Math.max(1, Math.min(15, (int) Math.round(h / 2.0)));
+                    int hb = Math.max(1, Math.min(15, (int) Math.round(h / cfg.metersPerBlock / 2.0))); // blocks, as the canopy trees' are
                     dataByte = (byte) ((dataByte & 0x0F) | (hb << 4));
                 }
             } else if ("shrub".equals(tags.get("natural"))) {
