@@ -28,7 +28,15 @@ public abstract class EnderEyeSearchMixin {
 
     @Inject(method = "use", at = @At("HEAD"))
     private void orbisterrarum$rememberUser(Level level, Player player, InteractionHand hand, CallbackInfoReturnable<InteractionResult> cir) {
-        orbisterrarum$user.set(player);
+        // The server's only: on the client nothing took it back, and the render thread held the player, and with it the whole
+        // client world, after leaving it
+        if (level instanceof ServerLevel) orbisterrarum$user.set(player);
+    }
+
+    /** Let go however the throw ended (aimed at an end portal frame, it returned before the search). */
+    @Inject(method = "use", at = @At("RETURN"))
+    private void orbisterrarum$forgetUser(Level level, Player player, InteractionHand hand, CallbackInfoReturnable<InteractionResult> cir) {
+        orbisterrarum$user.remove();
     }
 
     @Redirect(method = "use", at = @At(value = "INVOKE",

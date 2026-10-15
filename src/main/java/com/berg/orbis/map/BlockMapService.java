@@ -74,6 +74,7 @@ public final class BlockMapService {
             if (bulk != null) bulk.shutdownNow();
             workers = null;
             bulk = null;
+            IN_FLIGHT.clear(); // the queued requests went with the workers
             RENDERING.set(false);
             if (s != null) s.flush();
         });
@@ -95,16 +96,30 @@ public final class BlockMapService {
         });
     }
 
+    /** Requests a player has waiting at most (a client asks for what is on screen, 400 regions at the most). */
+    private static final int MAX_IN_FLIGHT = 512;
+    private static final java.util.Map<java.util.UUID, AtomicInteger> IN_FLIGHT = new java.util.concurrent.ConcurrentHashMap<>();
+
     private static void handle(ServerPlayer player, MapTilePayloads.Request req) {
         BlockMapStore s = store;
         ExecutorService w = workers;
         if (s == null || w == null) return;
         int level = Math.max(0, Math.min(4, req.level()));
         MinecraftServer server = player.level().getServer();
+        net.minecraft.world.level.border.WorldBorder border = server.overworld().getWorldBorder();
+        AtomicInteger inFlight = IN_FLIGHT.computeIfAbsent(player.getUUID(), k -> new AtomicInteger());
         for (int i = 0; i < req.rx().length; i++) {
             int rx = req.rx()[i], rz = req.rz()[i], known = req.known()[i];
             if (Math.abs(rx) > 60_000 || Math.abs(rz) > 60_000) continue;
+            // Only regions inside the world border, and not more waiting than a screen holds: the queue had no bound
+            if ((rx + 1) * 512.0 < border.getMinX() || rx * 512.0 > border.getMaxX()
+                    || (rz + 1) * 512.0 < border.getMinZ() || rz * 512.0 > border.getMaxZ()) continue;
+            if (inFlight.incrementAndGet() > MAX_IN_FLIGHT) {
+                inFlight.decrementAndGet();
+                continue;
+            }
             w.execute(() -> {
+                inFlight.decrementAndGet();
                 try {
                     MapTilePayloads.Data data;
                     if (req.blocks()) {
@@ -180,6 +195,11 @@ public final class BlockMapService {
         } catch (IOException e) {
             RENDERING.set(false);
             return Component.literal("Could not list " + dir + ": " + e.getMessage());
+        }
+        if (regions.isEmpty()) {
+            // Nothing saved to draw: no task would ever say it is done, and Draw all stayed running until the server stopped
+            RENDERING.set(false);
+            return Component.literal("Nothing to draw yet: no part of this world has been saved.");
         }
         RENDER_DONE.set(0);
         RENDER_TOTAL.set(regions.size());

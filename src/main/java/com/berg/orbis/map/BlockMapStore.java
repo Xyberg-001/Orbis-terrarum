@@ -363,6 +363,9 @@ public final class BlockMapStore {
         }
         if (r.complete) return r;
         Path file = regionDir.resolve("r." + rx + "." + rz + ".mca");
+        // Nothing saved there (open sea, land not generated): nothing to draw, and nothing written (a blank map file was saved for
+        // every such region the map was asked about, by the Blocks layer or by anyone sending requests)
+        if (!Files.exists(file)) return r;
         try {
             if (Files.exists(file)) {
                 byte[] state = PregenMap.regionState(file);
