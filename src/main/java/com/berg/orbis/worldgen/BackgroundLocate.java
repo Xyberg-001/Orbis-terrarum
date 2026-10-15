@@ -85,8 +85,24 @@ public final class BackgroundLocate {
         int ticketLevel = ChunkLevel.byStatus(status);
         long giveUp = System.currentTimeMillis() + CHUNK_WAIT_MS;
         while (System.currentTimeMillis() < giveUp) {
+            // A world closed meanwhile runs no more tasks: waiting on it held this thread for good, and every later search (in any
+            // world, until the game was restarted) queued behind it.
             // (re)new the ticket, then ask; a request still running is the same one each time
-            server.submit(() -> serverLevel.getChunkSource().addTicket(new Ticket(ticket, ticketLevel), pos)).join();
+            java.util.concurrent.CompletableFuture<Void> held = server.submit(() -> serverLevel.getChunkSource().addTicket(new Ticket(ticket, ticketLevel), pos));
+            while (true) {
+                if (!server.isRunning() || com.berg.orbis.OrbisMod.stopping()) throw new IllegalStateException("the world was closed");
+                try {
+                    held.get(20, TimeUnit.SECONDS);
+                    break;
+                } catch (TimeoutException e) {
+                    // the server thread is busy: check it still runs, and keep waiting for the same request
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("search interrupted");
+                } catch (java.util.concurrent.ExecutionException e) {
+                    throw new IllegalStateException("chunk " + pos + " could not be held: " + e.getCause(), e.getCause());
+                }
+            }
             try {
                 ChunkResult<ChunkAccess> result = serverLevel.getChunkSource().getChunkFuture(chunkX, chunkZ, status, true)
                         .get(20, TimeUnit.SECONDS);

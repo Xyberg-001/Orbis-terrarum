@@ -185,6 +185,8 @@ public final class OsmRegionManager {
         long key = key(rx, rz);
         RegionRaster cached = cache.get(key);
         if (cached != null) return CompletableFuture.completedFuture(cached);
+        // A retired manager has no workers: a request made of it now was never completed, and its caller waited forever.
+        if (shutdown) return CompletableFuture.completedFuture(new RegionRaster(rx, rz, size, cfg.regionMarginBlocks));
         Request req = pending.compute(key, (k, existing) -> {
             if (existing != null) {
                 if (priority < existing.priority) existing.priority = priority;
@@ -192,6 +194,12 @@ public final class OsmRegionManager {
             }
             return new Request(rx, rz, priority);
         });
+        if (shutdown) {
+            // retired between the check and the request (after shutdown() completed the pending ones)
+            req.future.complete(new RegionRaster(rx, rz, size, cfg.regionMarginBlocks));
+            pending.remove(key, req);
+            return req.future;
+        }
         startNvdb(req);
         synchronized (queueLock) {
             queueLock.notifyAll();

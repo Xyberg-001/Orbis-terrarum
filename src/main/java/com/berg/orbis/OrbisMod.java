@@ -79,14 +79,22 @@ public class OrbisMod implements ModInitializer {
     private static int modelHeight;
     /** The height of the level actually loaded (from its dimension type), 0 while no level is loaded. */
     private static volatile int levelHeight;
+    /** See {@link #modelChangedInWorld}. */
+    private static volatile boolean rebuildAfterWorld;
+    /** The model whose spawn area was fetched ahead, so each is fetched once. */
+    private static WorldModel prefetched;
     private static volatile Float cloudHeight;
     private static Thread spawnPrefetch;
     /** The model built while the mod starts (the defaults'): a client fetches nothing for it. */
     private static boolean startupModel;
 
-    /** Cloud layer Y for the active world (about 800 m above the ground at its origin), or null before a model exists. */
+    /**
+     * Cloud layer Y for the active world (about 800 m above the ground at its origin), or null when no Orbis world runs in this game or
+     * server: on someone else's server the model here is the last singleplayer world's (or the defaults'), and the clouds came from it
+     * instead of the server's (Everest's height over Bergen); its dimension type has the server's value.
+     */
     public static Float cloudHeightOverride() {
-        return cloudHeight;
+        return levelHeight != 0 ? cloudHeight : null;
     }
 
     /** The active world model (never null after initialisation). */
@@ -136,8 +144,14 @@ public class OrbisMod implements ModInitializer {
      */
     public static boolean isOrbisSeaLevel(int seaLevel) {
         WorldModel m = model;
-        return m != null && seaLevel == m.cfg().seaLevelY;
+        if (levelHeight != 0 && m != null) return seaLevel == m.cfg().seaLevelY;
+        // No Orbis world runs here (a player on someone else's server): the model here is another world's, so its sea level says
+        // nothing about this one. A sea below vanilla's floor is an Orbis world's.
+        return seaLevel < VANILLA_MIN_Y;
     }
+
+    /** The lowest Y of any vanilla dimension. */
+    private static final int VANILLA_MIN_Y = -64;
 
     public static Path configDir() {
         return configDir;
@@ -293,17 +307,23 @@ public class OrbisMod implements ModInitializer {
         cloudHeight = (float) built.cloudHeightY();
         System.out.println("[orbis] Cloud layer at Y " + cloudHeight);
         if (current != null) current.shutdown();
-        boolean client = FabricLoader.getInstance().getEnvironmentType() == net.fabricmc.api.EnvType.CLIENT;
-        if (built.regions() != null && config.prefetchSpawnAtStartup && !(startupModel && client)) {
-            // Start downloading the spawn regions NOW, while the player is
-            // still in the menu: vanilla's spawn search generates chunks
-            // synchronously on the server thread and would otherwise look
-            // frozen at "Create New World" until the downloads finish.
-            spawnPrefetch = new Thread(built.regions()::prefetchSpawnArea, "Orbis-spawn-prefetch");
-            spawnPrefetch.setDaemon(true);
-            spawnPrefetch.start();
-        }
+        // The defaults' model at startup fetches nothing: no world is known to be Orbis's yet (a server's world is fetched
+        // for as it starts, below; a server running a vanilla world downloaded the default place's spawn area every boot).
+        if (!startupModel) prefetchSpawn(built);
         return built;
+    }
+
+    /**
+     * Starts downloading the model's spawn regions NOW, while the player is still in the menu (or the server is still starting):
+     * vanilla's spawn search generates chunks synchronously on the server thread and would otherwise look frozen at "Create New
+     * World" until the downloads finish. Once per model.
+     */
+    private static synchronized void prefetchSpawn(WorldModel m) {
+        if (m == null || m.regions() == null || !config.prefetchSpawnAtStartup || m == prefetched) return;
+        prefetched = m;
+        spawnPrefetch = new Thread(m.regions()::prefetchSpawnArea, "Orbis-spawn-prefetch");
+        spawnPrefetch.setDaemon(true);
+        spawnPrefetch.start();
     }
 
     /**
@@ -355,17 +375,29 @@ public class OrbisMod implements ModInitializer {
         saveConfigFile();
     }
 
-    /** Replaces the installation config (from the settings screen), saves it and rebuilds the model. */
-    public static synchronized void replaceConfig(OrbisConfig newConfig) {
+    /** Replaces the installation config (from the settings screen) and saves it; true when the open world takes it only when opened again. */
+    public static synchronized boolean replaceConfig(OrbisConfig newConfig) {
         newConfig.sanitizeValues();
         config = newConfig;
         saveConfigFile();
-        WorldSettings running = modelSettings;
-        modelSettings = null; // network / data-source settings changed: the next model is built afresh
-        // Rebuilt now only for an Orbis world open in this game or server, with that world's own settings. Anywhere
-        // else (the title screen, someone else's server) the next world builds its own: rebuilding here fetched and
-        // drew the last singleplayer world's spawn area in the background while the player was on a server.
-        if (levelHeight != 0 && running != null) modelFor(running);
+        // Network and data-source settings take effect with the next model. Never rebuilt under an open world: chunks
+        // being generated still held the retired model and waited forever on it (or were saved without roads and
+        // buildings). The open world picks them up when it is opened again; anywhere else (the title screen, someone
+        // else's server) the next world builds its own.
+        if (levelHeight != 0) {
+            rebuildAfterWorld = true;
+            return true;
+        }
+        modelSettings = null;
+        return false;
+    }
+
+    /**
+     * The model's settings were changed while its world ran (settings saved, or the real sky switched by command): the
+     * next world builds a fresh model even when its settings match, instead of inheriting the changes.
+     */
+    public static void modelChangedInWorld() {
+        rebuildAfterWorld = true;
     }
 
     /** The mod used to be called TellusPlus: carry its config folder (and the valuable caches inside) over once. */
@@ -468,20 +500,28 @@ public class OrbisMod implements ModInitializer {
             int actual = server.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DIMENSION_TYPE)
                     .getOrThrow(net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD).value().height();
             levelHeight = actual;
-            WorldModel m = model;
-            if (m != null && m.cfg().worldHeight != actual && !cubicWorld()) {
-                System.out.println("[orbis] Level height is " + actual + " (model had " + m.cfg().worldHeight + "); rebuilding the model");
-                m = modelFor(modelSettings);
-            }
             System.out.println("[orbis] World Y " + OrbisConfig.DIMENSION_MIN_Y + ".." + (OrbisConfig.DIMENSION_MIN_Y + actual - 1) + " (" + actual / 16 + " sections)");
-            if (m != null && m.regions() != null) {
-                System.out.println("[orbis] Server starting; " + m.regions().stats());
-            }
+        });
+        // This world's model from the moment its overworld loads, built from the world's own settings: until its generator first asked
+        // for one, the model stayed the previous world's (or the defaults'), and what ran before that (the sky, the spawn) read the wrong
+        // place. A cubic world has its heights by now (its cube generator is made on the same event, registered earlier). Rebuilding at
+        // SERVER_STARTING by height alone rebuilt the previous world's place and fetched its spawn area.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents.LOAD.register((server, level) -> {
+            if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD
+                    || !(level.getChunkSource().getGenerator() instanceof RealWorldChunkGenerator generator)) return;
+            WorldModel m = modelFor(generator.settings().orElse(null));
+            prefetchSpawn(m);
+            if (m.regions() != null) System.out.println("[orbis] Server starting; " + m.regions().stats());
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             com.berg.orbis.worldgen.StructureSearches.clear();
             levelHeight = 0;
             cubicHeights = null;
+            // A model changed while its world ran is not handed to the next world with the same settings.
+            if (rebuildAfterWorld) {
+                rebuildAfterWorld = false;
+                modelSettings = null;
+            }
         });
         ServerLifecycleEvents.SERVER_STARTING.register(server -> stopping = false);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {

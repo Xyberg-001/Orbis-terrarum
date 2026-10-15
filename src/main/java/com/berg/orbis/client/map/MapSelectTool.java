@@ -1099,13 +1099,24 @@ public final class MapSelectTool {
         }
     }
 
+    /** Moves the shapes kept under the old world key to the new one, unless the new one has its own already (see MapMarks.worldKey). */
+    static synchronized void adopt(String from, String to) {
+        Map<String, List<Stored>> all = load();
+        if (all.containsKey(to) || !all.containsKey(from)) return;
+        all.put(to, all.remove(from));
+        writeAll(all);
+    }
+
     private void saveLocked() {
         List<Stored> list = new ArrayList<>();
         for (Shape s : shapes) list.add(new Stored(s.subtract(), s.latLon()));
         Map<String, List<Stored>> all = load();
         if (list.isEmpty()) all.remove(worldKey);
         else all.put(worldKey, list);
+        writeAll(all);
+    }
 
+    private static void writeAll(Map<String, List<Stored>> all) {
         try {
             Files.createDirectories(file().getParent());
             Files.writeString(file(), GSON.toJson(all), StandardCharsets.UTF_8);

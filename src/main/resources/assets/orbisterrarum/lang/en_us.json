@@ -1,6 +1,8 @@
 {
   "orbisterrarum.screen.world": "Orbis Terrarum – World Settings",
   "orbisterrarum.screen.config": "Orbis Terrarum – Settings",
+  "orbisterrarum.saved.title": "Orbis Terrarum settings saved",
+  "orbisterrarum.saved.reopen": "Map and network settings take effect when this world is opened again.",
   "orbisterrarum.spawnwait.title": "Downloading the map around your spawn",
   "orbisterrarum.spawnwait.text": "Orbis Terrarum is fetching OpenStreetMap data for %s.\n%s of %s spawn regions ready · %s s elapsed.\nThe world will be created automatically as soon as the regions around the spawn are in.",
   "orbisterrarum.spawnwait.hint": "Each region is one request to the public Overpass servers (usually 5–40 s).",

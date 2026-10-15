@@ -92,8 +92,11 @@ public final class SkySwitches {
             }
         }
         WorldModel model = OrbisMod.model();
-        if (model != null) applyTo(model.cfg());
-        if (!OVERRIDES.isEmpty()) System.out.println("[orbis] Real sky switched in this world by command: " + OVERRIDES);
+        if (model != null && !OVERRIDES.isEmpty()) {
+            applyTo(model.cfg());
+            OrbisMod.modelChangedInWorld(); // not handed on to the next world with the same settings
+            System.out.println("[orbis] Real sky switched in this world by command: " + OVERRIDES);
+        }
     }
 
     /** Puts this world's switched settings over a model's (as the model for the running world is made). */
@@ -109,6 +112,7 @@ public final class SkySwitches {
         }
         OVERRIDES.put(s, on);
         s.write(model.cfg(), on);
+        OrbisMod.modelChangedInWorld(); // the next world with the same settings gets a fresh model, not this switch
         save();
         StringBuilder msg = new StringBuilder(s.label).append(" is ").append(on ? "on" : "off").append(" in this world.");
         switch (s) {

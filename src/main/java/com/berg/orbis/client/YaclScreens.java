@@ -93,7 +93,9 @@ public final class YaclScreens {
                 .category(storageCategory(c))
                 .category(performanceCategory(c))
                 .category(networkCategory(c))
-                .save(() -> OrbisMod.replaceConfig(c))
+                .save(() -> {
+                    if (OrbisMod.replaceConfig(c)) toast(t("saved.title"), t("saved.reopen"));
+                })
                 .build()
                 .generateScreen(parent);
     }

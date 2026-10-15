@@ -32,6 +32,8 @@ public final class WorldSpawn {
     private WorldSpawn() {}
 
     public static void applyOnce(MinecraftServer server) {
+        // Only in an Orbis world: the model here otherwise belongs to another world, whose spawn moved a vanilla world's
+        if (!OrbisMod.isOrbisWorld(server)) return;
         WorldModel model = OrbisMod.model();
         if (model == null) return;
         OrbisConfig cfg = model.cfg();
