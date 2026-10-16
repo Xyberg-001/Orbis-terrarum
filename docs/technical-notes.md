@@ -1941,6 +1941,17 @@ No extra software or DNS change is needed on the player's side.
   - Each cell of a graded road takes its height from the nearest piece of
     the road (as its surface does), not the first piece to reach it: on a
     bend two pieces meet at different distances along it.
+  - At a region's edges a ramp or cutting comes back to the graded road at
+    half a block per block. The graded height comes from the whole way and
+    the ground, so both regions agree on it; a ramp or cutting starts at a
+    bridge or tunnel the next region may not have (beyond its 32-block
+    margin) or sees with less above it. Mecca's First Ring Road went 41
+    blocks down towards its tunnel in one region and stayed on the ground in
+    the next: a 10-block wall across six lanes. Road steps across region
+    edges (16 Oct 2026, scratchpad seam probe): Bergen 5 x 5 km 46 -> 13,
+    Mecca 3 x 3 km 230 -> 171; what is left is on bridge decks (up to 6
+    blocks) and in tunnels (up to 11), whose own heights still depend on what
+    each region sees above and under them.
   Counts on the four test areas (roads, 1:1 / 1:2): steps 94 / 70 -> 7 / 22
   (the rest mostly the touching legs of the Nordre Skuteviksveien
   switchback), road-under-road headroom 43 / 5 -> 0 / 0, bridge-deck

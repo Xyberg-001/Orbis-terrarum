@@ -2403,6 +2403,32 @@ public final class FeatureRasterizer {
             }
         }
 
+        // At the region's edges a ramp or cutting comes back to the graded road, at a steady slope. The
+        // graded height is worked out from the whole way and the ground, so both regions agree on it; a ramp or cutting
+        // is not: it starts at a bridge or tunnel that the next region may not have (beyond its margin) or sees with
+        // less above it. Mecca's First Ring Road went down 41 blocks into a cutting towards its tunnel in one region and
+        // stayed on the ground in the next, a 10-block wall across six lanes at their edge.
+        if (!graded.isEmpty()) {
+            // Half a block per block on top of the graded road's own slope (which may be a block per block): with the full
+            // slope the two added up to two-block steps along footways at the edge.
+            double slope = 0.5 * maxRoadSlope();
+            int lo = r.margin, hi = r.margin + r.size - 1;
+            for (java.util.Map.Entry<Drawn, double[]> e : graded.entrySet()) {
+                Drawn g = e.getKey();
+                double[] gp = e.getValue();
+                walkThickLine(r, g.pts(), g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0), (idx, x, z, dist, along, dir) -> {
+                    if (idx < 0 || r.road[idx] != g.code() || r.roadY[idx] == RegionRaster.NO_Y) return;
+                    int lx = x - r.originX, lz = z - r.originZ;
+                    int edge = Math.max(0, Math.min(Math.min(lx - lo, hi - lx), Math.min(lz - lo, hi - lz)));
+                    double base = gp[(int) Math.max(0, Math.min(gp.length - 1, Math.round(along)))];
+                    double allowed = slope * edge;
+                    int y = r.roadY[idx];
+                    if (y > base + allowed) r.roadY[idx] = (short) Math.round(base + allowed);
+                    else if (y < base - allowed) r.roadY[idx] = (short) Math.round(base - allowed);
+                });
+            }
+        }
+
         // Side slopes of the graded roads: the columns just outside a road blend from the road height back to the
         // ground over SHOULDER blocks, so a road cut into a hillside or raised over a dip has earth banks, not
         // vertical walls. Buildings, water and other roads keep their own heights.
