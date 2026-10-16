@@ -914,10 +914,36 @@ Kartverket's surface model (building heights) stays.
   domes, minarets, spires (`roof:shape=cone`), roof profiles.
 
 ### Climate and biomes (`biome/`)
-- Mean annual temperature from latitude + elevation lapse rate
-  (+ configurable offset); zones: ice cap, tundra, alpine, taiga,
+- Worlds made before 2.0.1: mean annual temperature from latitude + elevation
+  lapse rate (+ configurable offset); zones: ice cap, tundra, alpine, taiga,
   temperate, subtropical, arid, savanna, tropical. `climateOverride`
   ("arid" / "humid") resolves the precipitation ambiguity for a region.
+- Real climate (`realClimate`, new worlds from 2.0.1, config v20; servers keep
+  false; a `climateOverride` still takes over): `ClimateMap` reads the climate
+  pack shipped with the mod, `src/main/resources/orbis-climate.bin.gz` (3.4 MB,
+  made by `tools/climate_pack.py`, 21 MB in memory: the classes kept as runs per
+  row). In it: Beck et al. 2023 Köppen-Geiger classes 1991-2020 (CC BY 4.0),
+  the 1 km map reduced to 0.05° by the most common class; and from CHELSA v2.1
+  1981-2010 (CC0) at 0.1°: mean annual temperature (bio1) and coldest-quarter
+  temperature (bio11), both reduced to sea level with 6.5 °C/km using CHELSA's
+  own elevation grid, annual precipitation (bio12, log-coded) and each cell's
+  mean land elevation. The CHELSA files are hundreds of MB each, one deflate
+  strip per row, so the tool reads one row per 0.1° band (range requests,
+  about 190 MB in all, 18 minutes here) and averages the band's 12 pixels per
+  cell. The class picks the zone: Af/Am tropical, Aw/BSh savanna, BW arid, BSk
+  arid below 250 mm, savanna from 15 °C, else temperate; Csa/Cwa/Cfa
+  subtropical; Csb/Csc/Cwb/Cwc/Cfb temperate; Cfc taiga; Dsa/Dwa/Dfa
+  temperate; Dsb/Dwb/Dfb taiga below 4 °C, else temperate; Dsc-Dfd taiga; ET
+  tundra (alpine above 1500 m within 60° of the equator); EF ice cap. The
+  temperature is the cell's sea-level value less 6.5 °C per km of the block's
+  own height; a block 400 m above its cell's mean height (or above 2600 m)
+  takes the colder zone its temperature gives (old thresholds), one 400 m below
+  the warmer of the cold ones. Over the sea the nearest land cell within a few
+  cells answers. Checked: Bergen Cfb 7.9 °C temperate (was taiga), Yakutsk Dfc
+  -8.7 °C (was +6.1), Tamanrasset BWh 22.4 °C arid (was temperate), Atacama
+  BWk arid, Mumbai Am tropical (was savanna), Lhasa 6.5 °C alpine (was -5.6),
+  Zermatt 3.6 °C, Everest's summit -28 °C. WorldClim was not usable (no
+  redistribution); ERA5 needs an account per user.
 - `RealWorldBiomeSource` picks vanilla biomes per column for grass/foliage
   tint, water colour, snow and spawns from climate + land cover + water
   (ocean variants by temperature and depth, river, beach, swamp, forest,
@@ -1292,7 +1318,29 @@ server, so players need nothing:
   asked again in 10 minutes). Each of the four nearest cells gives a depth
   (its rate × height above its line, at most 3 m), blended by distance.
   Measuring the rate from today's depths at nearby model points was tried and
-  left: in early October almost none of nine points per cell had snow. The column
+  left: in early October almost none of nine points per cell had snow.
+- **Snow and ice as seen** (with `realSnow`, `sky/ObservedSnow`, `sky/SeNorge`):
+  the model's depth is checked against NOAA's IMS daily snow and ice analysis
+  (Northern Hemisphere, 1 km, public domain, via NSIDC: drawn by analysts from
+  satellites and stations, no cloud gaps). The day's file (3 MB,
+  `imsYYYYDDD_00UTC_1km_v1.3.asc.gz`, posted the next afternoon) is a text grid
+  of 24,576 rows of class digits on a WGS84 polar stereographic map (true at
+  60° N, central meridian 80° W, 1 km cells, bottom row first); it is read as a
+  stream into runs of water, ice and snow per row (16-bit, about 6 MB) and kept
+  as `snow-cache/observed/ims-<day>.bin.gz` (1.5 MB; 10 s the first time, 1 s
+  after). A 1 km cell seen under snow gets at least 5 cm where the model has
+  none; one seen bare loses 30 cm of the model's depth (a peak in a mostly bare
+  cell keeps its deep snow). Water is frozen when its cell is ice, open when
+  open water, and frozen in a cell of snowy land (a lake too small for the
+  cells); otherwise the year-round climate rule. In Norway seNorge's snow depth
+  (MET Norway / NVE, NLOD, 1 km, the day's model run on observed weather)
+  replaces both: THREDDS OPeNDAP ASCII in 32 x 32 km tiles of the UTM 33 grid
+  (`x = (E + 74500) / 1000`, `y = (N - 6450500) / 1000`, cell centres; the
+  file's own lat/lon arrays are half a cell off), the newest day from the time
+  axis' length, kept per day in `snow-cache/senorge/`. Checked on 16 Oct 2026:
+  IMS snow on Greenland, Norilsk, Jotunheimen and Monte Rosa, ice at the Pole,
+  bare Oslo, Bergen and Delhi, open Baikal and Hudson Bay; seNorge 22.7 cm at
+  Galdhøpiggen, 9.7 in the Tromsø mountains, 0.8 at Finse, 0 in Bergen. The column
   painter lays it as snow layers (eight to a block at the world's metres per
   block; at least one from 2 cm, at least one on ice caps): whole snow blocks
   then the rest as layers, one layer on roads and flat roofs. Generation waits
@@ -2888,5 +2936,5 @@ tunnel such as e4mc or playit) handles fresh exploration comfortably.
   close-coloured stairs in the running Minecraft version stays in full-block
   steps (bright concrete colours on 26.2, gold domes, thatch).
 - Interiors are empty shells (floors only).
-- Climate has no precipitation data; use `climateOverride` where the
-  latitude default is wrong.
+- Worlds made before 2.0.1 have no precipitation data; use `climateOverride`
+  where the latitude default is wrong.

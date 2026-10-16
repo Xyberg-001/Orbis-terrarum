@@ -88,7 +88,7 @@
 <div class="wrap">
   <header>
     <h1>Orbis Data Sources</h1>
-    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 33: spruce, pine and broadleaf from NIBIO SR16)</span>
+    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 34: real climate (Köppen-Geiger, CHELSA), snow and ice as seen (IMS, seNorge))</span>
   </header>
 
   <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in. National services (a country's photos, NGU, NVE, NVDB) are used automatically inside their country's outline; Kartverket's surface model whenever it answers from the player's network (its switch forces it on, with a notice at world creation saying whether it answers). Data Sources → Downloads by country shows, re-imports and deletes each source's copies.</p>
@@ -213,7 +213,7 @@
           <text x="482" y="468">Cover: OSM polygon → WorldCover class → imagery colour</text>
           <text x="482" y="486">Trees: canopy map (every crown) → lidar DOM−DTM →</text>
           <text x="482" y="502">random scatter · leaf type: CLC+, CGLS</text>
-          <text x="482" y="522">Climate and biome from latitude and height</text>
+          <text x="482" y="522">Climate: Köppen-Geiger + CHELSA, block height</text>
           <text x="482" y="540" opacity="0.75">Ground blocks by cover, ground class and climate</text>
           <text x="482" y="558" font-size="12">Rock NGU → Macrostrat · soil SoilGrids · ice RGI</text>
           <text x="482" y="576" font-size="12">Lakes: NVE → Seascape → GLOBathy; rivers: GRWL</text>
@@ -228,7 +228,7 @@
           <text x="482" y="732" font-weight="600" font-size="14">6 · Sky and seasons (while it runs)</text>
           <text x="482" y="752">Sun and moon: computed for the place, no source</text>
           <text x="482" y="770">Weather: MET Norway forecast where the players are</text>
-          <text x="482" y="788" opacity="0.75">Seasons: biome colours · snow: today's depth</text>
+          <text x="482" y="788" opacity="0.75">Snow: seNorge (NO) → IMS-checked model depth</text>
           <text x="482" y="808">Villager hours: the town's clock (Open-Meteo zone)</text>
         </g>
 
@@ -373,6 +373,9 @@
       <tr><td><strong>NVE</strong> lake database (Innsjødatabase)</td><td>The real bed of Norway's surveyed lakes (depth contours, sounded points, greatest depth)</td><td><span class="pill auto">automatic</span> ArcGIS REST: lake outlines per 0.1° tile, then a lake's contours when a region needs it</td><td class="mono">lake-survey-cache/</td><td>NLOD, © NVE</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>GRWL</strong> Global River Widths from Landsat (Allen &amp; Pavelsky 2018)</td><td>The measured width of rivers 30 m and wider, for OSM river lines without a width (not where a river is mapped as an area). New worlds from 2.0.1</td><td>shipped with the mod: 2.2 MB made once by <code>tools/river_widths.py</code>; no download</td><td class="mono">(inside the jar)</td><td>CC BY 4.0</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>GLOBathy</strong> with HydroLAKES outlets</td><td>Greatest depth of other lakes over 10 ha, for the bowl-shaped bed (an estimate; low for Norway's glacial lakes)</td><td>one-time: <code>tools/lake_depths.py --bbox …</code> (downloads 195 MB once)</td><td class="mono">lake-depths/, lake-depths-src/</td><td>CC0; HydroLAKES CC BY 4.0</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
+      <tr><td><strong>Climate pack</strong>: Köppen-Geiger 1991-2020 (Beck et al. 2023), CHELSA v2.1 1981-2010</td><td>Each place's climate zone, mean temperature (the block's own height taken off), coldest season and rainfall: deserts, rainforests, oceanic coasts. New worlds from 2.0.1</td><td>shipped with the mod: 3.4 MB made once by <code>tools/climate_pack.py</code>; no download</td><td class="mono">(inside the jar)</td><td>CC BY 4.0 (Beck); CC0 (CHELSA)</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>NOAA IMS</strong> daily snow and ice (1 km, Northern Hemisphere)</td><td>Where snow lies and water is frozen today, as analysts see it from satellites: gates the model's snow depth, freezes lakes and sea</td><td><span class="pill auto">automatic</span> one 3 MB file a day from NSIDC, with real snow on</td><td class="mono">snow-cache/observed/</td><td>public domain, NOAA / US National Ice Center</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>seNorge</strong> snow depth (MET Norway / NVE, 1 km)</td><td>Norway's snow depth today, in place of the model's</td><td><span class="pill auto">automatic</span> THREDDS tiles of 32 km, with real snow on</td><td class="mono">snow-cache/senorge/</td><td>NLOD</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Open-Meteo</strong> time zone</td><td>The world's local time zone (daylight saving included), for villagers who keep clock hours</td><td><span class="pill auto">automatic</span> one question per world, kept in the world folder</td><td class="mono">&lt;world&gt;/orbis-timezone.txt</td><td>CC BY 4.0, © Open-Meteo</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>MET Norway</strong> locationforecast</td><td>Real weather while a world runs: clear, rain or thunder for the coming hour</td><td><span class="pill auto">automatic</span> one small request when the last answer expires (a few minutes at most), only with real weather on</td><td class="mono">(not cached on disk)</td><td>CC BY 4.0, © MET Norway</td><td><span class="pill ok">working</span></td></tr>
     </tbody>
