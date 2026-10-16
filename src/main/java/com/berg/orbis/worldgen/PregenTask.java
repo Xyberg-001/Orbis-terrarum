@@ -849,11 +849,11 @@ public final class PregenTask {
                 level.getServer().execute(() -> level.getServer().getPlayerList().broadcastSystemMessage(
                         Component.literal(text).withStyle(ok ? ChatFormatting.GOLD : ChatFormatting.RED), false));
             }
-        }, net.minecraft.util.Util.backgroundExecutor()).exceptionally(e -> null);
+        }, com.berg.orbis.net.Lookups.POOL).exceptionally(e -> null);
     }
 
     private static void warnIfTooLow(ServerLevel level, WorldModel model, ChunkSelection selection) {
-        CompletableFuture.supplyAsync(() -> WorldHeight.peak(model, selection), net.minecraft.util.Util.backgroundExecutor())
+        CompletableFuture.supplyAsync(() -> WorldHeight.peak(model, selection), com.berg.orbis.net.Lookups.POOL)
                 .thenAccept(p -> {
                     if (p == null || p.squeezedBy() <= SQUEEZE_WARNING_BLOCKS) return;
                     String text = String.format(Locale.ROOT,

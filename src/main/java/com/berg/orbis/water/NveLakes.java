@@ -205,6 +205,11 @@ public final class NveLakes {
         }
     }
 
+    /** Whether NVE failed lately (its answers are missing for a few minutes, not "none"). */
+    public boolean failing() {
+        return System.currentTimeMillis() < failingUntil;
+    }
+
     private void failed(Exception e) {
         if (System.currentTimeMillis() >= failingUntil) {
             System.err.println("[orbis] NVE lake survey service unavailable (" + e + "); estimated lake depths for 5 minutes");

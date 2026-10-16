@@ -64,6 +64,11 @@ import java.util.zip.ZipOutputStream;
  */
 public final class AternosExport {
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
+
+    /** Whether an export is copying the world now. */
+    public static boolean running() {
+        return RUNNING.get();
+    }
     /** The whole zip, world files included: under Aternos' 1 GB with room (a 941 MB zip was refused on 2026-09-28). */
     private static final long ZIP_BUDGET = 900L << 20;
     private static final long STORAGE_BUDGET = 3400L << 20;

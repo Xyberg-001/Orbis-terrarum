@@ -159,15 +159,8 @@ public final class MapRequests {
         return Component.literal(String.format(Locale.ROOT, "Finding the ground at %.5f, %.5f...", lat, lon));
     }
 
-    /**
-     * Look-ups that may download terrain tiles (What's here, the ground for a teleport): their own two threads, not Minecraft's
-     * background pool, which also generates chunks, nor the server thread.
-     */
-    private static final java.util.concurrent.ExecutorService LOOKUPS = java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
-        Thread t = new Thread(r, "Orbis-lookup");
-        t.setDaemon(true);
-        return t;
-    });
+    /** Look-ups that may download terrain tiles (What's here, the ground for a teleport). */
+    private static final java.util.concurrent.ExecutorService LOOKUPS = com.berg.orbis.net.Lookups.POOL;
 
     // ------------------------------------------------------------------ what's here
 

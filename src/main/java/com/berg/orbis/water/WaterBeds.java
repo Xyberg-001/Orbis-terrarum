@@ -98,7 +98,9 @@ public final class WaterBeds {
             System.err.println("[orbis] Lake bed of " + b.area().id() + " not shaped: " + e);
             return null;
         }
-        if (s != null) {
+        // Not kept when NVE was failing: the plain bowl built meanwhile was used for the lake's other regions too, which then met the
+        // surveyed bed of regions built later with a step
+        if (s != null && !(nve != null && nve.failing())) {
             if (shapes.size() > 24) shapes.clear(); // a surveyed lake holds a depth grid of up to 4 MB
             shapes.put(b.area().id(), s);
         }

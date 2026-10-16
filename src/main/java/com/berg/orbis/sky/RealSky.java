@@ -50,6 +50,8 @@ public final class RealSky {
     private static boolean clockTaken;
     private static volatile boolean fetching;
     private static volatile MetWeather.Report pending;
+    /** Which world's run asked for the weather: an answer for an earlier one (in flight as it closed) is dropped. */
+    private static volatile int run;
     private static MetWeather.Report applied;
     private static String lastError;
 
@@ -62,6 +64,8 @@ public final class RealSky {
             clockTaken = false;
             applied = null;
             pending = null;
+            run++;
+            fetching = false; // a request of the last world's may still be on its way: its answer is dropped
             // The season pack for the next time this world is loaded (a month may have turned while it ran, and a
             // world made before this existed gets its first one).
             WorldModel m = OrbisMod.model();
@@ -143,9 +147,12 @@ public final class RealSky {
         }
         double[] ll = n == 0 ? new double[]{m.cfg().originLat, m.cfg().originLon} : m.mapper().toLatLonExact(x / n, z / n);
         fetching = true;
+        int askedIn = run;
         NET.execute(() -> {
             try {
-                pending = MET.now(ll[0], ll[1]);
+                MetWeather.Report report = MET.now(ll[0], ll[1]);
+                // the last world's weather was applied to the next one when it came after that one opened
+                if (askedIn == run) pending = report;
                 lastError = null;
             } catch (Exception e) {
                 String msg = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());

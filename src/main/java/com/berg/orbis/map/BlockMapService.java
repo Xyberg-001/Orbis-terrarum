@@ -76,7 +76,7 @@ public final class BlockMapService {
             bulk = null;
             IN_FLIGHT.clear(); // the queued requests went with the workers
             RENDERING.set(false);
-            if (s != null) s.flush();
+            if (s != null) s.close();
         });
         // (In a cubic world the chunks hold no blocks: the cubes are drawn instead, see versions/26.3 cubic.CubeMapDrawer.)
         ServerChunkEvents.CHUNK_LOAD.register((level, chunk, generated) -> {

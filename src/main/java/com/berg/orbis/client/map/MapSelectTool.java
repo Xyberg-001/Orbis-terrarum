@@ -1057,12 +1057,14 @@ public final class MapSelectTool {
      */
     private void ceilingLines(ChunkSelection s, long count, List<String> lines) {
         com.berg.orbis.worldgen.WorldModel model = com.berg.orbis.OrbisMod.model();
-        if (model == null || !mc.hasSingleplayerServer()) return;
+        // Only for an Orbis world open in this game: in a plain one (a server's world uploaded from Orbis, opened here) the model
+        // is another world's, and the check fetched terrain for the wrong place
+        if (model == null || !mc.hasSingleplayerServer() || !com.berg.orbis.OrbisMod.isOrbisWorld(mc.getSingleplayerServer())) return;
         String key = System.identityHashCode(s) + ":" + count;
         if (!key.equals(peakKey)) {
             peakKey = key;
             peak = null;
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> com.berg.orbis.worldgen.WorldHeight.peak(model, s), net.minecraft.util.Util.backgroundExecutor())
+            java.util.concurrent.CompletableFuture.supplyAsync(() -> com.berg.orbis.worldgen.WorldHeight.peak(model, s), com.berg.orbis.net.Lookups.POOL)
                     .thenAccept(p -> {
                         if (key.equals(peakKey)) peak = p;
                     });

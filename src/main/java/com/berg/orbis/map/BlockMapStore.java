@@ -194,13 +194,24 @@ public final class BlockMapStore {
         drawColumns(chunkX, chunkZ, column);
     }
 
-    /** A loaded chunk (main thread). */
+    /**
+     * Puts the loaded chunks' samples into their regions, one after another (a chunk's load and unload stay in order). On the
+     * server thread, a region not in memory was read from disk there, and one written out to make room (half a megabyte
+     * compressed), at every chunk load and unload.
+     */
+    private final java.util.concurrent.ExecutorService drawing = java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+        Thread t = new Thread(task, "Orbis-map-draw");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** A loaded chunk (main thread): read here, put into its region on the drawing thread. */
     public void draw(LevelChunk chunk) {
         BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
         ChunkPos pos = chunk.getPos();
         // Left empty by the hard limit: nothing to draw, and the map shows it as not generated.
         if (com.berg.orbis.worldgen.HardLimit.emptied(pos.x(), pos.z())) return;
-        drawColumns(pos.x(), pos.z(), new Column() {
+        Samples s = sample(new Column() {
             @Override
             public BlockState at(int x, int y, int z) {
                 return chunk.getBlockState(p.set(x, y, z));
@@ -216,6 +227,23 @@ public final class BlockMapStore {
                 return chunk.getNoiseBiome(x >> 2, y >> 2, z >> 2);
             }
         });
+        int cx = pos.x(), cz = pos.z();
+        try {
+            drawing.execute(() -> write(cx, cz, s));
+        } catch (java.util.concurrent.RejectedExecutionException closed) {
+            // the store is closing: the chunk is drawn again from its saved copy next time
+        }
+    }
+
+    /** Waits for the chunks being drawn, then writes every changed region (the server stops). */
+    public void close() {
+        drawing.shutdown();
+        try {
+            if (!drawing.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS)) drawing.shutdownNow();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        flush();
     }
 
     /** A saved chunk, from its NBT (background thread). False when it is not fully generated. */
@@ -266,13 +294,21 @@ public final class BlockMapStore {
     }
 
     private void drawColumns(int cx, int cz, Column c) {
-        Region r = get(Math.floorDiv(cx, 32), Math.floorDiv(cz, 32));
+        write(cx, cz, sample(c));
+    }
+
+    /** What a chunk shows the map, column by column: the colour before shading (-1 none), the height, and water's depth (-1 land). */
+    private record Samples(int[] colour, short[] height, byte[] water) {
+    }
+
+    private Samples sample(Column c) {
         int minY = level.getMinY();
-        int ox = Math.floorMod(cx, 32) * 16, oz = Math.floorMod(cz, 32) * 16;
-        short[] col = new short[256];
-        short[] h = new short[256];
+        int[] colour = new int[256];
+        short[] height = new short[256];
+        byte[] water = new byte[256];
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
+                int i = z * 16 + x;
                 int y = c.top(x, z);
                 BlockState s = y >= minY ? c.at(x, y, z) : null;
                 int guard = 0;
@@ -280,11 +316,31 @@ public final class BlockMapStore {
                     s = c.at(x, --y, z);
                 }
                 MapColor mc = s == null ? MapColor.NONE : s.getMapColor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
-                MapColor.Brightness b;
+                colour[i] = mc == MapColor.NONE ? -1 : MapColours.colour(s, c.biome(x, y, z)) & 0xFFFFFF;
+                height[i] = (short) Math.max(Short.MIN_VALUE + 1, Math.min(Short.MAX_VALUE, y));
+                water[i] = -1;
                 if (mc != MapColor.NONE && MapColours.isWater(s)) {
                     int depth = 0;
                     for (int yy = y - 1; yy > minY && depth < 32 && !c.at(x, yy, z).getFluidState().isEmpty(); yy--) depth++;
-                    double d = depth * 0.1 + ((x + z) & 1) * 0.2;
+                    water[i] = (byte) depth;
+                }
+            }
+        }
+        return new Samples(colour, height, water);
+    }
+
+    private void write(int cx, int cz, Samples sm) {
+        Region r = get(Math.floorDiv(cx, 32), Math.floorDiv(cz, 32));
+        int ox = Math.floorMod(cx, 32) * 16, oz = Math.floorMod(cz, 32) * 16;
+        short[] col = new short[256];
+        short[] h = sm.height();
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                int i = z * 16 + x;
+                int y = h[i];
+                MapColor.Brightness b;
+                if (sm.water()[i] >= 0) {
+                    double d = sm.water()[i] * 0.1 + ((x + z) & 1) * 0.2;
                     b = d < 0.5 ? MapColor.Brightness.HIGH : d > 0.9 ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
                 } else {
                     int north;
@@ -299,8 +355,7 @@ public final class BlockMapStore {
                     double d = (y - north) * 0.8 + (((x + z) & 1) - 0.5) * 0.4;
                     b = d > 0.6 ? MapColor.Brightness.HIGH : d < -0.6 ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
                 }
-                col[z * 16 + x] = mc == MapColor.NONE ? 0 : rgb565(shade(MapColours.colour(s, c.biome(x, y, z)), b));
-                h[z * 16 + x] = (short) Math.max(Short.MIN_VALUE + 1, Math.min(Short.MAX_VALUE, y));
+                col[i] = sm.colour()[i] < 0 ? 0 : rgb565(shade(sm.colour()[i], b));
             }
         }
         int bit = Math.floorMod(cz, 32) * 32 + Math.floorMod(cx, 32);
@@ -331,6 +386,38 @@ public final class BlockMapStore {
      * The region with every saved, fully generated chunk drawn in: a region pre-generated before the map existed
      * is drawn from its region file here (about a thousand chunks; seconds), once. Background threads only.
      */
+    /** The map regions with a saved cube file at any height (region3d: one map region across), listed again each minute. */
+    private volatile java.util.Set<Long> cubicColumns;
+    private volatile long cubicColumnsAt;
+
+    private boolean cubicColumnSaved(int rx, int rz) {
+        java.util.Set<Long> known = cubicColumns;
+        long now = System.currentTimeMillis();
+        if (known == null || now - cubicColumnsAt > 60_000) {
+            java.util.Set<Long> found = new java.util.HashSet<>();
+            Path r3 = level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .resolve("dimensions").resolve("minecraft").resolve("overworld").resolve("region3d");
+            if (Files.isDirectory(r3)) {
+                try (var files = Files.list(r3)) {
+                    files.forEach(f -> {
+                        String[] q = f.getFileName().toString().split("[.]");
+                        if (q.length == 4 && q[3].equals("3dr")) {
+                            try {
+                                found.add(key(Integer.parseInt(q[0]), Integer.parseInt(q[2])));
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                    });
+                } catch (IOException e) {
+                    return true; // unlistable: drawn as before
+                }
+            }
+            cubicColumns = known = found;
+            cubicColumnsAt = now;
+        }
+        return known.contains(key(rx, rz));
+    }
+
     public Region complete(int rx, int rz) {
         Region r = get(rx, rz);
         RegionFiller filler = cubicFiller;
@@ -344,6 +431,8 @@ public final class BlockMapStore {
             } catch (IOException e) {
                 done = "";
             }
+            // Nothing saved in this column of cube files: nothing to draw, and no blank map file or marker written for it
+            if (!done.equals(CUBIC_FILL_VERSION) && !cubicColumnSaved(rx, rz)) return r;
             if (!done.equals(CUBIC_FILL_VERSION)) {
                 try {
                     filler.fill(this, rx, rz);
