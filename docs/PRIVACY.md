@@ -16,6 +16,7 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 | ESA WorldCover (AWS S3, eu-central-1) | Land cover | 3° tile name |
 | Norwegian Meteorological Institute (api.met.no) | Real weather, while a world runs (every few minutes at most) | Coordinates of the players' area (4 decimals) |
 | Geological Survey of Norway (geo.ngu.no) | Norway only: bedrock rock types | Bounding box of the area |
+| NIBIO (wms.nibio.no) | Norway only: forest tree species (spruce, pine, broadleaf), in new worlds | Bounding box of the area |
 | Macrostrat (tiles.macrostrat.org) | Rock types outside Norway | Tile coordinates |
 | ISRIC (maps.isric.org, files.isric.org) | Soil types and soil depth, in new worlds | Bounding box of a quarter-degree tile / byte ranges of the depth maps |
 | GLIMS (www.glims.org) | Glacier outlines, in new worlds, only where the world has glaciers | Bounding box of a quarter-degree tile |

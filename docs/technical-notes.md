@@ -1088,7 +1088,20 @@ the tile tables a row of tiles at a time (`table/<row>.bin`) and each tile once
 by a range request (`tiles/<row>/<col>.z`), keeping 160 decoded tiles in memory.
 Values 1 and 3 (evergreen and deciduous needle leaf, larch included) are
 conifer, 2 and 4 broadleaf, 5 mixed; each column reads half a pixel off at
-random. LANDFIRE's vegetation types (US, 30 m) were left out: its image service
+random. In Norway NIBIO's forest resource map SR16 (16 m, NLOD) comes first, layer
+`SRRTRESLAG`: 1 spruce (gran), 2 pine (furu), 3 broadleaf (lauv). Its WCS is
+switched off and GetFeatureInfo gives the value only in an HTML page, so the
+WMS map is read back by its three flat legend colours (82,176,56 spruce;
+205,170,101 pine; 255,220,130 broadleaf; transparent: no forest), one GetMap
+per region in EPSG:4326 on a lattice of about 8 m fixed per degree of latitude
+(`forest-type-cache/sr16/`). Spruce and pine make the forest coniferous,
+broadleaf broadleaved, and each forest column keeps the kind in the raster
+(`treeKind`, where it agrees with the land cover, OSM's leaf type included), so
+`Decorator.pickSpecies` grows a spruce stand as 82 % spruce, 10 % birch, 8 %
+pine and a pine stand the other way round (a conifer forest was 80 % spruce
+everywhere). Checked: Østerdalen at Elverum 1,029 pine to 404 spruce samples,
+Nordmarka 1,041 spruce to 311 pine, Trondheim's Bymarka 609 spruce to 335 pine.
+LANDFIRE's vegetation types (US, 30 m) were left out: its image service
 has no attribute table to turn its 900 codes into leaf types. Checked: the Black
 Forest and the Cascades come out coniferous, Fontainebleau, Białowieża and the
 Amazon broadleaved, the Smokies and Hokkaido mixed.
