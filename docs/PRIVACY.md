@@ -17,6 +17,8 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 | Norwegian Meteorological Institute (api.met.no) | Real weather, while a world runs (every few minutes at most) | Coordinates of the players' area (4 decimals) |
 | Geological Survey of Norway (geo.ngu.no) | Norway only: bedrock rock types | Bounding box of the area |
 | Macrostrat (tiles.macrostrat.org) | Rock types outside Norway | Tile coordinates |
+| ISRIC (maps.isric.org, files.isric.org) | Soil types and soil depth, in new worlds | Bounding box of a quarter-degree tile / byte ranges of the depth maps |
+| GLIMS (www.glims.org) | Glacier outlines, in new worlds, only where the world has glaciers | Bounding box of a quarter-degree tile |
 | NVE (kart.nve.no) | Norway only: depth surveys of lakes | Bounding box of the area / a lake's number |
 | Open-Meteo (api.open-meteo.com) | The world's time zone, once per world, for villagers' clock hours; today's snow depth, every 6 hours at most per 25 km cell of the world being generated or played; last winter's precipitation (archive-api.open-meteo.com), once a year per 50 km cell | The world's origin coordinates; the centre of each 0.25° or 0.5° cell |
 | National lidar services: swisstopo (data.geo.admin.ch), NRCan HRDEM (datacube.services.geo.ca, Amazon S3 ca-central-1), AHN (service.pdok.nl), IGN (data.geopf.fr), Geobasis NRW (wcs.nrw.de), Maa- ja Ruumiamet (teenus.maaamet.ee), ČÚZK (ags.cuzk.cz), DOGAMI Oregon, KyFromAbove Kentucky, DC GIS, New Brunswick GNB | Measured building heights, only for areas inside that country or state, at 1:4 or finer | Bounding box of the tile |

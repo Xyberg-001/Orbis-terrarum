@@ -990,6 +990,78 @@ as plain stone. Adjectives are told apart by their endings (-ic, -ique, -ico,
 -isch, -ed, -ive...), so "granitic gneiss" is a gneiss and "basaltic andesite"
 an andesite. Generic world-map units ("sedimentary rocks") stay plain stone.
 
+### Soil and glacier ice (`geology/Soils`, `RowTiff`, `Glaciers`)
+New worlds from 2.0.1 (world setting `groundLayers`, config v20; servers keep
+false) draw the ground between the top block and the rock from soil maps; older
+worlds keep three blocks of dirt everywhere. One rasteriser step after the rock
+(`rasterizeGround`) fills three raster arrays: `soil` (a soil profile and a
+texture packed in one byte), `soilDepth` (blocks of loose ground, plus one) and
+`iceDepth` (blocks of glacier ice).
+
+Soil profiles come from ISRIC SoilGrids 2.0 (CC BY 4.0, 250 m): the most
+probable WRB reference soil group (`wrb.map`, coverage `MostProbable`: the 30
+groups in alphabetical order from 0, and 0 is also the map's no-data, so it
+counts as Acrisols only where there is texture and within 38° of the equator)
+and the subsoil's sand, clay and stones at 30-60 cm (`sand`, `clay`, `cfvo`,
+per mille). Each is a WCS 2.0.1 GetCoverage in lat/lon for tiles of 0.25°
+(about 120 pixels a side, 2-11 kB each), kept as `soil-cache/<s>_<w>.bin.gz`.
+Groups map to profiles: Histosols peat, Podzols podzol, Arenosols sandy,
+Gleysols / Stagnosols / Planosols wet, Vertisols clay, Ferralsols / Nitisols /
+Lixisols / Plinthosols / Alisols / Acrisols red, Calcisols / Gypsisols /
+Solonchaks / Solonetz / Durisols dry, Cryosols frozen, Andosols volcanic,
+Fluvisols alluvial, Leptosols gravelly; the rest (Cambisols, Luvisols,
+Chernozems...) by texture (stones 35 % or more gravelly, sand 65 % sandy, clay
+40 % clay, else loam). Towns have a group but no texture: their own group, or
+loam. Each column reads the map half a pixel off at random, so neighbouring
+pixels meet along a dithered seam.
+
+Depth comes from Shangguan et al. 2017 (ISRIC, ODbL, 250 m): `BDRICM`, depth
+to rock within 2 m (1.4 GB), and where that says no rock within 2 m, `BDTICM`,
+the absolute depth to bedrock (8.5 GB), capped at 30 m. Both are whole-planet
+GeoTIFFs with one image row per strip (deflate, no predictor): `RowTiff` reads
+the strip tables once (`layout.bin`, about 1 MB) and then only the rows a
+region crosses, by range requests (8 neighbouring rows in one), keeping each
+row's compressed bytes as `soil-depth-cache/<map>/rows/<k>/<row>.z` (BDRICM
+about 20 kB a row, BDTICM up to 200 kB; BDTICM is only read where a region has
+deep ground). The depth is bilinear between pixels and rounded up or down per
+column by a hash, so a layer boundary is never a flat shelf.
+
+The painter (natural ground with a dirt subsoil only; roads, buildings, beds,
+sand, gravel, rock and mud keep theirs) puts `soilDepth` blocks of loose ground
+between the top and the rock: one or two blocks of topsoil by profile (mud and
+packed mud for peat, terracotta under red earths, clay under wet and clay soils,
+tuff under volcanic ones, ice lenses in frozen ground, flood beds of clay, dirt
+and gravel in alluvium), then for loam, podzol, dry and gravelly soils the
+subsoil's texture: sand (sandstone from the fifth block down, as vanilla has it
+under deserts), clay, or gravel near the top and coarse dirt deeper (loose sand
+and gravel deep down would pour into every cave). The top of wild ground also
+follows the soil a little: moss and mud on peat, podzol on podzols, bare patches
+on sandy, stony, dry and frozen ground. Steep ground: a column 2 blocks above a
+neighbour has no soil under its top, one 3 or more above is bare rock, so cliffs
+show their rock; the chunk generator samples a ring of columns just outside the
+chunk so a cliff along a chunk border is drawn the same way. Bergen's hills come
+out as podzol on 1-2 blocks of soil, the Veluwe as podzol over 16 m of sand,
+the Sahara as 30 m of stony ground.
+
+Glacier ice: where the land cover is a glacier (OSM, ESA WorldCover) or the
+photo shows snow, and the place lies inside a glacier of the Randolph Glacier
+Inventory 7.0 (GLIMS WFS, layers `RGI2000-v7.0-G-<region>`, CC BY 4.0, outlines
+for about 2000, kept per 0.25° tile in `glacier-cache/`), the ice under the
+snow is as thick as a perfectly plastic glacier would be (Nye: the square root
+of 22.2 m times the distance from the edge, 47 m at 100 m in, 150 m at a
+kilometre, 298 m at 4 km and beyond) and no thicker than twice the mean that
+the glacier's area gives (Bahr: 34 m x area^0.375 in km², so 12 m for a small
+cirque glacier, 190 m for 100 km²), at most 600 m. Glaciers that touch (an ice
+cap's outlets) are one body, so the ice stays thick under the divides. The
+distance is worked out on a lattice fixed in world coordinates about 32 m
+apart, over the region plus 4 km (the inventory's outlines filled even-odd per
+row, then an 8-neighbour chamfer distance), and blended to each column, so
+neighbouring regions agree. Packed ice, blue ice deeper than 40 m, then rock.
+The inventory has no thickness anyone may use (Millan 2022 states no licence,
+Farinotti 2019 is non-commercial), hence the model. Jostedalsbreen comes out
+around 200 m, Konkordiaplatz on the Aletsch 130 m (really 900 m), Vatnajökull
+300 m.
+
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
