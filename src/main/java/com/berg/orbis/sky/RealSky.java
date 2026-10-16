@@ -26,8 +26,10 @@ import java.util.concurrent.Executors;
  * when it really does there (long summer days and short winter ones in the north) and the moon shows its real
  * phase. The clock is set every 10 seconds and runs at the real sun's pace in between, so the sky moves smoothly.
  * Sleeping does not skip a real night: the next update puts the clock back.</li>
- * <li><b>Real weather</b>: clear, rain or thunder as the Norwegian Meteorological Institute's forecast has it for
- * the coming hour where the players are (the average of their positions; the origin when nobody is online).
+ * <li><b>Real weather</b>: clear, rain or thunder where the players are (the average of their positions; the origin
+ * when nobody is online), as measured where it can be ({@link LiveWeather}: rain radar in the Nordic countries,
+ * Germany and Canada, the nearest airport's report anywhere) and from the Norwegian Meteorological Institute's
+ * forecast for the coming hour where nothing is measured.
  * Whether the rain falls as snow is the biome's business, as always in Minecraft.</li>
  * </ul>
  * Both are installation settings that apply at once. Turning daylight off hands the clock back to Minecraft at its
@@ -39,7 +41,7 @@ public final class RealSky {
     private static final int WEATHER_EVERY = 2400;   // ticks (2 min); the forecast's own expiry decides real requests
     private static final int WEATHER_HOLD = 30 * 60 * 20; // how long Minecraft keeps a weather we set (30 min)
 
-    private static final MetWeather MET = new MetWeather();
+    private static final LiveWeather LIVE = new LiveWeather();
     private static final ExecutorService NET = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Orbis-weather");
         t.setDaemon(true);
@@ -150,7 +152,7 @@ public final class RealSky {
         int askedIn = run;
         NET.execute(() -> {
             try {
-                MetWeather.Report report = MET.now(ll[0], ll[1]);
+                MetWeather.Report report = LIVE.now(ll[0], ll[1]);
                 // the last world's weather was applied to the next one when it came after that one opened
                 if (askedIn == run) pending = report;
                 lastError = null;
