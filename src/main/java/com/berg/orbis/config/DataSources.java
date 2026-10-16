@@ -133,6 +133,7 @@ public final class DataSources {
         l.add(national("ngu-bedrock", "Rock types (NGU)", "Norway", no, "NO", List.of("geology-cache")));
         l.add(national("nve-lakes", "Lake depths (NVE)", "Norway", no, "NO", List.of("lake-survey-cache")));
         l.add(national("qc-gblq", "Lake depths (GBLQ)", "Canada (Quebec)", new double[]{44.9, -79.8, 63.0, -57.0}, "CA", List.of("quebec-lake-cache")));
+        l.add(national("nibio-sr16", "Forest types: spruce, pine, broadleaf (NIBIO SR16)", "Norway", no, "NO", List.of("forest-type-cache/sr16")));
         l.add(national("nvdb-roads", "Road widths and lanes (NVDB)", "Norway", no, "NO", List.of("nvdb-cache")));
         // ---- lidar building heights (each where it covers; Kartverket's with its switch in the Advanced tab)
         for (OrbisConfig.ElevationSource es : c.surfaceModelSources) addLidar(l, es, "dsm-cache");

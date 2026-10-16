@@ -19,8 +19,10 @@ import java.util.zip.GZIPOutputStream;
  * Whether a forest is coniferous or broadleaved, where OpenStreetMap does not say: Copernicus' CLC+ Backbone 2021 in
  * Europe (10 m, needle-leaved, broadleaved deciduous and evergreen trees; read for each region from the EEA's image
  * service), and Copernicus' global land cover forest type layer everywhere else (CGLS-LC100 2019, 100 m: evergreen or
- * deciduous, needle or broad leaf, mixed; read tile by tile from the 1 GB file on Zenodo). Both CC BY 4.0. A failure is
- * not kept (asked again after 10 minutes).
+ * deciduous, needle or broad leaf, mixed; read tile by tile from the 1 GB file on Zenodo). Both CC BY 4.0. In Norway
+ * first NIBIO's forest resource map SR16 (16 m, NLOD): spruce, pine or broadleaf for each stand, so a pine forest grows
+ * pine and a spruce forest spruce; its image service only draws the classes (three flat colours), so the colours are
+ * read back. A failure is not kept (asked again after 10 minutes).
  */
 public final class ForestTypes {
     public static final String ATTRIBUTION = "CLC+ Backbone 2021 (Copernicus Land Monitoring Service, EEA) and Copernicus Global Land "
@@ -31,6 +33,8 @@ public final class ForestTypes {
             + "&interpolation=RSP_NearestNeighbor&f=image";
     private static final String CGLS = "https://zenodo.org/api/records/3939050/files/"
             + "PROBAV_LC100_global_v3.0.1_2019-nrt_Forest-Type-layer_EPSG-4326.tif/content";
+    private static final String SR16 = "https://wms.nibio.no/cgi-bin/sr16?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=SRRTRESLAG&STYLES="
+            + "&CRS=EPSG:4326&BBOX=%.7f,%.7f,%.7f,%.7f&WIDTH=%d&HEIGHT=%d&FORMAT=image/png&TRANSPARENT=TRUE";
     private static final Map<String, String> HEADERS = Map.of("User-Agent", "OrbisTerrarum (Minecraft mod; forest types)");
     /** CLC+'s area (the EEA's 38 countries and the UK), generously. */
     private static final double EU_SOUTH = 34, EU_NORTH = 72, EU_WEST = -25, EU_EAST = 45;
@@ -38,23 +42,47 @@ public final class ForestTypes {
     /** What the trees of a place are. */
     public enum Leaf { UNKNOWN, CONIFER, BROADLEAF, MIXED }
 
+    /** The kind of tree a stand is made of, where a map says (Norway's SR16). The codes are kept in region rasters. */
+    public enum Kind {
+        UNKNOWN, SPRUCE, PINE, BROADLEAF;
+
+        private static final Kind[] ALL = values();
+
+        public static Kind of(int code) {
+            return code > 0 && code < ALL.length ? ALL[code] : UNKNOWN;
+        }
+    }
+
     private final Path clcDir;
+    private final Path sr16Dir;
     private final TileTiff world;
     private volatile long failedUntil;
 
     public ForestTypes(Path cacheDir) {
         this.clcDir = cacheDir.resolve("clc-plus");
+        this.sr16Dir = cacheDir.resolve("sr16");
         this.world = new TileTiff(CGLS, cacheDir.resolve("cgls-lc100"));
     }
 
     /** One region's map, read for sampling column by column. */
     public final class Area {
+        private final Grid norway;
         private final Grid europe;
         private final boolean worldReady;
 
-        private Area(Grid europe, boolean worldReady) {
+        private Area(Grid norway, Grid europe, boolean worldReady) {
+            this.norway = norway;
             this.europe = europe;
             this.worldReady = worldReady;
+        }
+
+        /** The stand's kind of tree from SR16 (Norway), read half a 16 m pixel off at random ({@code jx}, {@code jy} in [0, 1)). */
+        public Kind kindAt(double lat, double lon, double jx, double jy) {
+            if (norway == null) return Kind.UNKNOWN;
+            double off = 16.0 / 110_574;
+            int col = (int) Math.floor((lon + (jx - 0.5) * off / Math.max(0.2, Math.cos(Math.toRadians(lat))) - norway.west()) / norway.dx());
+            int row = (int) Math.floor((norway.north() - lat - (jy - 0.5) * off) / norway.dy());
+            return Kind.of(norway.at(col, row));
         }
 
         /**
@@ -63,6 +91,15 @@ public final class ForestTypes {
          * in [0, 1)) so its pixels do not show as squares.
          */
         public Leaf at(double lat, double lon, double jx, double jy) {
+            switch (kindAt(lat, lon, jx, jy)) {
+                case SPRUCE, PINE -> {
+                    return Leaf.CONIFER;
+                }
+                case BROADLEAF -> {
+                    return Leaf.BROADLEAF;
+                }
+                default -> { }
+            }
             if (europe != null) {
                 Leaf l = europe.stand(lat, lon);
                 if (l != Leaf.UNKNOWN) return l;
@@ -87,9 +124,13 @@ public final class ForestTypes {
     /** What a box needs (both maps where they cover it), or null while the sources are failing. */
     public Area area(double south, double west, double north, double east, double metresPerPixel) {
         if (System.currentTimeMillis() < failedUntil) return null;
-        Grid europe = null;
+        Grid europe = null, norway = null;
         boolean worldReady = false;
         try {
+            if (com.berg.orbis.config.DataSources.covers("nibio-sr16", south, west, north, east)
+                    && south < 71.6 && north > 57.6 && west < 31.5 && east > 4.0) {
+                norway = sr16(south, west, north, east, metresPerPixel);
+            }
             if (south < EU_NORTH && north > EU_SOUTH && west < EU_EAST && east > EU_WEST) europe = clc(south, west, north, east, metresPerPixel);
             world.prefetch(south, west, north, east);
             worldReady = true;
@@ -97,9 +138,67 @@ public final class ForestTypes {
             failedUntil = System.currentTimeMillis() + 10 * 60_000L;
             System.err.println("[orbis] Forest types unavailable (" + e.getMessage() + "); forests keep their mix for 10 minutes");
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            if (europe == null) return null;
+            if (europe == null && norway == null) return null;
         }
-        return new Area(europe, worldReady);
+        return new Area(norway, europe, worldReady);
+    }
+
+    // ------------------------------------------------------------------ Norway (SR16)
+
+    /** SR16's tree species, as Kind codes, on a lat/lon lattice of about 8 m (half its pixels), fixed per degree of latitude. */
+    private Grid sr16(double south, double west, double north, double east, double metresPerPixel) throws IOException, InterruptedException {
+        double dLat = 1 / 13750.0, dLon = dLat / Math.max(0.2, Math.cos(Math.toRadians(Math.floor((south + north) / 2))));
+        int k = Math.max(1, (int) Math.ceil(metresPerPixel / 8));
+        while ((east - west) / (dLon * k) > 2048 || (north - south) / (dLat * k) > 2048) k++;
+        dLat *= k;
+        dLon *= k;
+        south = Math.floor(south / dLat) * dLat;
+        north = Math.ceil(north / dLat) * dLat;
+        west = Math.floor(west / dLon) * dLon;
+        east = Math.ceil(east / dLon) * dLon;
+        int w = Math.max(1, (int) Math.round((east - west) / dLon)), h = Math.max(1, (int) Math.round((north - south) / dLat));
+        Path file = sr16Dir.resolve(String.format(Locale.ROOT, "%.5f_%.5f_%.5f_%.5f_%dx%d.bin.gz", south, west, north, east, w, h));
+        try {
+            if (Files.exists(file)) return load(file);
+        } catch (IOException e) {
+            System.err.println("[orbis] SR16 file " + file.getFileName() + " unreadable, fetching again: " + e.getMessage());
+        }
+        String url = String.format(Locale.ROOT, SR16, south, west, north, east, w, h); // WMS 1.3.0 in EPSG:4326: lat first
+        java.awt.image.BufferedImage img = null;
+        IOException last = null;
+        for (int attempt = 0; attempt < 3 && img == null; attempt++) {
+            if (com.berg.orbis.OrbisMod.stopping()) throw new IOException("stopping");
+            try {
+                OrbisHttp.Response r = OrbisHttp.get(url, HEADERS, 60);
+                if (r.status() == 200 && r.body().length > 8 && r.body()[1] == 'P') img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(r.body()));
+                else last = new IOException("SR16 HTTP " + r.status());
+            } catch (IOException e) {
+                last = e;
+            }
+            if (img == null) Thread.sleep(1500L << attempt);
+        }
+        if (img == null) throw last != null ? last : new IOException("SR16 image unreadable");
+        if (img.getWidth() != w || img.getHeight() != h) throw new IOException("unexpected SR16 image size");
+        byte[] v = new byte[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = img.getRGB(x, y);
+                if ((argb >>> 24) < 128) continue;
+                int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
+                // The legend's three colours: spruce (gran) green, pine (furu) tan, broadleaf (lauv) yellow.
+                Kind kind = near(r, g, b, 82, 176, 56) ? Kind.SPRUCE : near(r, g, b, 205, 170, 101) ? Kind.PINE
+                        : near(r, g, b, 255, 220, 130) ? Kind.BROADLEAF : Kind.UNKNOWN;
+                v[y * w + x] = (byte) kind.ordinal();
+            }
+        }
+        Grid grid = new Grid(w, h, west, north, (east - west) / w, (north - south) / h, v);
+        Files.createDirectories(sr16Dir);
+        save(file, grid);
+        return grid;
+    }
+
+    private static boolean near(int r, int g, int b, int r0, int g0, int b0) {
+        return Math.abs(r - r0) + Math.abs(g - g0) + Math.abs(b - b0) <= 18;
     }
 
     // ------------------------------------------------------------------ Europe (CLC+)

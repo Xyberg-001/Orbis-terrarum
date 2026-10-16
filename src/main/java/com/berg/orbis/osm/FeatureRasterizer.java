@@ -484,9 +484,10 @@ public final class FeatureRasterizer {
      */
     private void refineForests(RegionRaster r) {
         byte forest = LandCover.FOREST.code();
+        byte conifer = LandCover.FOREST_CONIFER.code(), broadleaf = LandCover.FOREST_BROADLEAF.code();
         boolean any = false;
         for (byte b : r.landCover) {
-            if (b == forest) {
+            if (b == forest || b == conifer || b == broadleaf) {
                 any = true;
                 break;
             }
@@ -497,21 +498,37 @@ public final class FeatureRasterizer {
         double south = Math.min(a[0], b[0]), west = Math.min(a[1], b[1]), north = Math.max(a[0], b[0]), east = Math.max(a[1], b[1]);
         com.berg.orbis.landcover.ForestTypes.Area area = forestTypes.area(south, west, north, east, cfg.metersPerBlock);
         if (area == null) return;
-        byte conifer = LandCover.FOREST_CONIFER.code(), broadleaf = LandCover.FOREST_BROADLEAF.code();
+        byte[] kinds = null;
         for (int dz = 0; dz < r.stride; dz++) {
             for (int dx = 0; dx < r.stride; dx++) {
                 int idx = dz * r.stride + dx;
-                if (r.landCover[idx] != forest) continue;
+                byte lc = r.landCover[idx];
+                if (lc != forest && lc != conifer && lc != broadleaf) continue;
                 int x = r.originX + dx, z = r.originZ + dz;
                 double[] ll = mapper.toLatLonExact(x + 0.5, z + 0.5);
                 long h = groundHash(x, z);
-                switch (area.at(ll[0], ll[1], (h & 0xFFFF) / 65536.0, ((h >>> 16) & 0xFFFF) / 65536.0)) {
-                    case CONIFER -> r.landCover[idx] = conifer;
-                    case BROADLEAF -> r.landCover[idx] = broadleaf;
-                    default -> { }
+                double jx = (h & 0xFFFF) / 65536.0, jy = ((h >>> 16) & 0xFFFF) / 65536.0;
+                if (lc == forest) {
+                    switch (area.at(ll[0], ll[1], jx, jy)) {
+                        case CONIFER -> r.landCover[idx] = lc = conifer;
+                        case BROADLEAF -> r.landCover[idx] = lc = broadleaf;
+                        default -> { }
+                    }
+                }
+                // Spruce or pine (Norway): kept where it agrees with the leaf type (OSM's, where it has one).
+                com.berg.orbis.landcover.ForestTypes.Kind kind = area.kindAt(ll[0], ll[1], jx, jy);
+                boolean fits = switch (kind) {
+                    case SPRUCE, PINE -> lc != broadleaf;
+                    case BROADLEAF -> lc != conifer;
+                    default -> false;
+                };
+                if (fits) {
+                    if (kinds == null) kinds = new byte[r.stride * r.stride];
+                    kinds[idx] = (byte) kind.ordinal();
                 }
             }
         }
+        if (kinds != null) r.treeKind = kinds;
     }
 
     /**

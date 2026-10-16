@@ -150,7 +150,7 @@ public final class Decorator {
                 }
                 if (density <= 0) continue;
                 if (!treeChosen(x, z, density, r, lc)) continue;
-                TreeBuilder.Species species = pickSpecies(lc, climate, x, z);
+                TreeBuilder.Species species = pickSpecies(lc, climate, x, z, r == null ? 0 : r.treeKindAt(idx));
                 if (species == null) continue;
                 // Autumn woods: some of the trees lie on the ground, mushrooms on and beside them.
                 if (cfg.autumnColours && lc.isForest() && Math.floorMod(ColumnPainter.hash(x, z, 0xFA11), 100) < 9
@@ -311,6 +311,20 @@ public final class Decorator {
         return true;
     }
 
+    /**
+     * As below, for a stand whose kind a forest map knows (landcover.ForestTypes.Kind: Norway's SR16): a spruce stand is mostly
+     * spruce, a pine stand mostly pine, each with some birch and the other conifer, as Norwegian woods are.
+     */
+    public static TreeBuilder.Species pickSpecies(LandCover lc, BiomeClassifier.Climate climate, int x, int z, int kind) {
+        if (lc.isForest() && (kind == 1 || kind == 2)) {
+            int roll = (int) (ColumnPainter.hash(x, z, 0x5EED) % 100);
+            boolean spruce = kind == 1;
+            return roll < 82 ? (spruce ? TreeBuilder.Species.SPRUCE : TreeBuilder.Species.PINE)
+                    : roll < 92 ? TreeBuilder.Species.BIRCH : (spruce ? TreeBuilder.Species.PINE : TreeBuilder.Species.SPRUCE);
+        }
+        return pickSpecies(lc, climate, x, z);
+    }
+
     public static TreeBuilder.Species pickSpecies(LandCover lc, BiomeClassifier.Climate climate, int x, int z) {
         int roll = (int) (ColumnPainter.hash(x, z, 0x5EED) % 100);
         BiomeClassifier.Zone zone = climate.zone();
@@ -372,7 +386,7 @@ public final class Decorator {
                 TreeBuilder.Species species = TreeBuilder.fromCode(data & 0x0F);
                 // By land cover and climate: on unmapped land the climate zone's trees (as the park mix, the savanna got palms and
                 // jungle trees, the desert birch and cherry, wild temperate land cherry trees)
-                if (species == null) species = pickSpecies(r.landCoverAt(idx), climate, x, z);
+                if (species == null) species = pickSpecies(r.landCoverAt(idx), climate, x, z, r.treeKindAt(idx));
                 if (species == null) return false;
                 int hint = (data >> 4) * 2;
                 TreeBuilder.place(treeSink, x, y, z, species, hint, ColumnPainter.hash(x, z, 0x7EE5), cfg.autumnColours);

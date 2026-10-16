@@ -77,6 +77,8 @@ public final class RegionRaster {
     public byte[] soilDepth;
     /** Blocks of glacier ice under the top block (0 = none or unknown: three of packed ice); null where no glacier outline covers the region. */
     public short[] iceDepth;
+    /** The kind of tree each forest column's stand is made of (landcover.ForestTypes.Kind ordinal, 0 = unknown); null where no map says. */
+    public byte[] treeKind;
     /** The streets' colour in this region's aerial photo (0xRRGGBB), the neutral reference for roof colours; -1 = none. */
     public int imageryStreetColour = -2;
 
@@ -234,6 +236,10 @@ public final class RegionRaster {
         return iceDepth == null ? 0 : iceDepth[idx];
     }
 
+    public int treeKindAt(int idx) {
+        return treeKind == null || idx < 0 ? 0 : treeKind[idx];
+    }
+
     public int roadDirAt(int idx) {
         return roadDir[idx] & 0xFF;
     }
@@ -241,6 +247,6 @@ public final class RegionRaster {
     public long approxBytes() {
         long n = (long) stride * stride;
         return n * (1 + 2 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + (roadUnder != null ? 5 : 0) + (rock != null ? 1 : 0) + (bedDepth != null ? 2 : 0)
-                + (soil != null ? 1 : 0) + (soilDepth != null ? 1 : 0) + (iceDepth != null ? 2 : 0));
+                + (soil != null ? 1 : 0) + (soilDepth != null ? 1 : 0) + (iceDepth != null ? 2 : 0) + (treeKind != null ? 1 : 0));
     }
 }
