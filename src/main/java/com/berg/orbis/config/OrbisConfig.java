@@ -185,6 +185,11 @@ public class OrbisConfig {
      */
     public boolean overtureBuildings = true;
     /**
+     * River lines OSM gives no width take the width GRWL measured from Landsat (rivers 30 m and wider, shipped with the mod),
+     * except where they run inside a mapped river area. New worlds take this value; a world keeps its own.
+     */
+    public boolean riverWidths = true;
+    /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
      * vanilla's per real square kilometre; 1 keeps vanilla's.
@@ -1032,11 +1037,12 @@ public class OrbisConfig {
             surveyedTunnels = false;
         }
         if (configVersion < 20 && dedicatedServer()) {
-            // As above: a server's world keeps its ground, woods and buildings (set groundLayers, forestTypes and
-            // overtureBuildings to true for a new world).
+            // As above: a server's world keeps its ground, woods, buildings and rivers (set groundLayers, forestTypes,
+            // overtureBuildings and riverWidths to true for a new world).
             groundLayers = false;
             forestTypes = false;
             overtureBuildings = false;
+            riverWidths = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.

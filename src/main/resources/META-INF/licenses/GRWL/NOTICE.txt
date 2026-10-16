@@ -1,0 +1,8 @@
+orbis-river-widths.bin.gz is derived from the Global River Widths from Landsat (GRWL) Database, summary statistics
+V01.02 (https://doi.org/10.5281/zenodo.1297434):
+
+  Allen, G. H., & Pavelsky, T. M. (2018). Global extent of rivers and streams. Science, 361(6402), 585-588.
+
+Licensed under the Creative Commons Attribution 4.0 International licence (https://creativecommons.org/licenses/by/4.0/).
+Changes: lake and reservoir stretches dropped, lines simplified to 400 m, coordinates rounded to 0.0003 degrees, only
+each stretch's median width kept (tools/river_widths.py).

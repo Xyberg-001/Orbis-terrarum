@@ -164,6 +164,13 @@ public final class FeatureRasterizer {
         this.overture = buildings;
     }
 
+    /** The real widths of rivers 30 m and wider (GRWL), for river lines OSM gives no width; or null. */
+    private volatile com.berg.orbis.water.RiverWidths riverWidths;
+
+    public void setRiverWidths(com.berg.orbis.water.RiverWidths widths) {
+        this.riverWidths = widths;
+    }
+
     public void setElevationMeters(Elevation metres) {
         this.elevationMeters = metres;
     }
@@ -1447,6 +1454,10 @@ public final class FeatureRasterizer {
     }
 
     private void rasterizeWaterways(RegionRaster r, List<OsmWay> ways) {
+        // The water areas (lakes, riverbanks) as they are before the lines: a river line that touches a mapped river area
+        // keeps its own width (where a river is mapped as an area, its line wanders out of it across islands and banks).
+        boolean[] areaWater = null;
+        com.berg.orbis.water.RiverWidths measured = cfg.riverWidths ? riverWidths : null;
         for (OsmWay way : ways) {
             String ww = way.tags().get("waterway");
             if (ww == null) continue;
@@ -1463,9 +1474,14 @@ public final class FeatureRasterizer {
                 case "tidal_channel" -> { kind = WaterFeature.Kind.RIVER; defaultWidth = 8; depth = 2; }
                 default -> { continue; }
             }
-            double width = mapper.blocks(OsmTags.parseLength(way.tags().get("width"), defaultWidth));
+            double widthM = OsmTags.parseLength(way.tags().get("width"), defaultWidth);
+            // A river line without a width: the width GRWL measured along the river it follows (30 m and wider).
+            double grwl = measured != null && kind == WaterFeature.Kind.RIVER && "river".equals(ww) && way.tags().get("width") == null
+                    ? measured.widthFor(way.points()) : Double.NaN;
+            double width = mapper.blocks(widthM);
             int total = Math.max(1, (int) Math.round(width));
             int half = Math.max(0, (total - 1) / 2);
+            int wideHalf = Double.isNaN(grwl) ? half : Math.max(half, ((int) Math.round(mapper.blocks(grwl)) - 1) / 2);
             boolean intermittent = OsmTags.isTrue(way.tags().get("intermittent"));
             WaterFeature wf = new WaterFeature(way.id(), kind, intermittent ? 1 : depth, false, intermittent, way.tags().get("name"));
             wf.surfaceY = Integer.MIN_VALUE; // follow terrain
@@ -1475,13 +1491,26 @@ public final class FeatureRasterizer {
             // A river or canal line is a channel as deep as a river of its width, deepest along its middle.
             boolean channel = waterBeds != null && cfg.realWaterDepths && !intermittent
                     && (kind == WaterFeature.Kind.RIVER || kind == WaterFeature.Kind.CANAL);
-            double channelDepth = channel ? com.berg.orbis.water.WaterBeds.riverDepthM(OsmTags.parseLength(way.tags().get("width"), defaultWidth)) / cfg.metersPerBlock : 0;
             if (channel && r.bedDepth == null) r.bedDepth = new short[r.stride * r.stride];
-            walkThickLine(r, pts, half, (idx, x, z, dist, along, dir) -> {
+            if (wideHalf > half) {
+                if (areaWater == null) {
+                    areaWater = new boolean[r.water.length];
+                    for (int i = 0; i < areaWater.length; i++) areaWater[i] = r.water[i] != 0;
+                }
+                boolean[] areas = areaWater;
+                boolean[] touches = {false};
+                walkThickLine(r, pts, 0, (idx, x, z, dist, along, dir) -> {
+                    if (idx >= 0 && areas[idx]) touches[0] = true;
+                });
+                if (touches[0]) wideHalf = half;
+            }
+            int own = wideHalf;
+            double channelDepth = channel ? com.berg.orbis.water.WaterBeds.riverDepthM(own > half ? grwl : widthM) / cfg.metersPerBlock : 0;
+            walkThickLine(r, pts, own, (idx, x, z, dist, along, dir) -> {
                 if (idx >= 0 && r.water[idx] == 0) {
                     r.water[idx] = code;
                     if (channel) {
-                        double across = Math.min(1, dist / (half + 1.0));
+                        double across = Math.min(1, dist / (own + 1.0));
                         r.bedDepth[idx] = (short) Math.max(1, Math.round(channelDepth * (1 - across * across)));
                     }
                 }
