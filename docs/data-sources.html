@@ -88,7 +88,7 @@
 <div class="wrap">
   <header>
     <h1>Orbis Data Sources</h1>
-    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 29: buildings OSM lacks from Overture)</span>
+    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 30: river widths from GRWL)</span>
   </header>
 
   <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in. National services (a country's photos, NGU, NVE, NVDB) are used automatically inside their country's outline; Kartverket's surface model whenever it answers from the player's network (its switch forces it on, with a notice at world creation saying whether it answers). Data Sources → Downloads by country shows, re-imports and deletes each source's copies.</p>
@@ -216,7 +216,7 @@
           <text x="482" y="522">Climate and biome from latitude and height</text>
           <text x="482" y="540" opacity="0.75">Ground blocks by cover, ground class and climate</text>
           <text x="482" y="558" font-size="12">Rock NGU → Macrostrat · soil SoilGrids · ice RGI</text>
-          <text x="482" y="576">Lake beds: NVE survey → GLOBathy → size; rivers by width</text>
+          <text x="482" y="576" font-size="12">Lake beds: NVE → GLOBathy → size; rivers: GRWL</text>
 
           <rect x="470" y="604" width="310" height="92" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
           <text x="482" y="624" font-weight="600" font-size="14">5 · Street life</text>
@@ -371,6 +371,7 @@
       <tr><td><strong>Depth to bedrock</strong> (Shangguan et al. 2017, ISRIC, 250 m)</td><td>How deep the soil and loose ground go before the rock: 1-2 blocks on Norway's hills, 16 m of sand on the Veluwe. New worlds from 2.0.1</td><td><span class="pill auto">automatic</span> two whole-planet GeoTIFFs, read row by row</td><td class="mono">soil-depth-cache/</td><td>Open Database License, ISRIC</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Randolph Glacier Inventory 7.0</strong> (GLIMS)</td><td>Each glacier's outline and area, for the thickness of its ice (thick in the middle, thin at the edges); where the ice is today stays with OSM and WorldCover. New worlds from 2.0.1</td><td><span class="pill auto">automatic</span> WFS, tiles of a quarter degree, only where a world has glaciers</td><td class="mono">glacier-cache/</td><td>CC BY 4.0, RGI Consortium</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>NVE</strong> lake database (Innsjødatabase)</td><td>The real bed of Norway's surveyed lakes (depth contours, sounded points, greatest depth)</td><td><span class="pill auto">automatic</span> ArcGIS REST: lake outlines per 0.1° tile, then a lake's contours when a region needs it</td><td class="mono">lake-survey-cache/</td><td>NLOD, © NVE</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>GRWL</strong> Global River Widths from Landsat (Allen &amp; Pavelsky 2018)</td><td>The measured width of rivers 30 m and wider, for OSM river lines without a width (not where a river is mapped as an area). New worlds from 2.0.1</td><td>shipped with the mod: 2.2 MB made once by <code>tools/river_widths.py</code>; no download</td><td class="mono">(inside the jar)</td><td>CC BY 4.0</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>GLOBathy</strong> with HydroLAKES outlets</td><td>Greatest depth of other lakes over 10 ha, for the bowl-shaped bed (an estimate; low for Norway's glacial lakes)</td><td>one-time: <code>tools/lake_depths.py --bbox …</code> (downloads 195 MB once)</td><td class="mono">lake-depths/, lake-depths-src/</td><td>CC0; HydroLAKES CC BY 4.0</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
       <tr><td><strong>Open-Meteo</strong> time zone</td><td>The world's local time zone (daylight saving included), for villagers who keep clock hours</td><td><span class="pill auto">automatic</span> one question per world, kept in the world folder</td><td class="mono">&lt;world&gt;/orbis-timezone.txt</td><td>CC BY 4.0, © Open-Meteo</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>MET Norway</strong> locationforecast</td><td>Real weather while a world runs: clear, rain or thunder for the coming hour</td><td><span class="pill auto">automatic</span> one small request when the last answer expires (a few minutes at most), only with real weather on</td><td class="mono">(not cached on disk)</td><td>CC BY 4.0, © MET Norway</td><td><span class="pill ok">working</span></td></tr>

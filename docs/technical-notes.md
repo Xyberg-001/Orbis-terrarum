@@ -1125,6 +1125,36 @@ guess), roofs, walls and rooms like OSM's. One that comes within 2 m of an OSM
 building or building part is left out (OSM's is newer, or the same building).
 A Lagos region went from 55 buildings to 4,209; central Bergen stays at 428.
 
+### River widths (`water/RiverWidths`)
+New worlds from 2.0.1 (world setting `riverWidths`, config v20; servers keep
+false). A `waterway=river` line without a `width` tag was drawn 12 m wide. GRWL
+(Global River Widths from Landsat, Allen & Pavelsky 2018, CC BY 4.0) measured
+every river 30 m and wider; its summary statistics give each stretch of about
+20 km its median width. `tools/river_widths.py` turns them into
+`src/main/resources/orbis-river-widths.bin.gz` (2.2 MB, shipped in the jar, so
+every region has them at once and alike: a first-use download from Zenodo ran
+at 230 kB/s for 43 MB, and broke off once): lake and reservoir stretches
+dropped, lines simplified to 400 m (the points were already about 500 m apart),
+coordinates in 0.0003° steps, varint deltas. Read once (0.4 s, about 15 MB) into
+float arrays and a grid of 0.05° cells held as one sorted array of
+(cell, edge) longs (a map of lists took four times the memory).
+
+`widthFor(line)` samples the whole OSM way (every 100 m, 3 to 40 samples, so
+every region it crosses gets the same answer), finds for each sample the
+nearest GRWL edge within 600 m that runs the same way (within 40°, either
+direction: a tributary meeting a big river runs another way and keeps its
+own), and takes the median width when at least half the samples found one.
+Checked: the Rhine at Bonn 351 m, the Danube at Vienna 339 m, the Niger at
+Niamey 299 m, a line across the Rhine none.
+
+The widened line is drawn only where no water area is mapped: a line that
+touches an OSM water area (riverbank, natural=water) anywhere in the region
+keeps its old width, since a river mapped as an area has its line wandering
+out of it across islands and banks (Niamey: 3,452 cells of island and bank
+flooded before this rule, none after). A 67 m river in central Nigeria mapped
+only as a line went from 7,547 water cells to 45,883. The channel's depth
+follows the width used.
+
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
