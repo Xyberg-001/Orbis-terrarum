@@ -1178,6 +1178,35 @@ region went from the 51 m estimate to 266-273 m. swissBATHY3D's other 20 lakes
 come only as whole-lake ASCII grids of 15-390 MB (40 minutes for Lucerne at the
 speed swisstopo answers here), so they are left out.
 
+### Quebec's lake surveys (`water/QuebecLakes`, `SqliteTables`)
+New worlds from 2.0.1 (world setting `quebecLakes`, config v20; servers keep
+false). The Géobase des bathymétries de lacs du Québec (GBLQ, CC BY 4.0) has
+about 2,200 lakes with survey data, each only as a zip of its own (a GeoPackage
+with depth contours `iso_<lake>_<year>_<who>`, deepest point `fos_...`, often
+soundings `pts_...` and a bed raster, plus the paper maps as PDFs; 1 to 6 MB),
+on the province's Azure storage; there is no map service (the ministry's ArcGIS
+portal answers 403), and which lake lies where is only in a 41 MB GeoJSON
+index. The storage sent 38-250 kB/s here, so the index is reduced once by
+`tools/quebec_lakes.py` to `src/main/resources/orbis-quebec-lakes.tsv.gz` (id,
+zip name, box per lake) and shipped with the mod; a lake's zip is fetched the
+first time a world's region reaches its box, its GeoPackage read and kept as
+soundings (`quebec-lake-cache/<id>.bin.gz`, floats), the zip and GeoPackage
+dropped.
+
+`SqliteTables` reads the GeoPackage as the SQLite file it is: the schema from
+sqlite_master (column names from each CREATE TABLE), each table's b-tree page by
+page (interior 0x05 and leaf 0x0D pages, overflow pages followed), records by
+SQLite's serial types. The geometries are GeoPackage blobs (a GP header with its
+envelope, then WKB: points, lines, multi-lines, with or without Z/M), in Quebec
+Lambert (EPSG:32198), converted with the closed formulas of the Lambert
+conformal conic (GRS80; checked against the deepest point's own latitude and
+longitude columns: equal to six decimals). The newest survey (the year in the
+table name) is used: every contour vertex and the deepest point become
+soundings, and `WaterBeds` builds the same smooth surveyed bed as NVE's, after
+NVE and the other national surveys and before Seascape. Lac Anne (Laurentides):
+26 contours, 13,398 points, 25.34 m deepest, read in 0.1 s. A survey that cannot
+be fetched leaves the lake estimated in that region without keeping its shape.
+
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
