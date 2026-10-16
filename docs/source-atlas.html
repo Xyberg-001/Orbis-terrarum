@@ -14,7 +14,7 @@
   --ok: #2f7a4a; --ok-bg: #e2f1e6;
   --part: #8a6a12; --part-bg: #f6edcf;
   --no: #a23b3b; --no-bg: #f6dfdf;
-  --c-geo: #8b5a2b; --c-dsm: #6a4a9a; --c-bldg: #7a3e66; --c-ortho: #1f7a72; --c-roads: #b0452b; --c-lake: #2b6a8f; --c-ice: #3f7fa8; --c-soil: #7a5c2e; --c-sea: #1d4f8a; --c-forest: #2f6b2a; --c-river: #2a7f9e;
+  --c-geo: #8b5a2b; --c-dsm: #6a4a9a; --c-bldg: #7a3e66; --c-ortho: #1f7a72; --c-roads: #b0452b; --c-lake: #2b6a8f; --c-ice: #3f7fa8; --c-soil: #7a5c2e; --c-sea: #1d4f8a; --c-forest: #2f6b2a; --c-river: #2a7f9e; --c-weather: #5a5fa8; --c-climate: #a8642a; --c-snow: #4f8fb0;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "Barlow", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
@@ -24,7 +24,7 @@
     --paper: #131916; --sheet: #1a221e; --ink: #e3eae5; --ink-soft: #a5b3ac; --rule: #2e3a34;
     --contour: #e08a5a; --water: #7cb6d8;
     --ok: #7fd09a; --ok-bg: #1c3526; --part: #e0c063; --part-bg: #3a3218; --no: #f09a9a; --no-bg: #3d2121;
-    --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8; --c-ice: #a9d4f0; --c-soil: #d6b37e; --c-sea: #86b2ea; --c-forest: #8fcf86; --c-river: #7fd0e6;
+    --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8; --c-ice: #a9d4f0; --c-soil: #d6b37e; --c-sea: #86b2ea; --c-forest: #8fcf86; --c-river: #7fd0e6; --c-weather: #a9adf0; --c-climate: #e8a874; --c-snow: #a8d8f0;
     color-scheme: dark;
   }
 }
@@ -32,7 +32,7 @@
   --paper: #131916; --sheet: #1a221e; --ink: #e3eae5; --ink-soft: #a5b3ac; --rule: #2e3a34;
   --contour: #e08a5a; --water: #7cb6d8;
   --ok: #7fd09a; --ok-bg: #1c3526; --part: #e0c063; --part-bg: #3a3218; --no: #f09a9a; --no-bg: #3d2121;
-  --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8; --c-ice: #a9d4f0; --c-soil: #d6b37e; --c-sea: #86b2ea; --c-forest: #8fcf86; --c-river: #7fd0e6;
+  --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8; --c-ice: #a9d4f0; --c-soil: #d6b37e; --c-sea: #86b2ea; --c-forest: #8fcf86; --c-river: #7fd0e6; --c-weather: #a9adf0; --c-climate: #e8a874; --c-snow: #a8d8f0;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -85,7 +85,7 @@ td.country small { display: block; font-weight: 400; color: var(--ink-soft); fon
 .cat { font: 600 11px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px 4px 9px; border-left: 3px solid currentColor; white-space: nowrap; }
 .cat.geo { color: var(--c-geo); } .cat.dsm { color: var(--c-dsm); } .cat.bldg { color: var(--c-bldg); }
 .cat.ortho { color: var(--c-ortho); } .cat.roads { color: var(--c-roads); } .cat.lake { color: var(--c-lake); }
-.cat.ice { color: var(--c-ice); } .cat.soil { color: var(--c-soil); } .cat.sea { color: var(--c-sea); } .cat.forest { color: var(--c-forest); } .cat.river { color: var(--c-river); }
+.cat.ice { color: var(--c-ice); } .cat.soil { color: var(--c-soil); } .cat.sea { color: var(--c-sea); } .cat.forest { color: var(--c-forest); } .cat.river { color: var(--c-river); } .cat.weather { color: var(--c-weather); } .cat.climate { color: var(--c-climate); } .cat.snow { color: var(--c-snow); }
 .ep { font: 12px/1.4 var(--mono); word-break: break-all; color: var(--ink-soft); }
 .note { color: var(--ink-soft); font-size: 13px; }
 .pill { font: 600 11px/1 var(--body); padding: 4px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; }
@@ -102,7 +102,7 @@ footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--ru
 
 <div class="wrap">
   <header>
-    <span class="eyebrow">Orbis Terrarum · research, 1 and 16 October 2026</span>
+    <span class="eyebrow">Orbis Terrarum · research, 1 and 16 October 2026 (weather and climate: tenth pass)</span>
     <h1>Orbis Source Atlas</h1>
     <p class="lede">Open national services, country by country, that could give the rest of the world what Norway already has: measured building heights and roofs, sharp aerial photos, road widths and lanes, bedrock and lake depths. Eight research passes covered every region; each endpoint was tried from your own network.</p>
     <div class="legend">
@@ -117,6 +117,9 @@ footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--ru
       <span><i class="sw" style="background:var(--c-soil)"></i>Soil and depth to rock</span>
       <span><i class="sw" style="background:var(--c-forest)"></i>Forest type</span>
       <span><i class="sw" style="background:var(--c-river)"></i>River widths</span>
+      <span><i class="sw" style="background:var(--c-weather)"></i>Weather now</span>
+      <span><i class="sw" style="background:var(--c-climate)"></i>Climate</span>
+      <span><i class="sw" style="background:var(--c-snow)"></i>Snow, ice, seasons</span>
     </div>
   </header>
 
@@ -185,11 +188,11 @@ footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--ru
     </div>
   </section>
 
-  <footer>Compiled from eight research passes on 1 October 2026, and a ninth on 16 October 2026 (glaciers, soil, sea and lake depths, forest type, river widths, building footprints and 3D tunnels: the new categories). Orbis already uses Mapterhorn terrain (which includes many of these countries' lidar ground models), ESA WorldCover, Esri imagery, OpenStreetMap, GlobalBuildingAtlas, Open Waters, MET Norway and Open-Meteo; none of those are repeated here. In the mod since then: Macrostrat's map polygons (step 1, rock types worldwide) 21 orthophoto services (step 2; Berlin's and New York State's left out, see their rows) 11 lidar surface models (step 3) 5 building registers (step 4) 4 road databases (step 5) 2 lake surveys (step 6) and the German LoD2 import (step 7).</footer>
+  <footer>Compiled from eight research passes on 1 October 2026, a ninth on 16 October 2026 (glaciers, soil, sea and lake depths, forest type, river widths, building footprints and 3D tunnels) and a tenth the same day (observed weather, climate, observed snow, ice and seasons: today Orbis takes its weather from MET Norway's forecast, its snow from Open-Meteo's model and its climate from latitude and height alone). Orbis already uses Mapterhorn terrain (which includes many of these countries' lidar ground models), ESA WorldCover, Esri imagery, OpenStreetMap, GlobalBuildingAtlas, Open Waters, MET Norway and Open-Meteo; none of those are repeated here. In the mod since then: Macrostrat's map polygons (step 1, rock types worldwide) 21 orthophoto services (step 2; Berlin's and New York State's left out, see their rows) 11 lidar surface models (step 3) 5 building registers (step 4) 4 road databases (step 5) 2 lake surveys (step 6) and the German LoD2 import (step 7).</footer>
 </div>
 
 <script>
-const CATS = { geo: "Geology", dsm: "Surface model", bldg: "Buildings", ortho: "Photos", roads: "Roads", lake: "Lakes", sea: "Sea depth", ice: "Glaciers", soil: "Soil", forest: "Forest type", river: "Rivers" };
+const CATS = { geo: "Geology", dsm: "Surface model", bldg: "Buildings", ortho: "Photos", roads: "Roads", lake: "Lakes", sea: "Sea depth", ice: "Glaciers", soil: "Soil", forest: "Forest type", river: "Rivers", weather: "Weather now", climate: "Climate", snow: "Snow and seasons" };
 // [region, country, sub, cat, provider, protocol, endpoint, access(open|key|reg|blocked), detail, status(yes|part|no)]
 const R = [
 ["World","World","Macrostrat","geo","Macrostrat geologic units, best map per area","REST JSON point query","https://macrostrat.org/api/v2/geologic_units/map?lat={lat}&lng={lng}","open","Lithology, age, colour · 1:10M world, finer locally · CC BY 4.0","yes"],
@@ -374,7 +377,27 @@ const R = [
 ["Western Europe", "Switzerland", "", "lake", "swissBATHY3D (22 lakes, 1-3 m)", "STAC whole-lake zips", "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.swissbathy3d", "open", "15-390 MB per lake (Lucerne) · free with credit · Geneva and Neuchâtel in Orbis through Seascape since 16 Oct 2026; the other 20 left out (whole-lake grids, 40 min for Lucerne here)", "yes"],
 ["North America", "Canada", "Québec", "lake", "GBLQ lake bathymetry (about 2,210 lakes as soundings and isobaths)", "Zip per lake on Azure + 41 MB index", "https://www.donneesquebec.ca/recherche/dataset/bathymetries-lacs", "open", "About 1-6 MB per lake · CC BY 4.0 · in Orbis since 16 Oct 2026 (index shipped with the mod, each lake's GeoPackage read when reached)", "yes"],
 ["North America", "USA", "Michigan", "lake", "Inland lake contours (25,492)", "ArcGIS FeatureServer", "https://services3.arcgis.com/Jdnp1TjADvSDxMAX/arcgis/rest/services/DNRHydrologyOPENDATA/FeatureServer/1", "open", "About 80 KB per region · catalogue says no restrictions but no licence text: ask the DNR", "yes"],
-["North America", "Canada", "British Columbia", "lake", "Lake bathymetry contours", "WFS", "https://openmaps.gov.bc.ca/geo/pub/wfs", "open", "Access Only, not an open licence", "part"]
+["North America", "Canada", "British Columbia", "lake", "Lake bathymetry contours", "WFS", "https://openmaps.gov.bc.ca/geo/pub/wfs", "open", "Access Only, not an open licence", "part"],
+["Northern Europe", "Norway, Sweden, Finland, Denmark", "MET Norway", "weather", "Nowcast 2.0 (radar precipitation now and every 5 min to +2 h; corrected 2 m temperature)", "REST JSON point", "https://api.met.no/weatherapi/nowcast/2.0/complete?lat={lat}&lon={lon}", "open", "Observed radar · 5 min · CC BY 4.0 · Nordic only (422 elsewhere) · 20 req/s for all apps together", "yes"],
+["Western Europe", "Germany", "DWD", "weather", "Radar analysis + nowcast (dwd:Niederschlagsradar), lightning density (dwd:Blitzdichte)", "WMS GetFeatureInfo (numbers)", "https://maps.dwd.de/geoserver/dwd/wms", "open", "1 km, 5 min · DWD open data, credit", "yes"],
+["North America", "Canada", "ECCC GeoMet", "weather", "Radar rain and snow rate (RADAR_1KM_RRAI, RADAR_1KM_RSNO)", "WMS GetFeatureInfo (mm/h)", "https://geo.weather.gc.ca/geomet", "open", "1 km, 6 min · OGL-Canada · fair use 86,400 req/day · not the US", "yes"],
+["World", "World", "NOAA Aviation Weather Center", "weather", "METAR observations (rain, snow, drizzle, freezing rain, thunder, fog, visibility, cloud layers)", "REST JSON by bbox or station", "https://aviationweather.gov/api/data/metar?bbox={s},{w},{n},{e}&format=json", "open", "Airports worldwide, half-hourly or hourly · public domain · 100 req/min, 400 results", "yes"],
+["World", "World", "RainViewer", "weather", "Global radar mosaic, past 2 h (Universal Blue colours, zoom 7 at most since 2026)", "PNG tiles (colours to read)", "https://api.rainviewer.com/public/weather-maps.json", "reg", "~1,200 radars · personal and educational use only: ask before shipping · India coverage doubtful (no echo under a Ranchi thunderstorm)", "part"],
+["World", "Europe, Africa, India", "EUMETSAT View", "weather", "Cloud mask (msg_fes:clm, msg_iodc:clm), MTG Lightning Imager flash area (mtg_fd:li_afa)", "WMS GetFeatureInfo / GetMap", "https://view.eumetsat.int/geoserver/ows", "open", "10-15 min · 1,033 lightning pixels around a Cameroon thunderstorm · View terms not verified", "yes"],
+["North America", "USA", "NWS", "weather", "Latest station observation (present weather, visibility, clouds)", "REST JSON", "https://api.weather.gov/stations/{id}/observations/latest", "open", "Public domain · User-Agent required", "yes"],
+["World", "World", "Open-Meteo", "weather", "\"Current\" weather (what Orbis uses for snow depth)", "REST JSON point", "https://api.open-meteo.com/v1/forecast?current=...", "open", "Model output, not observations · free for non-commercial use, 10,000 calls a day", "yes"],
+["World", "World", "Beck et al. 2023", "climate", "Köppen-Geiger classes 1991-2020 (and future); monthly T and P ensemble", "Zip on figshare (whole entries)", "https://figshare.com/articles/dataset/21789074", "open", "1 km to 1° · CC BY 4.0 · 0.05° bundled would be ~0.5 MB · figshare 35-65 kB/s here", "yes"],
+["World", "World", "CHELSA v2.1", "climate", "Köppen-Geiger, bio1-19 (mean T, annual P, seasonality), monthly T/P, aridity, growing season, snow-cover days", "GeoTIFF, one strip per row (range reads)", "https://os.zhdk.cloud.switch.ch/chelsav2/GLOBAL/climatologies/1981-2010/", "open", "1 km, 1981-2010 · CC0 · a row per point, 0.7-4 s · Bergen 7.9 °C, 2733 mm, Cfb", "yes"],
+["World", "World", "TerraClimate", "climate", "Monthly climatologies 1991-2020 (tmax, tmin, ppt, swe, pet, deficit)", "THREDDS OPeNDAP", "http://thredds.northwestknowledge.net:8080/thredds/", "open", "4 km · CC0 (stated) · point queries fine, big subsets cut off", "yes"],
+["World", "World", "OpenLandMap", "climate", "Monthly snow probability 2000-2012 (ESA CCI / MODIS)", "Cloud-optimized GeoTIFF", "https://s3.openlandmap.org/", "open", "500 m · CC BY 4.0 · one 20-230 kB tile per region and month", "yes"],
+["World", "World", "WorldClim 2.1", "climate", "Monthly normals 1970-2000, bio variables", "Zips", "https://geodata.ucdavis.edu/climate/worldclim/2_1/base/", "reg", "Non-commercial, no redistribution without permission: not usable", "yes"],
+["World", "World", "Copernicus CDS", "climate", "ERA5 / ERA5-Land monthly means", "Request queue API", "https://cds.climate.copernicus.eu/", "key", "CC BY 4.0 · account and token per user", "part"],
+["World", "Northern Hemisphere", "NOAA IMS (NSIDC G02156)", "snow", "Daily snow on land, sea and lake ice (analyst-made, no cloud gaps)", "Gzipped ASCII grid / GeoTIFF / netCDF", "https://noaadata.apps.nsidc.org/NOAA/G02156/1km/", "open", "1 km, posted ~13 UTC next day · public domain · 3 MB a day, stream-decoded · checked at 10 places", "yes"],
+["World", "World", "NOAA GMASI", "snow", "Daily global snow and ice, both hemispheres", "netCDF4 / HDF5", "https://www.star.nesdis.noaa.gov/pub/smcd/emb/snow/gmasi_enterprise_2km_operational/", "open", "2 km · public domain · 6 MB a day (78 s here) · research server, paths may move", "yes"],
+["World", "World", "NASA GIBS", "snow", "Daily MODIS/VIIRS NDSI snow cover (500 m) and 8-day NDVI (250 m) for green-up and leaf fall", "WMTS palette PNG tiles (exact values)", "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/", "open", "Same day · NASA open data, credit · cloud and night gaps: on top of IMS/GMASI", "yes"],
+["Northern Europe", "Norway", "MET Norway / NVE", "snow", "seNorge daily snow depth, SWE, new snow", "THREDDS OPeNDAP box / NVE GridTimeSeries JSON", "https://gts.nve.no/api/GridTimeSeries/{X}/{Y}/{start}/{end}/sd.json", "open", "1 km, same day · NLOD · Galdhøpiggen 25.6 cm on 16 Oct", "yes"],
+["North America", "USA", "NOAA NOHRSC", "snow", "Snow depth and SWE analysis (SNODAS)", "ArcGIS MapServer identify", "https://mapservices.weather.noaa.gov/raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer", "open", "~1 km, 4 times a day · public domain", "yes"],
+["Europe", "Europe, World", "Copernicus CLMS", "snow", "Snow cover extent, lake ice, fractional snow 20-60 m", "CDSE download", "https://dataspace.copernicus.eu/", "key", "Downloads need a login per user (401): only through a relay", "part"]
 ];
 
 const STATUS = { yes: ["Answered", "v-yes"], part: ["Partly", "v-part"], no: ["No answer", "v-no"] };
