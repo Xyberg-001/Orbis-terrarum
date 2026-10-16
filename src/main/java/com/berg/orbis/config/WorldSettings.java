@@ -178,6 +178,8 @@ public final class WorldSettings {
     public boolean groundLayers = false;
     /** OrbisConfig.forestTypes; false for worlds made before it existed. */
     public boolean forestTypes = false;
+    /** OrbisConfig.overtureBuildings; false for worlds made before it existed. */
+    public boolean overtureBuildings = false;
 
     public static WorldSettings fromConfig(OrbisConfig c) {
         WorldSettings s = new WorldSettings();
@@ -273,6 +275,7 @@ public final class WorldSettings {
         s.surveyedTunnels = c.surveyedTunnels;
         s.groundLayers = c.groundLayers;
         s.forestTypes = c.forestTypes;
+        s.overtureBuildings = c.overtureBuildings;
         return s;
     }
 
@@ -369,6 +372,7 @@ public final class WorldSettings {
         c.surveyedTunnels = surveyedTunnels;
         c.groundLayers = groundLayers;
         c.forestTypes = forestTypes;
+        c.overtureBuildings = overtureBuildings;
     }
 
     /** The installation config with this world's settings applied (a copy; the base is untouched). */

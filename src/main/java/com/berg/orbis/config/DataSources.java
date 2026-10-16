@@ -118,6 +118,7 @@ public final class DataSources {
         l.add(world("soil-depth", "Soil depth to bedrock (SoilGrids 2017)", List.of("soil-depth-cache"), null));
         l.add(world("rgi-glaciers", "Glacier outlines (RGI 7)", List.of("glacier-cache"), null));
         l.add(world("forest-types", "Forest types (CLC+, Copernicus)", List.of("forest-type-cache"), null));
+        l.add(world("overture-buildings", "Buildings OSM lacks (Overture)", List.of("overture-cache"), null));
         l.add(world("map-backgrounds", "Map and preview backgrounds", List.of("map-tile-cache", "preview", "outline-cache"), null));
         // ---- photos (worldwide or national, as configured)
         for (OrbisConfig.ImagerySource s : c.imagerySources) {

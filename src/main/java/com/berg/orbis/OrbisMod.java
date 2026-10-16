@@ -795,6 +795,7 @@ public class OrbisMod implements ModInitializer {
                 rasterizer.setGround(new com.berg.orbis.geology.Soils(data.resolve("soil-cache"), data.resolve("soil-depth-cache")),
                         new com.berg.orbis.geology.Glaciers(data.resolve("glacier-cache")));
             }
+            if (cfg.overtureBuildings) rasterizer.setOvertureBuildings(new com.berg.orbis.osm.OvertureBuildings(data.resolve("overture-cache")));
             if (cfg.forestTypes) rasterizer.setForestTypes(new com.berg.orbis.landcover.ForestTypes(data.resolve("forest-type-cache")));
             if (cfg.nvdbRoadWidths || cfg.surveyedTunnels) rasterizer.setNvdb(new com.berg.orbis.osm.NvdbRoads.Store(data.resolve("nvdb-cache")));
             if (cfg.surveyedTunnels) rasterizer.setTunnelSurveys(new com.berg.orbis.osm.TunnelSurveys(data.resolve("tunnel-survey-cache")));

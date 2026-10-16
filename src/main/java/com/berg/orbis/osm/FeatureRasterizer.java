@@ -157,6 +157,13 @@ public final class FeatureRasterizer {
         this.forestTypes = types;
     }
 
+    /** Buildings OSM does not have yet (Overture's footprints from Google, Microsoft and others), or null. */
+    private volatile OvertureBuildings overture;
+
+    public void setOvertureBuildings(OvertureBuildings buildings) {
+        this.overture = buildings;
+    }
+
     public void setElevationMeters(Elevation metres) {
         this.elevationMeters = metres;
     }
@@ -266,6 +273,10 @@ public final class FeatureRasterizer {
             r.hasOsmData = !data.areas().isEmpty() || !data.ways().isEmpty() || !data.nodes().isEmpty();
 
             List<OsmArea> areasBigFirst = new ArrayList<>(data.areas());
+            if (cfg.generateBuildings && cfg.overtureBuildings && overture != null && cfg.metersPerBlock <= 4) {
+                addOvertureBuildings(r, areasBigFirst);
+                stepDone(st, "overture");
+            }
             areasBigFirst.sort(Comparator.comparingDouble(OsmArea::approxAreaM2).reversed());
 
             if (cfg.generateLandCover) rasterizeLandCover(r, areasBigFirst);
@@ -494,6 +505,114 @@ public final class FeatureRasterizer {
                 }
             }
         }
+    }
+
+    /**
+     * Overture's buildings that OSM does not have, added to the region's areas as if OSM had them (so they get heights,
+     * roofs, walls and rooms like any other). One within 2 m of an OSM building is left out: OSM's is newer, or the same
+     * building drawn by a person, or a sliver along its roof.
+     */
+    private void addOvertureBuildings(RegionRaster r, List<OsmArea> areas) {
+        double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
+        double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
+        double pad = 0.0005;
+        List<OsmArea> extra = overture.buildings(Math.min(a[0], b[0]) - pad, Math.min(a[1], b[1]) - pad, Math.max(a[0], b[0]) + pad, Math.max(a[1], b[1]) + pad);
+        if (extra == null || extra.isEmpty()) return;
+        // OSM's buildings in a grid of about 50 m cells.
+        final double cell = 0.0005;
+        Map<Long, List<OsmArea>> grid = new HashMap<>();
+        for (OsmArea o : areas) {
+            String bt = o.tags().get("building"), bp = o.tags().get("building:part");
+            if ((bt == null || "no".equals(bt)) && (bp == null || "no".equals(bp))) continue;
+            double[] box = box(o);
+            for (long gx = (long) Math.floor(box[1] / cell); gx <= (long) Math.floor(box[3] / cell); gx++) {
+                for (long gy = (long) Math.floor(box[0] / cell); gy <= (long) Math.floor(box[2] / cell); gy++) {
+                    grid.computeIfAbsent(gx * 4_000_003L + gy, k -> new ArrayList<>()).add(o);
+                }
+            }
+        }
+        int added = 0;
+        for (OsmArea o : extra) {
+            double[] box = box(o);
+            // (2 m round it: the buildings it must keep clear of)
+            double padLat = 2 / 111_320.0, padLon = padLat / Math.max(0.05, Math.cos(Math.toRadians(box[0])));
+            box = new double[]{box[0] - padLat, box[1] - padLon, box[2] + padLat, box[3] + padLon};
+            boolean clash = false;
+            java.util.Set<OsmArea> seen = new java.util.HashSet<>();
+            outer:
+            for (long gx = (long) Math.floor(box[1] / cell); gx <= (long) Math.floor(box[3] / cell); gx++) {
+                for (long gy = (long) Math.floor(box[0] / cell); gy <= (long) Math.floor(box[2] / cell); gy++) {
+                    List<OsmArea> near = grid.get(gx * 4_000_003L + gy);
+                    if (near == null) continue;
+                    for (OsmArea osm : near) {
+                        if (!seen.add(osm)) continue;
+                        if (overlaps(o, osm)) {
+                            clash = true;
+                            break outer;
+                        }
+                    }
+                }
+            }
+            if (clash) continue;
+            areas.add(o);
+            added++;
+        }
+        if (added > 0) r.hasOsmData = true;
+    }
+
+    /** {south, west, north, east} of an area's outer rings. */
+    private static double[] box(OsmArea o) {
+        double s = 90, w = 180, n = -90, e = -180;
+        for (List<LatLon> ring : o.outers()) {
+            for (LatLon p : ring) {
+                s = Math.min(s, p.lat());
+                n = Math.max(n, p.lat());
+                w = Math.min(w, p.lon());
+                e = Math.max(e, p.lon());
+            }
+        }
+        return new double[]{s, w, n, e};
+    }
+
+    /** Whether two footprints touch or come within 2 m: a corner of either inside or near the other, or their centres. */
+    private static boolean overlaps(OsmArea a, OsmArea b) {
+        double[] ba = box(a), bb = box(b);
+        double padLat = 2 / 111_320.0, padLon = padLat / Math.max(0.05, Math.cos(Math.toRadians(ba[0])));
+        if (ba[0] > bb[2] + padLat || bb[0] > ba[2] + padLat || ba[1] > bb[3] + padLon || bb[1] > ba[3] + padLon) return false;
+        for (List<LatLon> ring : a.outers()) for (LatLon p : ring) if (inside(b, p) || nearEdge(b, p, padLat, padLon)) return true;
+        for (List<LatLon> ring : b.outers()) for (LatLon p : ring) if (inside(a, p) || nearEdge(a, p, padLat, padLon)) return true;
+        return inside(b, a.centroid()) || inside(a, b.centroid());
+    }
+
+    /** Whether a point lies within the pad (2 m, in degrees each way) of an area's outline. */
+    private static boolean nearEdge(OsmArea area, LatLon p, double padLat, double padLon) {
+        for (List<LatLon> ring : area.outers()) {
+            int m = ring.size();
+            for (int i = 0, j = m - 1; i < m; j = i++) {
+                LatLon u = ring.get(i), v = ring.get(j);
+                // In units of the pad: within 1 is within 2 m.
+                double ux = (u.lon() - p.lon()) / padLon, uy = (u.lat() - p.lat()) / padLat;
+                double vx = (v.lon() - p.lon()) / padLon, vy = (v.lat() - p.lat()) / padLat;
+                double dx = vx - ux, dy = vy - uy, len2 = dx * dx + dy * dy;
+                double t = len2 == 0 ? 0 : Math.max(0, Math.min(1, -(ux * dx + uy * dy) / len2));
+                double cx = ux + t * dx, cy = uy + t * dy;
+                if (cx * cx + cy * cy <= 1) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean inside(OsmArea area, LatLon p) {
+        boolean in = false;
+        for (List<LatLon> ring : area.outers()) {
+            int m = ring.size();
+            for (int i = 0, j = m - 1; i < m; j = i++) {
+                LatLon u = ring.get(i), v = ring.get(j);
+                if ((u.lat() > p.lat()) != (v.lat() > p.lat())
+                        && p.lon() < (v.lon() - u.lon()) * (p.lat() - u.lat()) / (v.lat() - u.lat()) + u.lon()) in = !in;
+            }
+        }
+        return in;
     }
 
     private static long groundHash(int x, int z) {

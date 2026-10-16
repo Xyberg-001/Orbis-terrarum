@@ -179,6 +179,12 @@ public class OrbisConfig {
      */
     public boolean forestTypes = true;
     /**
+     * Buildings OpenStreetMap does not have yet, from Overture's buildings (footprints from Google Open Buildings, Microsoft
+     * and others), at 1:4 or finer: whole towns in Africa, Asia and Latin America where OSM is thin. New worlds take this
+     * value; a world keeps its own.
+     */
+    public boolean overtureBuildings = true;
+    /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
      * vanilla's per real square kilometre; 1 keeps vanilla's.
@@ -1026,9 +1032,11 @@ public class OrbisConfig {
             surveyedTunnels = false;
         }
         if (configVersion < 20 && dedicatedServer()) {
-            // As above: a server's world keeps its ground and its woods (set groundLayers and forestTypes to true for a new world).
+            // As above: a server's world keeps its ground, woods and buildings (set groundLayers, forestTypes and
+            // overtureBuildings to true for a new world).
             groundLayers = false;
             forestTypes = false;
+            overtureBuildings = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.
