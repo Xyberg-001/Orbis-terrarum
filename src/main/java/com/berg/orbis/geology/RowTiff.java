@@ -143,7 +143,7 @@ final class RowTiff {
                 byte[] one = java.util.Arrays.copyOfRange(all, p, p + (int) l.counts[r]);
                 Path file = rowFile(r);
                 Files.createDirectories(file.getParent());
-                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
                 Files.write(tmp, one);
                 Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -292,7 +292,7 @@ final class RowTiff {
     }
 
     private static void save(Layout l, Path file) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(new java.util.zip.GZIPOutputStream(Files.newOutputStream(tmp))))) {
             out.writeInt(1);
             out.writeInt(l.width);

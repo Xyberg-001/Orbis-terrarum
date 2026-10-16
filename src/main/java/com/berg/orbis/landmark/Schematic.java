@@ -13,7 +13,7 @@ public final class Schematic {
     public final BlockState[] palette;
     /** Palette index per block, ordered (y * length + z) * width + x. */
     public final int[] blocks;
-    /** Sponge "Offset" (position of the schematic origin relative to the paste point), applied by the placer. */
+    /** Sponge "Offset" as stored in the file (WorldEdit keeps the copied region's world corner there); not used for placing. */
     public final int offsetX, offsetY, offsetZ;
 
     public Schematic(String name, int width, int height, int length, BlockState[] palette, int[] blocks,

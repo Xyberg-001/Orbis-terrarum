@@ -33,7 +33,12 @@ public final class Decorator {
     }
 
     public void decorateChunk(WorldGenLevel level, int chunkMinX, int chunkMinZ) {
-        RegionRaster r = model.rasterIfLoaded(chunkMinX, chunkMinZ);
+        decorateChunk(level, chunkMinX, chunkMinZ, null);
+    }
+
+    /** As above, with the region the chunk's terrain was built from when known (no lookup, no wait). */
+    public void decorateChunk(WorldGenLevel level, int chunkMinX, int chunkMinZ, RegionRaster known) {
+        RegionRaster r = known != null ? known : model.rasterIfLoaded(chunkMinX, chunkMinZ);
         if (r == null && cfg.waitForOsm) r = model.rasterForBlock(chunkMinX, chunkMinZ);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int maxY = cfg.maxY();

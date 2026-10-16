@@ -68,7 +68,7 @@ public final class ElevationTiles {
         }
         if (r.status() != 200) throw new IOException("HTTP " + r.status());
         Files.createDirectories(dir);
-        Path tmp = tile.resolveSibling(tile.getFileName() + ".tmp");
+        Path tmp = tile.resolveSibling(tile.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         Files.write(tmp, r.body());
         Files.move(tmp, tile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         return r.body();

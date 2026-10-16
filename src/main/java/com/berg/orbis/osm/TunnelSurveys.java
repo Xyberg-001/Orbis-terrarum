@@ -190,7 +190,7 @@ public final class TunnelSurveys {
     }
 
     private static void writeGzip(Path file, String text) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         try (OutputStream out = new GZIPOutputStream(Files.newOutputStream(tmp))) {
             out.write(text.getBytes(StandardCharsets.UTF_8));
         }

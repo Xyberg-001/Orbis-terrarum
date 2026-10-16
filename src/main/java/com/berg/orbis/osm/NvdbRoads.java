@@ -363,7 +363,7 @@ public final class NvdbRoads {
         }
 
         private static void writeGzip(Path file, String content) throws IOException {
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
             try (OutputStream out = new GZIPOutputStream(Files.newOutputStream(tmp))) {
                 out.write(content.getBytes(StandardCharsets.UTF_8));
             }

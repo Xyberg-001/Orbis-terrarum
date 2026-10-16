@@ -515,6 +515,7 @@ public class OrbisMod implements ModInitializer {
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             com.berg.orbis.worldgen.StructureSearches.clear();
+            com.berg.orbis.render.Transit.clearCartSpots();
             levelHeight = 0;
             cubicHeights = null;
             // A model changed while its world ran is not handed to the next world with the same settings.
@@ -527,6 +528,7 @@ public class OrbisMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             stopping = true;
             com.berg.orbis.worldgen.PregenTask.serverStopping();
+            com.berg.orbis.export.AternosExport.serverStopping();
         });
         com.berg.orbis.worldgen.AutoPregen.register();
         com.berg.orbis.worldgen.HardLimit.register();

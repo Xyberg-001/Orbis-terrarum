@@ -81,7 +81,7 @@ final class TileTiff {
             if (raw == null || raw.length != count) {
                 raw = range(offset, count);
                 Files.createDirectories(file.getParent());
-                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
                 Files.write(tmp, raw);
                 Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -120,7 +120,7 @@ final class TileTiff {
             for (int i = 0; i < n; i++) out.putLong(t[0][i]);
             for (int i = 0; i < n; i++) out.putLong(t[1][i]);
             Files.createDirectories(file.getParent());
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
             Files.write(tmp, out.array());
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
         }
@@ -266,7 +266,7 @@ final class TileTiff {
         String text = String.join("\n", "1", String.valueOf(l.big), String.valueOf(l.width), String.valueOf(l.height), String.valueOf(l.tileW),
                 String.valueOf(l.tileH), String.valueOf(l.x0), String.valueOf(l.y0), String.valueOf(l.dx), String.valueOf(l.dy),
                 String.valueOf(l.offsetsAt), String.valueOf(l.countsAt), String.valueOf(l.entry), String.valueOf(l.nodata));
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         Files.writeString(tmp, text);
         Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
     }

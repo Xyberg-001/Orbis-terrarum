@@ -239,6 +239,7 @@ public final class PregenTask {
      * coasts are complete, become the task's area. An older progress file of the same place (1.1.0) gives the rows already done.
      */
     public static synchronized Component startArea(ServerLevel level, AreaOutline outline, boolean mainlandOnly, String kind, boolean paused) {
+        if (com.berg.orbis.export.AternosExport.running()) return EXPORTING;
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
         AreaSweep sweep = AreaSweep.of(outline, model.mapper());
@@ -296,7 +297,11 @@ public final class PregenTask {
     }
 
     /** The same, listed in the given state (QUEUED: start or wait its turn; PAUSED; DOWNLOADING: when its map data is in). */
+    /** An export copies the world: no pre-generation writes under it (the export already waits for one to finish). */
+    private static final Component EXPORTING = Component.literal("An export for Aternos is copying the world: start the pre-generation once it is done.");
+
     public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea, String kind, PregenTasks.State initial) {
+        if (com.berg.orbis.export.AternosExport.running()) return EXPORTING;
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
         if (selection.isEmpty()) return Component.literal("The selection is empty.");
@@ -547,6 +552,13 @@ public final class PregenTask {
         }
         inFlight.incrementAndGet();
         level.getServer().execute(() -> {
+            // Stopped (or put aside) after this was queued: its ticket would be added to a task nobody collects any more,
+            // and the chunk kept in memory until the game closes.
+            if (stopRequested) {
+                inFlight.decrementAndGet();
+                slots.release();
+                return;
+            }
             ChunkPos pos = new ChunkPos(cx, cz);
             CompletableFuture<?> future;
             try {

@@ -593,9 +593,18 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                 .thenCompose(raster -> terrainReady(model, chunk, System.currentTimeMillis()).thenApply(v -> raster))
                 .thenApplyAsync(raster -> {
                     fillChunk(model, chunk, raster);
+                    if (raster != null) TERRAIN_RASTER.put(chunk, raster);
                     return chunk;
                 }, Util.backgroundExecutor());
     }
+
+    /**
+     * The map region each chunk's terrain was built from, until the chunk is decorated (the same chunk object goes through
+     * both steps). The decorator asked the region cache again and, when the region had been evicted in between, waited on a
+     * world-generation thread while it was rasterised again (up to a minute). Weak keys: a chunk dropped before its
+     * decoration takes its entry with it.
+     */
+    private static final java.util.Map<ChunkAccess, RegionRaster> TERRAIN_RASTER = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
     private static final java.util.concurrent.atomic.AtomicInteger TERRAIN_WAITING = new java.util.concurrent.atomic.AtomicInteger();
     private static volatile long lastTerrainWarning;
@@ -642,6 +651,7 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
      */
     public void buildDirect(ChunkAccess chunk, RegionRaster raster, long seed) {
         fillChunk(model(), chunk, raster);
+        if (raster != null) TERRAIN_RASTER.put(chunk, raster);
         carve(seed, chunk);
     }
 
@@ -910,8 +920,8 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
             }
         }
         try {
-            // The region was awaited in fillFromNoise, so this lookup is instant.
-            model.decorator().decorateChunk(level, chunk.getPos().getMinBlockX(), chunk.getPos().getMinBlockZ());
+            // The region the terrain was built from (known when the terrain was made in this session).
+            model.decorator().decorateChunk(level, chunk.getPos().getMinBlockX(), chunk.getPos().getMinBlockZ(), TERRAIN_RASTER.remove(chunk));
         } catch (RuntimeException e) {
             System.err.println("[orbis] Decoration failed for chunk " + chunk.getPos() + ": " + e);
             e.printStackTrace();

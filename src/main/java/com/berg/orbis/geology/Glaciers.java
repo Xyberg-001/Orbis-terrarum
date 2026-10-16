@@ -367,7 +367,7 @@ public final class Glaciers {
     }
 
     private static void save(Path file, List<Glacier> list) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(new GZIPOutputStream(Files.newOutputStream(tmp))))) {
             out.writeInt(1);
             out.writeInt(list.size());

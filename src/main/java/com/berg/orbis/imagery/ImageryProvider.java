@@ -260,7 +260,7 @@ public final class ImageryProvider {
                     Files.write(miss, new byte[0]);
                     return null;
                 }
-                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
                 Files.write(tmp, bytes);
                 Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }

@@ -155,7 +155,7 @@ public final class SeNorge {
                 }
             }
             Files.createDirectories(cacheDir);
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
             try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(tmp)))) {
                 for (float v : t) out.writeFloat(v);
             }

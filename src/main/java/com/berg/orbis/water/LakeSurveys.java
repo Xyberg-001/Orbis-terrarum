@@ -196,7 +196,7 @@ public final class LakeSurveys {
             sb.append('\n');
         }
         Files.createDirectories(file.getParent());
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         Files.writeString(tmp, sb, StandardCharsets.UTF_8);
         Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }

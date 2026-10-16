@@ -99,7 +99,7 @@ public final class OutlineCache {
         if (f == null) return;
         try {
             Files.createDirectories(f.getParent());
-            Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
+            Path tmp = f.resolveSibling(f.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
             try (OutputStream raw = Files.newOutputStream(tmp); DataOutputStream out = new DataOutputStream(new GZIPOutputStream(raw))) {
                 out.writeInt(MAGIC);
                 out.writeUTF(key);

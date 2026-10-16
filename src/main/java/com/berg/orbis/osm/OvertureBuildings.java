@@ -121,7 +121,7 @@ public final class OvertureBuildings {
             long[] where = find(a, tileId(Z, x, y));
             gz = where == null ? new byte[0] : range(a.url, a.dataOffset + where[0], where[1]);
             Files.createDirectories(file.getParent());
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
             Files.write(tmp, gz);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
         }
@@ -170,7 +170,7 @@ public final class OvertureBuildings {
         } else {
             gz = range(a.url, a.leafOffset + offset, length);
             Files.createDirectories(file.getParent());
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
             Files.write(tmp, gz);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
         }

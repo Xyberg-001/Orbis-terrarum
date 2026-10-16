@@ -69,6 +69,38 @@ public final class AternosExport {
     public static boolean running() {
         return RUNNING.get();
     }
+
+    /** Set when the world closes during an export: the copy stops at its next file, its half-made folder is deleted. */
+    private static volatile boolean cancelled;
+
+    /**
+     * The world is closing: an export still copying stops (the server is about to write every chunk, and the copy would
+     * hold half of them), and nothing of it is left for the next world opened in this session (its "running" flag held
+     * the next world's villager points of interest still, and its bars showed there).
+     */
+    public static void serverStopping() {
+        if (RUNNING.get()) cancelled = true;
+        if (bar != null) {
+            bar.removeAllPlayers();
+            stepBar.removeAllPlayers();
+            bar = null;
+            stepBar = null;
+        }
+        // Wait a little for the copy to notice, so the next world does not open with the flag still set.
+        for (int i = 0; i < 100 && RUNNING.get(); i++) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        if (RUNNING.get()) System.err.println("[orbis] The export is still finishing a file; it stops without writing an upload");
+    }
+
+    private static void checkCancelled() {
+        if (cancelled) throw new java.util.concurrent.CancellationException("the world was closed");
+    }
     /** The whole zip, world files included: under Aternos' 1 GB with room (a 941 MB zip was refused on 2026-09-28). */
     private static final long ZIP_BUDGET = 900L << 20;
     private static final long STORAGE_BUDGET = 3400L << 20;
@@ -83,6 +115,7 @@ public final class AternosExport {
     public static Component start(MinecraftServer server, boolean forOrbis, boolean zipOnly) {
         if (PregenTask.isRunning()) return Component.literal("A pre-generation is running: export once it is done (or pause it on the world map).");
         if (!RUNNING.compareAndSet(false, true)) return Component.literal("An export is already running.");
+        cancelled = false;
         ServerLevel ow = server.overworld();
         server.saveEverything(true, true, true);
         // No chunk is written while the export reads the world (as /save-off: no autosave, chunks kept in memory
@@ -107,6 +140,8 @@ public final class AternosExport {
         Thread t = new Thread(() -> {
             try {
                 run(text -> say(server, text), root, name, spawn.getX() >> 4, spawn.getZ() >> 4, seaTop, minY, allowed, forOrbis, zipOnly, games, mapInfo);
+            } catch (java.util.concurrent.CancellationException e) {
+                System.out.println("[orbis] Export stopped: " + e.getMessage());
             } catch (Exception e) {
                 e.printStackTrace();
                 say(server, "The export failed: " + e);
@@ -154,6 +189,7 @@ public final class AternosExport {
     private static int barTicks;
 
     private static void step(Step s, long total) {
+        checkCancelled();
         step = s;
         stepTotal = Math.max(1, total);
         stepDone.set(0);
@@ -273,6 +309,7 @@ public final class AternosExport {
             runSteps(say, root, name, spawnCx, spawnCz, seaTop, minY, allowed, forOrbis, zipOnly, gameDir, mapInfo, t0);
         } finally {
             step = null;
+            stepDetail = "";
         }
     }
 
@@ -285,6 +322,17 @@ public final class AternosExport {
         if (folder.isEmpty()) folder = "world";
         String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"));
         Path out = gameDir.resolve("orbis-exports").resolve(folder + "-aternos-" + stamp);
+        try {
+            runSteps(say, root, name, spawnCx, spawnCz, seaTop, minY, allowed, forOrbis, zipOnly, gameDir, mapInfo, t0, regionDir, ow, folder, out);
+        } catch (java.util.concurrent.CancellationException e) {
+            deleteTree(out); // half an export is no use to anyone
+            throw e;
+        }
+    }
+
+    private static void runSteps(java.util.function.Consumer<String> say, Path root, String name, int spawnCx, int spawnCz, int seaTop, int minY,
+                                 ChunkSelection allowed, boolean forOrbis, boolean zipOnly, Path gameDir, String mapInfo, long t0,
+                                 Path regionDir, Path ow, String folder, Path out) throws IOException {
         // The terrain without light and heightmaps, made once: measured for the budget here, copied from in step 3.
         Path stripped = out.resolve("stripped");
         Files.createDirectories(stripped);
@@ -308,6 +356,7 @@ public final class AternosExport {
             }
             Map<Path, long[]> lengths = new java.util.concurrent.ConcurrentHashMap<>();
             parallel(list, f -> {
+                checkCancelled();
                 lengths.put(f, terrain ? stripRegion(f, stripped.resolve(f.getFileName()), rawTerrain, lightTerrain) : chunkLengths(f));
                 if (terrain) {
                     long n = stepDone.incrementAndGet();
@@ -410,6 +459,7 @@ public final class AternosExport {
             Files.createDirectories(dest);
             boolean terrain = e.getKey().equals("region");
             parallel(e.getValue(), f -> {
+                checkCancelled();
                 // Terrain from the stripped copy made in step 1 (nothing is stripped twice); entities and POI as saved.
                 Path src = terrain && Files.exists(stripped.resolve(f.getFileName())) ? stripped.resolve(f.getFileName()) : f;
                 if (rewriteRegion(src, dest.resolve(f.getFileName()), regionOf(f), keep, false)) writtenFiles.incrementAndGet();

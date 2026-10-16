@@ -387,10 +387,16 @@ public class OsmDataProvider {
     }
 
     private static void writeGzip(Path file, String content) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         try (OutputStream out = new GZIPOutputStream(Files.newOutputStream(tmp))) {
             out.write(content.getBytes(StandardCharsets.UTF_8));
         }
-        Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        try {
+            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            // Another request for the same region got there first (and the file may be open for reading): its copy stands.
+            Files.deleteIfExists(tmp);
+            if (!Files.exists(file)) throw e;
+        }
     }
 }

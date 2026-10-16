@@ -305,7 +305,7 @@ public final class WorldCoverProvider {
                 } else {
                     raw = fetchRange(urlTemplate.replace("{tile}", g.name), g.offsets[index], g.counts[index]);
                     if (raw == null) return null;
-                    Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                    Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
                     Files.write(tmp, raw);
                     Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }

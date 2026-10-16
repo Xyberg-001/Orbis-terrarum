@@ -407,7 +407,7 @@ public final class Soils {
     }
 
     private static void save(Path file, Tile t) throws IOException {
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
         try (DataOutputStream out = new DataOutputStream(new java.io.BufferedOutputStream(new GZIPOutputStream(Files.newOutputStream(tmp))))) {
             out.writeInt(1);
             for (Grid g : new Grid[]{t.group, t.sand, t.clay, t.stones}) {

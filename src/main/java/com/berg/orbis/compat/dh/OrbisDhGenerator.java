@@ -70,6 +70,7 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
     private final boolean validate = Boolean.getBoolean("orbis.dh.validate");
     private final AtomicLong chunksRead = new AtomicLong(), columnsWritten = new AtomicLong(), farColumns = new AtomicLong();
     private volatile FarTerrain far;
+    private volatile com.berg.orbis.worldgen.WorldModel farModel;
     private volatile long startedAt, startBytes;
     private final AtomicLong calls = new AtomicLong();
     private volatile boolean askedType, taskStartSeen;
@@ -213,13 +214,23 @@ final class OrbisDhGenerator implements IDhApiWorldGenerator {
 
     private static final SavedChunk NONE = new SavedChunk(null, null, null, 0);
 
-    /** The data painter, once the world's model is there (null while it is not, or with farViewFromData off). */
+    /**
+     * The data painter, once the world's model is there (null while it is not, or with farViewFromData off). Made again
+     * when the model is (the first one was kept: a model rebuilt for changed settings went on painting from the old one,
+     * and turning farViewFromData off had no effect until the world was reopened).
+     */
     private FarTerrain farTerrain() {
-        FarTerrain f = far;
-        if (f != null) return f;
         com.berg.orbis.worldgen.WorldModel m = com.berg.orbis.OrbisMod.model();
         if (m == null || !com.berg.orbis.OrbisMod.config().farViewFromData) return null;
-        return far = new FarTerrain(m, minY, height);
+        FarTerrain f = far;
+        if (f != null && farModel == m) return f;
+        synchronized (this) {
+            if (far == null || farModel != m) {
+                far = new FarTerrain(m, minY, height);
+                farModel = m;
+            }
+            return far;
+        }
     }
 
     /** A painted column, bottom to top in Distant Horizons' format, with the surface biome. */

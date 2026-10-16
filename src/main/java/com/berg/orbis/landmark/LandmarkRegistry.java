@@ -93,7 +93,9 @@ public final class LandmarkRegistry {
                         } else {
                             y = terrainHeight.applyAsInt((int) Math.floor(centerBlockX), (int) Math.floor(centerBlockZ)) + 1;
                         }
-                        y += landmark.yOffset - schematic.offsetY;
+                        // Only the landmark's own yOffset: a schematic's "Offset" is no use here (WorldEdit's v2 files keep the
+                        // copied build's world corner there, so a build copied at y=64 sank 64 blocks into the ground).
+                        y += landmark.yOffset;
                         baseY = y;
                     }
                 }

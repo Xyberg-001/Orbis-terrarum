@@ -211,6 +211,7 @@
   "orbisterrarum.sources.title": "Data downloads by country",
   "orbisterrarum.sources.reimport": "Re-import data",
   "orbisterrarum.sources.delete": "Delete",
+  "orbisterrarum.sources.inworld": "The mod reads these files while a world is open. Delete or re-import them from the main menu (Mod Menu).",
   "orbisterrarum.sources.sort.country": "Sort: by country",
   "orbisterrarum.sources.sort.size": "Sort: by size",
   "orbisterrarum.sources.filter.world": "This world",

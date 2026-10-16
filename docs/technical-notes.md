@@ -909,7 +909,9 @@ Kartverket's surface model (building heights) stays.
   `config/orbisterrarum/schematics/` may be WorldEdit/FAWE Sponge `.schem`
   (v1–v3) or vanilla structure-block `.nbt`. They are pasted at the terrain
   height (or a fixed `baseY`) across chunk borders, and OSM buildings inside
-  the radius are suppressed. Missing files are just logged.
+  the radius are suppressed. Missing files are just logged. A file's own
+  `Offset` is ignored (WorldEdit keeps the copied build's world corner there);
+  `yOffset` moves a landmark up or down.
 - Without a schematic, tag-based shapes still avoid "flat slab" landmarks:
   domes, minarets, spires (`roof:shape=cone`), roof profiles.
 
@@ -2286,7 +2288,11 @@ and `exactSpawn` in `config/orbisterrarum/orbisterrarum.json`.
 
 The spawn is applied once, on the world's first start (`worldgen/WorldSpawn`):
 the chunk there is generated in full and the spawn goes on its surface, so it
-is never inside a building or under the ground. `orbis-spawn.json` in the
+is never inside a building or under the ground. The start waits up to 20 s for
+that chunk (the server's other work going on); one that needs longer (map data
+still downloading) is finished in the background, so a dedicated server's
+watchdog never ends the start, and players who joined meanwhile near
+Minecraft's spawn are moved to it. `orbis-spawn.json` in the
 world folder records it, so a later `/setworldspawn` is kept. The fitted
 world height also samples 10 km around a custom spawn, so a spawn on a
 mountain away from the location is not cut off. Existing worlds keep their
