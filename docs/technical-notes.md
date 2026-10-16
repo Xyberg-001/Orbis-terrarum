@@ -691,12 +691,19 @@ Kartverket's surface model (building heights) stays.
   railings (stone wall / fence / iron bars by road type), pillars every 12 m
   where nothing runs below.
 - `tunnel=yes` → the road follows a guide line: a straight line between the
-  two portals, or in Norway (new worlds from 2.0.1, world setting
-  `surveyedTunnels`) the shape of the floor NVDB surveyed in the tunnel.
+  two portals, or (new worlds from 2.0.1, world setting `surveyedTunnels`)
+  the shape of the floor a national road database surveyed in the tunnel:
+  NVDB in Norway, BD TOPO in France (road sections under ground, those IGN
+  has heights for: the Mont Blanc tunnel has none), Digiroad in Finland
+  (links marked silta_alik -11); France and Finland via `osm/TunnelSurveys`,
+  cached in tunnel-survey-cache/. Switzerland's swissTLM3D has 3D tunnels
+  but only as a nationwide download (its web API gives flat lines).
   NVDB's tunnel bores (object type 67, Tunnelløp, fetched per region beside
   the road widths and cached as `*_tunnels.json.gz` in nvdb-cache/) carry a
-  height every few metres; each tunnel way takes the one bore nearest most of
-  its length (twin tubes lie at different depths), the gaps are joined
+  height every few metres; each tunnel way takes the line nearest most of
+  its length and the pieces joined to it end to end (a shared end within 2
+  blocks and 2 m: France's and Finland's come in sections; twin tubes lie at
+  different depths and never touch), the gaps are joined
   straight, and the ends are moved onto the same heights as before (the
   portal's ground, or the floor agreed at a node with the next tunnel way),
   the difference shared out along the way, so nothing steps where the tunnel
