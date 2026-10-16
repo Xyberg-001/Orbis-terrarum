@@ -88,7 +88,7 @@
 <div class="wrap">
   <header>
     <h1>Orbis Data Sources</h1>
-    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 34: real climate (Köppen-Geiger, CHELSA), snow and ice as seen (IMS, seNorge))</span>
+    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 35: live weather (radar, airport reports), real climate, snow and ice as seen)</span>
   </header>
 
   <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in. National services (a country's photos, NGU, NVE, NVDB) are used automatically inside their country's outline; Kartverket's surface model whenever it answers from the player's network (its switch forces it on, with a notice at world creation saying whether it answers). Data Sources → Downloads by country shows, re-imports and deletes each source's copies.</p>
@@ -169,8 +169,8 @@
           <text x="36" y="628" font-size="11.5" opacity="0.75">rock · soil and its depth · glacier outlines</text>
 
           <rect x="24" y="644" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
-          <text x="36" y="660" font-weight="600">MET Norway weather forecast</text>
-          <text x="36" y="676" font-size="11.5" opacity="0.75">worldwide · the coming hour · api.met.no</text>
+          <text x="36" y="660" font-weight="600">Radar · airport reports · MET forecast</text>
+          <text x="36" y="676" font-size="11.5" opacity="0.75">MET, DWD, ECCC radar; METAR worldwide</text>
 
           <rect x="24" y="692" width="270" height="40" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
           <text x="36" y="708" font-weight="600">NVE lake database</text>
@@ -227,7 +227,7 @@
           <rect x="470" y="712" width="310" height="110" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
           <text x="482" y="732" font-weight="600" font-size="14">6 · Sky and seasons (while it runs)</text>
           <text x="482" y="752">Sun and moon: computed for the place, no source</text>
-          <text x="482" y="770">Weather: MET Norway forecast where the players are</text>
+          <text x="482" y="770">Weather: radar → airport → forecast</text>
           <text x="482" y="788" opacity="0.75">Snow: seNorge (NO) → IMS-checked model depth</text>
           <text x="482" y="808">Villager hours: the town's clock (Open-Meteo zone)</text>
         </g>
@@ -301,7 +301,7 @@
           <text x="367" y="495" text-anchor="middle" font-size="10.5">crown position and height</text>
           <text x="367" y="543" text-anchor="middle" font-size="10.5">colour per tile pixel</text>
           <text x="357" y="610" text-anchor="middle" font-size="10.5">rock, soil, ice</text>
-          <text x="352" y="658" text-anchor="middle" font-size="10.5">coming hour · while running</text>
+          <text x="352" y="658" text-anchor="middle" font-size="10.5">now · while running</text>
           <text x="368" y="706" text-anchor="middle" font-size="10.5">contours per lake</text>
           <text x="368" y="754" text-anchor="middle" font-size="10.5">greatest depth per lake</text>
         </g>
@@ -377,7 +377,8 @@
       <tr><td><strong>NOAA IMS</strong> daily snow and ice (1 km, Northern Hemisphere)</td><td>Where snow lies and water is frozen today, as analysts see it from satellites: gates the model's snow depth, freezes lakes and sea</td><td><span class="pill auto">automatic</span> one 3 MB file a day from NSIDC, with real snow on</td><td class="mono">snow-cache/observed/</td><td>public domain, NOAA / US National Ice Center</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>seNorge</strong> snow depth (MET Norway / NVE, 1 km)</td><td>Norway's snow depth today, in place of the model's</td><td><span class="pill auto">automatic</span> THREDDS tiles of 32 km, with real snow on</td><td class="mono">snow-cache/senorge/</td><td>NLOD</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Open-Meteo</strong> time zone</td><td>The world's local time zone (daylight saving included), for villagers who keep clock hours</td><td><span class="pill auto">automatic</span> one question per world, kept in the world folder</td><td class="mono">&lt;world&gt;/orbis-timezone.txt</td><td>CC BY 4.0, © Open-Meteo</td><td><span class="pill ok">working</span></td></tr>
-      <tr><td><strong>MET Norway</strong> locationforecast</td><td>Real weather while a world runs: clear, rain or thunder for the coming hour</td><td><span class="pill auto">automatic</span> one small request when the last answer expires (a few minutes at most), only with real weather on</td><td class="mono">(not cached on disk)</td><td>CC BY 4.0, © MET Norway</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Live weather</strong>: MET Norway nowcast (Nordic radar), DWD radar and lightning (Germany), ECCC radar (Canada), NOAA AWC airport reports (METAR, worldwide)</td><td>The weather now while a world runs: rain where radar or the nearest airport measures it, thunder where lightning or the airport reports it</td><td><span class="pill auto">automatic</span> radar every 5 minutes, airports every 10, only with real weather on</td><td class="mono">(not cached on disk)</td><td>CC BY 4.0 (MET), DWD open data, OGL-Canada, public domain (NOAA)</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>MET Norway</strong> locationforecast</td><td>Real weather where nothing is measured: clear, rain or thunder for the coming hour</td><td><span class="pill auto">automatic</span> one small request when the last answer expires (a few minutes at most), only with real weather on</td><td class="mono">(not cached on disk)</td><td>CC BY 4.0, © MET Norway</td><td><span class="pill ok">working</span></td></tr>
     </tbody>
   </table>
   </div>

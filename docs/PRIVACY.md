@@ -14,7 +14,9 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 | OpenFreeMap (tiles.openfreemap.org) | The street map in the preview and world map (OpenStreetMap vector tiles, drawn by the mod) | Tile coordinates |
 | National mapping agencies' photo services (swisstopo, PDOK, Digitaal Vlaanderen, SPW Wallonia, geoportail.lu, IGN France, IGN España, Bavaria, NRW, basemap.at, ČÚZK, GURS, Maa- ja Ruumiamet, GSI Japan, NLSC Taiwan, HK Lands Department, NSW Spatial Services, Vicmap, Ontario GEO, MassGIS) | Aerial-imagery colours, only for areas inside that country or state | Tile coordinates / the tile's bounding box |
 | ESA WorldCover (AWS S3, eu-central-1) | Land cover | 3° tile name |
-| Norwegian Meteorological Institute (api.met.no) | Real weather, while a world runs (every few minutes at most) | Coordinates of the players' area (4 decimals) |
+| Norwegian Meteorological Institute (api.met.no) | Real weather, while a world runs (every few minutes at most): the forecast, and the radar nowcast in Norway, Sweden, Finland and Denmark | Coordinates of the players' area (4 decimals) |
+| NOAA Aviation Weather Center (aviationweather.gov) | Real weather: the nearest airport's report, while a world runs (every 10 minutes at most) | A box of about 60 km round the players' area |
+| Deutscher Wetterdienst (maps.dwd.de), Environment and Climate Change Canada (geo.weather.gc.ca) | Real weather: rain radar and (Germany) lightning, only in Germany or Canada, every 5 minutes at most | Coordinates of the players' area (a 2 km box) |
 | Geological Survey of Norway (geo.ngu.no) | Norway only: bedrock rock types | Bounding box of the area |
 | NIBIO (wms.nibio.no) | Norway only: forest tree species (spruce, pine, broadleaf), in new worlds | Bounding box of the area |
 | Macrostrat (tiles.macrostrat.org) | Rock types outside Norway | Tile coordinates |

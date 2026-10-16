@@ -1265,6 +1265,24 @@ server, so players need nothing:
   light or dark. The day count is chosen so day % 8 is the real moon's phase
   and it never decreases (checked hourly over a year at Tromsø). Sleeping does
   not skip the night (the next update puts the clock back). Off: rate 1 again.
+- **Live weather** (`sky/LiveWeather`, from 2.0.1): the forecast below only
+  fills in where nothing is measured. Rain: radar where it exists, the
+  precipitation rate of the last minutes at the players' place, wet from 0.1
+  mm/h: MET Norway's nowcast 2.0 in the Nordic countries (when its
+  `radar_coverage` is "ok"; a cell answering 422 is outside and not asked
+  again), DWD's `dwd:Niederschlagsradar` (`RV_ANALYSIS`) in Germany, ECCC's
+  `RADAR_1KM_RRAI` and `RSNO` in Canada (WMS GetFeatureInfo, JSON numbers);
+  else the nearest METAR within 30 km and 75 minutes (NOAA AWC data API, a box
+  round the place): precipitation when its present weather has DZ, RA, SN, SG,
+  PL, GR, GS, UP or IC at the station (not VC); else the forecast. Thunder:
+  DWD's lightning density (`dwd:Blitzdichte` above 0) or the nowcast's thunder
+  symbol, else the METAR's TS or VCTS, else the forecast. The temperature is the
+  airport's where there is one. Radar is asked every 5 minutes per 0.01° cell,
+  airports every 10 per 0.1° cell. The log names the source ("MET radar 0.0
+  mm/h", "KJFK -RA BR"). Checked 16 Oct 2026: Montreal rain at 0.2 mm/h by
+  radar, New York rain by KJFK, Delhi haze (dry) by VIDD. RainViewer's global
+  radar was left out (personal and educational use only); no free lightning
+  source was found for Asia or the Americas beyond the airports.
 - **Weather** (`realWeather`, `MetWeather`): MET Norway's locationforecast
   (worldwide) for the players' mean position (the origin when nobody is on),
   asked every 2 minutes but only fetched when the last answer's Expires has
