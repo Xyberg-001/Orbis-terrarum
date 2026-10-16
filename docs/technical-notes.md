@@ -1155,6 +1155,29 @@ flooded before this rule, none after). A 67 m river in central Nigeria mapped
 only as a line went from 7,547 water cells to 45,883. The channel's depth
 follows the width used.
 
+### Lake beds from Seascape (`water/WaterBeds`)
+New worlds from 2.0.1 (world setting `seascapeLakes`, config v20; servers keep
+false). Open Waters' Seascape, read for the sea floor anyway, also holds the
+beds of many big lakes as depth below the lake's surface (Lake Geneva -309 m at
+its deepest, Tahoe -482 m, Superior -252 m in its eastern basin: depths, not
+heights, since a height would put Superior's floor below its 406 m greatest
+depth), and 0 (or 2) where it has none: the Great Lakes, Geneva, Neuchâtel, the
+Bodensee, Tahoe, Champlain from regional surveys; Baikal, Victoria, Winnipeg,
+Great Slave Lake, parts of Ladoga from GEBCO. Mjøsa, Zürich, Lucerne, Maggiore,
+Como, Garda, Titicaca and Tanganyika read 0.
+
+After NVE's lakes and the national surveys, a lake of 0.2 km² or more (not a
+pond) is sampled on an even grid of at most about 150 x 150 points over its
+whole outline, from the Seascape zoom whose pixels are about that far apart
+(6 to 14), shore cells left out. When at least half the points have a depth,
+they become soundings for the same smooth surveyed bed as NVE's (Laplace through
+the points, the shore at 0 m); else the lake keeps GLOBathy's or the estimated
+bowl. A tile that cannot be read leaves the lake a bowl in that region without
+keeping the shape, so a later region asks again. Lake Tahoe's west-central
+region went from the 51 m estimate to 266-273 m. swissBATHY3D's other 20 lakes
+come only as whole-lake ASCII grids of 15-390 MB (40 minutes for Lucerne at the
+speed swisstopo answers here), so they are left out.
+
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
