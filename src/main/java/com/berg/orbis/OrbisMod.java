@@ -791,6 +791,7 @@ public class OrbisMod implements ModInitializer {
                 if (!maps.isEmpty()) rasterizer.setBedrock(new com.berg.orbis.geology.Rocks(maps));
             }
             if (cfg.nvdbRoadWidths || cfg.surveyedTunnels) rasterizer.setNvdb(new com.berg.orbis.osm.NvdbRoads.Store(data.resolve("nvdb-cache")));
+            if (cfg.surveyedTunnels) rasterizer.setTunnelSurveys(new com.berg.orbis.osm.TunnelSurveys(data.resolve("tunnel-survey-cache")));
             if (cfg.nvdbRoadWidths && cfg.roadSources != null && !cfg.roadSources.isEmpty()) {
                 com.berg.orbis.osm.RoadDatabases roads = new com.berg.orbis.osm.RoadDatabases(cfg, data.resolve("road-db-cache"));
                 if (!roads.isEmpty()) rasterizer.setRoadDatabases(roads);

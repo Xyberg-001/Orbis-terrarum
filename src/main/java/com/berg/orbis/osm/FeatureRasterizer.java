@@ -156,6 +156,13 @@ public final class FeatureRasterizer {
         this.metresToY = f;
     }
 
+    /** Surveyed tunnels outside Norway (France, Finland), or null. */
+    private volatile TunnelSurveys tunnelSurveys;
+
+    public void setTunnelSurveys(TunnelSurveys surveys) {
+        this.tunnelSurveys = surveys;
+    }
+
     /** Real elevation in metres at a block column (NaN when unknown). */
     private double metresAt(int x, int z) {
         Elevation m = elevationMeters;
@@ -2376,9 +2383,9 @@ public final class FeatureRasterizer {
     }
 
     /**
-     * Heights a road database surveyed along this region's tunnels (Norway's NVDB tunnel bores), per block along a tunnel way.
-     * The bores come whole for every region a tunnel crosses, so each draws the same floor. One per transport pass (the
-     * rasteriser serves several regions at once).
+     * Heights a road database surveyed along this region's tunnels (Norway's NVDB tunnel bores, France's BD TOPO and Finland's
+     * Digiroad tunnel sections), per block along a tunnel way. The lines come whole for every region a tunnel crosses, so each
+     * draws the same floor. One per transport pass (the rasteriser serves several regions at once).
      */
     private final class TunnelHeights {
         private final RegionRaster r;
@@ -2404,15 +2411,23 @@ public final class FeatureRasterizer {
         private List<double[][]> bores() {
             if (loaded) return bores;
             loaded = true;
-            NvdbRoads.Store store = nvdb;
-            if (store == null || metresToY == null || !cfg.surveyedTunnels) return null;
+            if (metresToY == null || !cfg.surveyedTunnels) return null;
             double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
             double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
             double south = Math.min(a[0], b[0]), north = Math.max(a[0], b[0]), west = Math.min(a[1], b[1]), east = Math.max(a[1], b[1]);
-            if (!NvdbRoads.inNorway(south, west, north, east)
-                    || !com.berg.orbis.config.DataSources.covers("nvdb-roads", south, west, north, east)) return null;
-            List<NvdbRoads.Bore> got = store.tunnels(south, west, north, east);
-            if (got == null || got.isEmpty()) return null;
+            List<NvdbRoads.Bore> got = new ArrayList<>();
+            NvdbRoads.Store store = nvdb;
+            if (store != null && NvdbRoads.inNorway(south, west, north, east)
+                    && com.berg.orbis.config.DataSources.covers("nvdb-roads", south, west, north, east)) {
+                List<NvdbRoads.Bore> norway = store.tunnels(south, west, north, east);
+                if (norway != null) got.addAll(norway);
+            }
+            TunnelSurveys ts = tunnelSurveys;
+            if (ts != null) {
+                List<NvdbRoads.Bore> other = ts.get(south, west, north, east);
+                if (other != null) got.addAll(other);
+            }
+            if (got.isEmpty()) return null;
             List<double[][]> out = new ArrayList<>();
             for (NvdbRoads.Bore bore : got) {
                 double[][] line = new double[bore.latLonZ().size()][];
@@ -2430,33 +2445,65 @@ public final class FeatureRasterizer {
         private double[] compute(List<double[]> pts, int n) {
             List<double[][]> all = bores();
             if (all == null) return null;
-            // The bore this way is: the one nearest most of its length. Each point on its own took whichever was nearest, and a
-            // tube of a twin tunnel took the other tube's floor in places, 8 blocks deeper (Nygårdstunnelen).
+            // The lines this way runs along: the one nearest most of its length, and any other lying as close to the way's centre
+            // (a tunnel surveyed in pieces, as France's and Finland's are). Each point on its own took whichever was nearest, and a
+            // tube of a twin tunnel took the other tube's floor in places, 8 blocks deeper (Nygårdstunnelen); the other tube lies
+            // its spacing away, ten blocks or more.
             int[] votes = new int[all.size()];
-            walk(pts, n, all, -1, (ai, bore, metres, px, pz) -> votes[bore]++);
+            double[] distSum = new double[all.size()];
+            walk(pts, n, all, null, (ai, line, metres, dist, px, pz) -> {
+                votes[line]++;
+                distSum[line] += dist;
+            });
             int best = -1;
-            for (int b = 0; b < votes.length; b++) if (votes[b] > 0 && (best < 0 || votes[b] > votes[best])) best = b;
+            for (int l = 0; l < votes.length; l++) if (votes[l] > 0 && (best < 0 || votes[l] > votes[best])) best = l;
             if (best < 0) return null;
+            // The pieces joined to it end to end (a shared end within 2 blocks, at heights within 2 m), and to those in turn: the
+            // tunnel's own sections; the other tube never touches it
+            boolean[] allowed = new boolean[all.size()];
+            allowed[best] = true;
+            java.util.ArrayDeque<Integer> joined = new java.util.ArrayDeque<>(List.of(best));
+            while (!joined.isEmpty()) {
+                double[][] from = all.get(joined.poll());
+                for (int l = 0; l < all.size(); l++) {
+                    if (allowed[l] || votes[l] == 0) continue;
+                    double[][] to = all.get(l);
+                    if (meets(from, to)) {
+                        allowed[l] = true;
+                        joined.add(l);
+                    }
+                }
+            }
             double[] y = new double[n];
             Arrays.fill(y, Double.NaN);
             int[] found = {0};
-            walk(pts, n, all, best, (ai, bore, metres, px, pz) -> {
+            walk(pts, n, all, allowed, (ai, line, metres, dist, px, pz) -> {
                 double by = metresToY.y(metres, px, pz);
                 if (Double.isNaN(by)) return;
                 if (Double.isNaN(y[ai])) found[0]++;
                 y[ai] = by;
             });
             int count = found[0];
-            // Too little of the way along a bore: not this tunnel's (a way crossing one, or a short stretch beside it)
+            // Too little of the way along a surveyed line: not this tunnel's (a way crossing one, or a short stretch beside it)
             return count >= 3 && count >= 0.3 * n ? y : null;
         }
 
-        private interface Hit {
-            void at(int ai, int bore, double metres, double px, double pz);
+        /** Whether two surveyed lines share an end (within 2 blocks across, 2 m in height). */
+        private boolean meets(double[][] a, double[][] b) {
+            for (double[] p : new double[][]{a[0], a[a.length - 1]}) {
+                for (double[] q : new double[][]{b[0], b[b.length - 1]}) {
+                    if (Math.hypot(p[0] - q[0], p[1] - q[1]) <= 2.0 && Math.abs(p[2] - q[2]) <= 2.0) return true;
+                }
+            }
+            return false;
         }
 
-        /** Every block along the way: the nearest bore running its way within reach (only {@code only}, when 0 or more). */
-        private void walk(List<double[]> pts, int n, List<double[][]> all, int only, Hit hit) {
+        private interface Hit {
+            void at(int ai, int line, double metres, double dist, double px, double pz);
+        }
+
+        /** Every block along the way: the nearest surveyed line running its way within reach (of the allowed ones, when given). */
+        private void walk(List<double[]> pts, int n, List<double[][]> all, boolean[] allowed, Hit hit) {
             double reach = Math.max(3.0, mapper.blocks(8.0));
             double cosMax = Math.cos(Math.toRadians(35.0));
             double along = 0;
@@ -2470,7 +2517,8 @@ public final class FeatureRasterizer {
                     double px = p0[0] + ux * s, pz = p0[1] + uz * s;
                     double best = reach, metres = Double.NaN;
                     int bestBore = -1;
-                    for (int bi = only < 0 ? 0 : only; bi < (only < 0 ? all.size() : only + 1); bi++) {
+                    for (int bi = 0; bi < all.size(); bi++) {
+                        if (allowed != null && !allowed[bi]) continue;
                         double[][] line = all.get(bi);
                         for (int j = 0; j + 1 < line.length; j++) {
                             double[] a = line[j], b = line[j + 1];
@@ -2488,7 +2536,7 @@ public final class FeatureRasterizer {
                             }
                         }
                     }
-                    if (bestBore >= 0) hit.at(ai, bestBore, metres, px, pz);
+                    if (bestBore >= 0) hit.at(ai, bestBore, metres, best, px, pz);
                 }
                 along += len;
             }
