@@ -173,6 +173,12 @@ public class OrbisConfig {
      */
     public boolean groundLayers = true;
     /**
+     * Forests OSM does not describe take their leaf type from the forest type maps (CLC+ in Europe, Copernicus' global map
+     * elsewhere): spruce and pine where the woods are coniferous, oak and birch where they are broadleaved, with the biome
+     * and forest floor to match. New worlds take this value; a world keeps its own.
+     */
+    public boolean forestTypes = true;
+    /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
      * vanilla's per real square kilometre; 1 keeps vanilla's.
@@ -1020,8 +1026,9 @@ public class OrbisConfig {
             surveyedTunnels = false;
         }
         if (configVersion < 20 && dedicatedServer()) {
-            // As above: a server's world keeps its ground (set groundLayers to true for a new world).
+            // As above: a server's world keeps its ground and its woods (set groundLayers and forestTypes to true for a new world).
             groundLayers = false;
+            forestTypes = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.

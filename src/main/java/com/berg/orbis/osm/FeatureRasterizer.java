@@ -150,6 +150,13 @@ public final class FeatureRasterizer {
         this.glaciers = glaciers;
     }
 
+    /** Whether forests are coniferous or broadleaved where OSM does not say, or null. */
+    private volatile com.berg.orbis.landcover.ForestTypes forestTypes;
+
+    public void setForestTypes(com.berg.orbis.landcover.ForestTypes types) {
+        this.forestTypes = types;
+    }
+
     public void setElevationMeters(Elevation metres) {
         this.elevationMeters = metres;
     }
@@ -273,6 +280,8 @@ public final class FeatureRasterizer {
             stepDone(st, "water");
             if (cfg.generateLandCover && cfg.worldCoverLandCover && worldCover != null) fillLandCoverGaps(r);
             stepDone(st, "worldcover");
+            if (cfg.generateLandCover && cfg.forestTypes && forestTypes != null) refineForests(r);
+            stepDone(st, "forest");
             if (cfg.generateRoads) {
                 List<Cover> covers = cfg.generateBuildings ? buildingCovers(areasBigFirst) : List.of();
                 rasterizeTransport(r, data.ways(), nvdbIndex(r, nvdbSegments), covers);
@@ -447,6 +456,43 @@ public final class FeatureRasterizer {
             boolean any = false;
             for (int idx = 0; idx < n && !any; idx++) any = iceCell.test(idx);
             if (any) r.iceDepth = ice.iceDepth(r, mapper, vmpb, iceCell);
+        }
+    }
+
+    /**
+     * Forests OSM leaves without a leaf type (and WorldCover's tree cover) become coniferous or broadleaved where the forest
+     * type maps say so; mixed woods and places they do not know keep the climate's mix. The tree species, the biome and
+     * the forest floor all follow the land cover.
+     */
+    private void refineForests(RegionRaster r) {
+        byte forest = LandCover.FOREST.code();
+        boolean any = false;
+        for (byte b : r.landCover) {
+            if (b == forest) {
+                any = true;
+                break;
+            }
+        }
+        if (!any) return;
+        double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
+        double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
+        double south = Math.min(a[0], b[0]), west = Math.min(a[1], b[1]), north = Math.max(a[0], b[0]), east = Math.max(a[1], b[1]);
+        com.berg.orbis.landcover.ForestTypes.Area area = forestTypes.area(south, west, north, east, cfg.metersPerBlock);
+        if (area == null) return;
+        byte conifer = LandCover.FOREST_CONIFER.code(), broadleaf = LandCover.FOREST_BROADLEAF.code();
+        for (int dz = 0; dz < r.stride; dz++) {
+            for (int dx = 0; dx < r.stride; dx++) {
+                int idx = dz * r.stride + dx;
+                if (r.landCover[idx] != forest) continue;
+                int x = r.originX + dx, z = r.originZ + dz;
+                double[] ll = mapper.toLatLonExact(x + 0.5, z + 0.5);
+                long h = groundHash(x, z);
+                switch (area.at(ll[0], ll[1], (h & 0xFFFF) / 65536.0, ((h >>> 16) & 0xFFFF) / 65536.0)) {
+                    case CONIFER -> r.landCover[idx] = conifer;
+                    case BROADLEAF -> r.landCover[idx] = broadleaf;
+                    default -> { }
+                }
+            }
         }
     }
 
