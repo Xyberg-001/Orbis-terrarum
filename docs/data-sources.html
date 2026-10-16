@@ -88,7 +88,7 @@
 <div class="wrap">
   <header>
     <h1>Orbis Data Sources</h1>
-    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 28: forest types from CLC+ and Copernicus)</span>
+    <span class="stamp">Orbis Terrarum 2.0.1 · sources as of 16 Oct 2026 (rev 29: buildings OSM lacks from Overture)</span>
   </header>
 
   <p class="lede">Every external dataset the mod reads, what it becomes in the world, how it gets in, and whether it works today. The world is built in five stages; the arrows show which source feeds which stage and the order the stage tries them in. National services (a country's photos, NGU, NVE, NVDB) are used automatically inside their country's outline; Kartverket's surface model whenever it answers from the player's network (its switch forces it on, with a notice at world creation saying whether it answers). Data Sources → Downloads by country shows, re-imports and deletes each source's copies.</p>
@@ -196,7 +196,7 @@
 
           <rect x="470" y="180" width="310" height="124" rx="3" fill="none" stroke="currentColor" stroke-width="1.8" />
           <text x="482" y="200" font-weight="600" font-size="14">2 · Buildings</text>
-          <text x="482" y="220">Footprint, use and name: OSM</text>
+          <text x="482" y="220">Footprints: OSM → Overture where OSM is thin</text>
           <text x="482" y="238">Height: OSM tags → lidar DOM → atlas → storey guess</text>
           <text x="482" y="256">Roof shape: OSM tag → lidar DOM profile → default by type</text>
           <text x="482" y="274">Roof and wall colour: OSM tag → imagery, balanced by the streets</text>
@@ -359,6 +359,7 @@
       <tr><td><strong>NVDB</strong> road database</td><td>Real road widths and lane counts, and the surveyed floor of road tunnels (tunnel bores, new worlds from 2.0.1) (Norway)</td><td><span class="pill auto">automatic</span> API v4, fetched with each region</td><td class="mono">nvdb-cache/</td><td>NLOD</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Overture Places</strong></td><td>Shops, bars, museums, clinics OSM lacks: interiors and door signs</td><td>one-time: <code>overturemaps download --type=place</code> then the places importer (outside the game)</td><td class="mono">places/</td><td>CDLA-Permissive 2.0</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>German LoD2 3D buildings</strong> (NRW, Bavaria)</td><td>Measured heights and flat roofs of every building, before the atlas</td><td>one-time: <code>tools/lod2_heights.py --bbox …</code> (streams 50–160 MB tiles, keeps footprints and heights)</td><td class="mono">building-db-cache/de-lod2/</td><td>dl-de/zero-2.0, CC BY 4.0</td><td><span class="pill ok">working</span></td></tr>
+      <tr><td><strong>Overture buildings</strong> (Overture Maps Foundation: Google Open Buildings, Microsoft ML buildings and others)</td><td>Buildings OSM lacks, where OSM is thin (Lagos, Nairobi, Delhi; not Bergen or Paris), at 1:4 or finer. New worlds from 2.0.1</td><td><span class="pill auto">automatic</span> PMTiles archive, zoom-14 vector tiles by range requests, each tile once</td><td class="mono">overture-cache/</td><td>ODbL, Overture Maps Foundation</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>GlobalBuildingAtlas</strong> (TUM)</td><td>Height for every building without a height tag</td><td>one-time: <code>tools/gba_heights.py --bbox …</code> (range reads, a few MB per city)</td><td class="mono">heights/</td><td>CC BY-NC 4.0 (not for sale)</td><td><span class="pill ok">working, Bergen filled</span></td></tr>
       <tr><td><strong>ESA WorldCover</strong> 2021</td><td>Forest, meadow, farmland, rock, wetland, snow wherever OSM has no polygon</td><td><span class="pill auto">automatic</span> range reads of the 3° cloud GeoTIFFs</td><td class="mono">worldcover-cache/</td><td>CC BY 4.0</td><td><span class="pill ok">working</span></td></tr>
       <tr><td><strong>Forest types</strong>: CLC+ Backbone 2021 (Copernicus, Europe, 10 m), CGLS-LC100 2019 forest type (Copernicus, world, 100 m)</td><td>Whether a forest OSM does not describe is coniferous or broadleaved: its trees, biome and forest floor. New worlds from 2.0.1</td><td><span class="pill auto">automatic</span> the EEA's image service per region; the global map tile by tile from Zenodo (range requests)</td><td class="mono">forest-type-cache/</td><td>CC BY 4.0, Copernicus</td><td><span class="pill ok">working</span></td></tr>

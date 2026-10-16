@@ -19,6 +19,7 @@ Orbis Terrarum downloads map data while you play. It sends **no personal data an
 | Macrostrat (tiles.macrostrat.org) | Rock types outside Norway | Tile coordinates |
 | ISRIC (maps.isric.org, files.isric.org) | Soil types and soil depth, in new worlds | Bounding box of a quarter-degree tile / byte ranges of the depth maps |
 | GLIMS (www.glims.org) | Glacier outlines, in new worlds, only where the world has glaciers | Bounding box of a quarter-degree tile |
+| Overture Maps Foundation (stac.overturemaps.org, tiles.overturemaps.org) | Buildings OpenStreetMap lacks, in new worlds at 1:4 or finer: the latest release's name once, then byte ranges of its buildings archive | Byte ranges (tile numbers) |
 | European Environment Agency (image.discomap.eea.europa.eu), Zenodo (zenodo.org) | Forest types (conifer or broadleaf), in new worlds, only where the world has forests: the EEA's map in Europe, Copernicus' global map from Zenodo elsewhere | Bounding box of the area / byte ranges of the global map |
 | NVE (kart.nve.no) | Norway only: depth surveys of lakes | Bounding box of the area / a lake's number |
 | Open-Meteo (api.open-meteo.com) | The world's time zone, once per world, for villagers' clock hours; today's snow depth, every 6 hours at most per 25 km cell of the world being generated or played; last winter's precipitation (archive-api.open-meteo.com), once a year per 50 km cell | The world's origin coordinates; the centre of each 0.25° or 0.5° cell |

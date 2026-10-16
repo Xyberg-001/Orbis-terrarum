@@ -1093,6 +1093,38 @@ has no attribute table to turn its 900 codes into leaf types. Checked: the Black
 Forest and the Cascades come out coniferous, Fontainebleau, Białowieża and the
 Amazon broadleaved, the Smokies and Hokkaido mixed.
 
+### Buildings OSM lacks (`osm/OvertureBuildings`)
+New worlds from 2.0.1 at 1:4 or finer (world setting `overtureBuildings`, config
+v20; servers keep false). Overture's buildings theme (ODbL) merges OSM with
+Google Open Buildings, Microsoft's ML buildings and others, and marks each
+footprint's `@geometry_source`. The mod reads Overture's PMTiles archive
+(`tiles.overturemaps.org/<release>/buildings.pmtiles`, vector tiles to zoom 14)
+by range requests: the release named in `overture-cache/release.txt`, else the
+catalogue's latest (`stac.overturemaps.org/catalog.json`), then kept; the
+header and root directory once a session, leaf directories once
+(`dirs/<offset>.gz`, about 9 kB), each zoom-14 tile once (`tiles/<x>/<y>.mvt.gz`,
+kept as it came, so a world's regions agree even after a new release). Tile ids
+follow the PMTiles Hilbert curve.
+
+From the `building` layer only the footprints not from OSM, and only where OSM
+is thin: a tile's other footprints are used when they are at least 15 % of its
+buildings. Measured per zoom-14 tile: Bergen centre 1 %, Paris 1 %, Amsterdam
+0 %, Kansas City 2 %, São Paulo 5 % (where the extra footprints were mostly
+plazas and slivers along mapped roofs), Nairobi 20 %, Lagos 46 %, Delhi 66 %.
+A tile cuts a building at its edge (with a buffer): each piece is trimmed to its
+own tile (Sutherland-Hodgman) and the pieces are joined again by the building's
+Overture id, as one area with several outer rings (they meet without
+overlapping). Exterior rings are clockwise in tile coordinates, holes the other
+way. Properties become OSM tags (`class` building, `height`, `num_floors`
+building:levels, `roof_shape`, `roof_height`, `min_height`, `@name` name) and
+the areas get ids from 2^62 up, far from OSM's.
+
+The rasteriser adds them to the region's areas before land cover
+(`addOvertureBuildings`), so they get heights (tags, lidar, databases, storey
+guess), roofs, walls and rooms like OSM's. One that comes within 2 m of an OSM
+building or building part is left out (OSM's is newer, or the same building).
+A Lagos region went from 55 buildings to 4,209; central Bergen stays at 428.
+
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
