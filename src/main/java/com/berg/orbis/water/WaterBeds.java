@@ -63,6 +63,14 @@ public final class WaterBeds {
     /** Set while a lake is shaped when Seascape's tiles could not be read (per thread: regions are shaped in parallel). */
     private final ThreadLocal<Boolean> lakeFloorsFailed = ThreadLocal.withInitial(() -> false);
 
+    /** Quebec's lake surveys (new worlds); null without. */
+    private volatile QuebecLakes quebec;
+
+    public WaterBeds withQuebecLakes(QuebecLakes quebec) {
+        this.quebec = quebec;
+        return this;
+    }
+
     public WaterBeds withLakeFloors(com.berg.orbis.dem.TileSource seascape) {
         this.lakeFloors = seascape;
         return this;
@@ -179,6 +187,24 @@ public final class WaterBeds {
                 deep |= sd.depthM() > 0.5;
             }
             if (inside.size() >= 8 && deep) return new Surveyed(field, inside, Double.NaN, rings, mapper);
+        }
+        // Quebec's surveyed lakes, the same way.
+        QuebecLakes qc = quebec;
+        if (qc != null && b.kind() != WaterFeature.Kind.RIVER && QuebecLakes.covers(south, west, north, east)) {
+            List<NveLakes.Sounding> surveyed = qc.soundings(south, west, north, east);
+            if (surveyed == null) {
+                lakeFloorsFailed.set(true); // not kept: asked again for the lake's next region
+            } else {
+                List<NveLakes.Sounding> inside = new ArrayList<>();
+                boolean deep = false;
+                for (NveLakes.Sounding sd : surveyed) {
+                    double[] p = mapper.toBlockExact(sd.lat(), sd.lon());
+                    if (field.distance(p[0], p[1]) <= 0.5) continue;
+                    inside.add(sd);
+                    deep |= sd.depthM() > 0.5;
+                }
+                if (inside.size() >= 8 && deep) return new Surveyed(field, inside, Double.NaN, rings, mapper);
+            }
         }
         if (b.kind() == WaterFeature.Kind.RIVER) {
             return new Bowl(field, riverDepthM(2 * field.inradius() * metresPerBlock));

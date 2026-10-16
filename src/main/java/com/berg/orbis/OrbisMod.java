@@ -777,6 +777,7 @@ public class OrbisMod implements ModInitializer {
                         : new com.berg.orbis.water.LakeSurveys(cfg, data.resolve("lake-depth-cache"));
                 com.berg.orbis.water.WaterBeds beds = new com.berg.orbis.water.WaterBeds(mapper, cfg.metersPerBlock, nve, global)
                         .withSurveys(surveys == null || surveys.isEmpty() ? null : surveys);
+                if (cfg.quebecLakes) beds.withQuebecLakes(new com.berg.orbis.water.QuebecLakes(data.resolve("quebec-lake-cache")));
                 if (cfg.seascapeLakes && cfg.bathymetryTileUrl != null && cfg.bathymetryTileUrl.contains("openwaters")) {
                     beds.withLakeFloors(new DemTileProvider(data.resolve("dem-cache"), cfg.bathymetryTileUrl, 64));
                 }

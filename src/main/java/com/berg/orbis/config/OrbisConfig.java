@@ -195,6 +195,11 @@ public class OrbisConfig {
      */
     public boolean seascapeLakes = true;
     /**
+     * Quebec's surveyed lakes (GBLQ, about 2,200: depth contours and deepest points), fetched lake by lake when a world reaches
+     * them. New worlds take this value; a world keeps its own.
+     */
+    public boolean quebecLakes = true;
+    /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
      * vanilla's per real square kilometre; 1 keeps vanilla's.
@@ -1043,12 +1048,13 @@ public class OrbisConfig {
         }
         if (configVersion < 20 && dedicatedServer()) {
             // As above: a server's world keeps its ground, woods, buildings, rivers and lakes (set groundLayers, forestTypes,
-            // overtureBuildings, riverWidths and seascapeLakes to true for a new world).
+            // overtureBuildings, riverWidths, seascapeLakes and quebecLakes to true for a new world).
             groundLayers = false;
             forestTypes = false;
             overtureBuildings = false;
             riverWidths = false;
             seascapeLakes = false;
+            quebecLakes = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.

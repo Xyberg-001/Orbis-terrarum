@@ -184,6 +184,8 @@ public final class WorldSettings {
     public boolean riverWidths = false;
     /** OrbisConfig.seascapeLakes; false for worlds made before it existed. */
     public boolean seascapeLakes = false;
+    /** OrbisConfig.quebecLakes; false for worlds made before it existed. */
+    public boolean quebecLakes = false;
 
     public static WorldSettings fromConfig(OrbisConfig c) {
         WorldSettings s = new WorldSettings();
@@ -282,6 +284,7 @@ public final class WorldSettings {
         s.overtureBuildings = c.overtureBuildings;
         s.riverWidths = c.riverWidths;
         s.seascapeLakes = c.seascapeLakes;
+        s.quebecLakes = c.quebecLakes;
         return s;
     }
 
@@ -381,6 +384,7 @@ public final class WorldSettings {
         c.overtureBuildings = overtureBuildings;
         c.riverWidths = riverWidths;
         c.seascapeLakes = seascapeLakes;
+        c.quebecLakes = quebecLakes;
     }
 
     /** The installation config with this world's settings applied (a copy; the base is untouched). */

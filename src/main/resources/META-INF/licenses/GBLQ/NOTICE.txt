@@ -1,0 +1,6 @@
+orbis-quebec-lakes.tsv.gz is derived from the download index of the Géobase des bathymétries de lacs du Québec (GBLQ),
+Gouvernement du Québec (https://www.donneesquebec.ca/recherche/dataset/bathymetries-lacs).
+
+Licensed under the Creative Commons Attribution 4.0 International licence (https://creativecommons.org/licenses/by/4.0/).
+Changes: only lakes with survey data kept, each reduced to its number, zip file name and bounding box in latitude and
+longitude (tools/quebec_lakes.py). The lakes' surveys themselves are fetched from the same source when a world needs them.

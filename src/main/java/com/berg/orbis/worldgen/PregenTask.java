@@ -1157,6 +1157,7 @@ public final class PregenTask {
         if (h.contains("glims")) return "glacier outlines";
         if (h.contains("discomap") || h.contains("zenodo")) return "forest types";
         if (h.contains("overturemaps")) return "buildings";
+        if (h.contains("stqc380")) return "lake depths";
         if (h.contains("geonorge") || h.contains("ahn") || h.contains("dsm") || h.contains("lidar") || h.contains("hoyde")) return "building heights";
         if (h.contains("arcgis") || h.contains("imagery") || h.contains("orto") || h.contains("photo") || h.contains("wms")) return "aerial photos";
         return "other data";
