@@ -200,6 +200,11 @@ public class OrbisConfig {
      */
     public boolean quebecLakes = true;
     /**
+     * The real climate of each place (Köppen-Geiger classes, measured temperature and precipitation, shipped with the mod) picks
+     * its climate zone, biome and snow line, instead of latitude and height alone. New worlds take this value; a world keeps its own.
+     */
+    public boolean realClimate = true;
+    /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
      * vanilla's per real square kilometre; 1 keeps vanilla's.
@@ -1048,13 +1053,14 @@ public class OrbisConfig {
         }
         if (configVersion < 20 && dedicatedServer()) {
             // As above: a server's world keeps its ground, woods, buildings, rivers and lakes (set groundLayers, forestTypes,
-            // overtureBuildings, riverWidths, seascapeLakes and quebecLakes to true for a new world).
+            // overtureBuildings, riverWidths, seascapeLakes, quebecLakes and realClimate to true for a new world).
             groundLayers = false;
             forestTypes = false;
             overtureBuildings = false;
             riverWidths = false;
             seascapeLakes = false;
             quebecLakes = false;
+            realClimate = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.

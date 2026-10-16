@@ -119,6 +119,7 @@ public final class DataSources {
         l.add(world("rgi-glaciers", "Glacier outlines (RGI 7)", List.of("glacier-cache"), null));
         l.add(world("forest-types", "Forest types (CLC+, Copernicus)", List.of("forest-type-cache"), null));
         l.add(world("overture-buildings", "Buildings OSM lacks (Overture)", List.of("overture-cache"), null));
+        l.add(world("ims-snow", "Snow and ice seen today (NOAA IMS)", List.of("snow-cache/observed"), null));
         l.add(world("map-backgrounds", "Map and preview backgrounds", List.of("map-tile-cache", "preview", "outline-cache"), null));
         // ---- photos (worldwide or national, as configured)
         for (OrbisConfig.ImagerySource s : c.imagerySources) {
@@ -133,6 +134,7 @@ public final class DataSources {
         l.add(national("ngu-bedrock", "Rock types (NGU)", "Norway", no, "NO", List.of("geology-cache")));
         l.add(national("nve-lakes", "Lake depths (NVE)", "Norway", no, "NO", List.of("lake-survey-cache")));
         l.add(national("qc-gblq", "Lake depths (GBLQ)", "Canada (Quebec)", new double[]{44.9, -79.8, 63.0, -57.0}, "CA", List.of("quebec-lake-cache")));
+        l.add(national("senorge", "Snow depth today (seNorge)", "Norway", no, "NO", List.of("snow-cache/senorge")));
         l.add(national("nibio-sr16", "Forest types: spruce, pine, broadleaf (NIBIO SR16)", "Norway", no, "NO", List.of("forest-type-cache/sr16")));
         l.add(national("nvdb-roads", "Road widths and lanes (NVDB)", "Norway", no, "NO", List.of("nvdb-cache")));
         // ---- lidar building heights (each where it covers; Kartverket's with its switch in the Advanced tab)

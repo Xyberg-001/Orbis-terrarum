@@ -813,7 +813,11 @@ public class OrbisMod implements ModInitializer {
         }
 
         WorldModel model = new WorldModel(cfg, mapper, elevation, vertical, classifier, regions, landmarks);
-        if (cfg.realSnow) model.setSnowCover(com.berg.orbis.sky.SnowCover.shared(data.resolve("snow-cache")));
+        if (cfg.realSnow) {
+            model.setSnowCover(com.berg.orbis.sky.SnowCover.shared(data.resolve("snow-cache")));
+            model.setObservedSnow(com.berg.orbis.sky.ObservedSnow.shared(data.resolve("snow-cache").resolve("observed")));
+            model.setSeNorge(com.berg.orbis.sky.SeNorge.shared(data.resolve("snow-cache").resolve("senorge")));
+        }
         model.setCoarseSampler(new BicubicElevationSampler(tiles, Math.min(cfg.demZoom, 11)));
         model.setTerrainTiles(tiles, cfg.demZoom);
         model.setWorldCover(worldCover);

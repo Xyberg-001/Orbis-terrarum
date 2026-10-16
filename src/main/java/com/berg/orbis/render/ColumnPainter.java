@@ -367,10 +367,10 @@ public final class ColumnPainter {
         if (waterColumn) {
             s.fill(x, groundTop + 1, waterTop, z, WATER);
             // Seagrass and kelp come from the water biomes in the decoration step (SeaVegetation).
-            if (climate.frozenWater() && waterTop < maxY) {
+            if (climate.waterFrozen() && waterTop < maxY) {
                 s.set(x, waterTop, z, ICE);
             }
-            if (!climate.frozenWater() && wf != null && (wf.kind == WaterFeature.Kind.POND || wf.kind == WaterFeature.Kind.WETLAND_WATER)
+            if (!climate.waterFrozen() && wf != null && (wf.kind == WaterFeature.Kind.POND || wf.kind == WaterFeature.Kind.WETLAND_WATER)
                     && (h % 100) < 12 && waterTop < maxY) {
                 s.set(x, waterTop + 1, z, Blocks.LILY_PAD.defaultBlockState());
             }

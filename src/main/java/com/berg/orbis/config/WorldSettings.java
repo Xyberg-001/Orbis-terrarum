@@ -186,6 +186,8 @@ public final class WorldSettings {
     public boolean seascapeLakes = false;
     /** OrbisConfig.quebecLakes; false for worlds made before it existed. */
     public boolean quebecLakes = false;
+    /** OrbisConfig.realClimate; false for worlds made before it existed (their biomes must meet their new chunks). */
+    public boolean realClimate = false;
 
     public static WorldSettings fromConfig(OrbisConfig c) {
         WorldSettings s = new WorldSettings();
@@ -285,6 +287,7 @@ public final class WorldSettings {
         s.riverWidths = c.riverWidths;
         s.seascapeLakes = c.seascapeLakes;
         s.quebecLakes = c.quebecLakes;
+        s.realClimate = c.realClimate;
         return s;
     }
 
@@ -385,6 +388,7 @@ public final class WorldSettings {
         c.riverWidths = riverWidths;
         c.seascapeLakes = seascapeLakes;
         c.quebecLakes = quebecLakes;
+        c.realClimate = realClimate;
     }
 
     /** The installation config with this world's settings applied (a copy; the base is untouched). */

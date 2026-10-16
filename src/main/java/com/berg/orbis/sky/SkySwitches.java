@@ -124,7 +124,11 @@ public final class SkySwitches {
                 msg.append(" Grass and leaf colours change the next time the world is opened.");
             }
             case SNOW -> {
-                if (on) model.setSnowCover(SnowCover.shared(OrbisMod.dataDir().resolve("snow-cache")));
+                if (on) {
+                    model.setSnowCover(SnowCover.shared(OrbisMod.dataDir().resolve("snow-cache")));
+                    model.setObservedSnow(ObservedSnow.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("observed")));
+                    model.setSeNorge(SeNorge.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("senorge")));
+                }
                 msg.append(on ? " New ground gets today's snow; snow already there settles and melts as the real snow does."
                         : " Snow already lying stays; no real snow is added.");
             }

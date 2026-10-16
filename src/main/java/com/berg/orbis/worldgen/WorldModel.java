@@ -189,7 +189,7 @@ public final class WorldModel {
 
     public BiomeClassifier.Climate climate(int x, int z, double elevationMeters) {
         double[] ll = mapper.toLatLon(x, z);
-        return classifier.classify(ll[0], Double.isNaN(elevationMeters) ? 0.0 : elevationMeters);
+        return classifier.classify(ll[0], ll[1], Double.isNaN(elevationMeters) ? 0.0 : elevationMeters);
     }
 
     private volatile SnowCover snow;
@@ -199,6 +199,53 @@ public final class WorldModel {
     /** Today's snow cover (real snow on); null leaves the year-round climate guess in charge. */
     public void setSnowCover(SnowCover snow) {
         this.snow = snow;
+    }
+
+    /** Where snow lies and water is frozen today as seen (NOAA IMS, Northern Hemisphere); null without. */
+    private volatile com.berg.orbis.sky.ObservedSnow observed;
+
+    public void setObservedSnow(com.berg.orbis.sky.ObservedSnow observed) {
+        this.observed = observed;
+    }
+
+    /** Norway's 1 km snow depth (seNorge); null without. */
+    private volatile com.berg.orbis.sky.SeNorge seNorge;
+
+    public void setSeNorge(com.berg.orbis.sky.SeNorge seNorge) {
+        this.seNorge = seNorge;
+    }
+
+    /**
+     * Today's snow depth. In Norway seNorge's 1 km depth. Elsewhere the modelled depth checked against what the satellites
+     * and analysts see in the place's 1 km cell: snow seen where the model has none gets a thin cover; a cell seen bare
+     * keeps only the model's deep mountain snow (its line raised by about 30 cm of depth), since a peak can hold snow in
+     * a cell that is mostly bare.
+     */
+    private double observedDepth(double lat, double lon, double modelDepth, long waitMs) {
+        com.berg.orbis.sky.SeNorge norway = seNorge;
+        if (norway != null && com.berg.orbis.sky.SeNorge.covers(lat, lon)) {
+            double d = norway.depthM(lat, lon, waitMs);
+            if (!Double.isNaN(d)) return d;
+        }
+        com.berg.orbis.sky.ObservedSnow obs = observed;
+        if (obs == null || Double.isNaN(modelDepth)) return modelDepth;
+        int seen = obs.classAt(lat, lon);
+        if (seen == com.berg.orbis.sky.ObservedSnow.SNOW) return Math.max(modelDepth, 0.05);
+        if (seen == com.berg.orbis.sky.ObservedSnow.LAND) return Math.max(0, modelDepth - 0.3);
+        return modelDepth;
+    }
+
+    /** Whether water at a place is frozen today as seen: 1 ice, 0 open, -1 not known (a small lake in bare land: the climate decides). */
+    private int observedIce(double lat, double lon) {
+        com.berg.orbis.sky.ObservedSnow obs = observed;
+        if (obs == null) return -1;
+        return switch (obs.classAt(lat, lon)) {
+            case com.berg.orbis.sky.ObservedSnow.ICE -> 1;
+            case com.berg.orbis.sky.ObservedSnow.WATER -> 0;
+            // A lake too small for the 1 km cells, in land under snow: frozen too.
+            case com.berg.orbis.sky.ObservedSnow.SNOW -> 1;
+            default -> -1;
+        };
     }
 
     /**
@@ -214,7 +261,7 @@ public final class WorldModel {
         if (s == null || !cfg.realSnow) return c;
         double[] ll = mapper.toLatLon(x, z);
         double snowElevation = Double.isNaN(elevationMeters) ? 0.0 : snowElevationM(x, blockY(elevationMeters, x, z), z, true);
-        return c.withSnowDepth(s.depthM(ll[0], ll[1], snowElevation));
+        return c.withSnowDepth(observedDepth(ll[0], ll[1], s.depthM(ll[0], ll[1], snowElevation), 20_000)).withIceNow(observedIce(ll[0], ll[1]));
     }
 
     /**
@@ -243,7 +290,7 @@ public final class WorldModel {
         double e = snowElevationM(x, y, z, false);
         if (Double.isNaN(e)) return -1;
         double[] ll = mapper.toLatLon(x, z);
-        double d = s.depthIfKnownM(ll[0], ll[1], e);
+        double d = observedDepth(ll[0], ll[1], s.depthIfKnownM(ll[0], ll[1], e), 0);
         if (Double.isNaN(d)) return -1;
         int layers = ColumnPainter.snowLayers(d, cfg.metersPerBlock);
         // As generation lays it: never bare on the ice cap.
