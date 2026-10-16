@@ -8,7 +8,7 @@ coastlines, rivers, every building, roads, bridges, railways and forests. Minecr
 - **Real terrain** from laser-scanned maps where a country has them, a bare-earth satellite model everywhere else, and a real sea floor.
 - **Every building** from OpenStreetMap, with its real height, roof shape and colour; walkable floors and doors.
 - **Roads, rails, bridges and tunnels** at their real width, with markings, sidewalks, street lamps and street name signs.
-- **Nature:** water, forests, fields and parks; real rock under the ground, real soil (peat, podzol, clay, sand) as deep as it really is, glaciers with thick ice, and real lake beds.
+- **Nature:** water, forests of the real kind (conifer or broadleaf), fields and parks; real rock under the ground, real soil (peat, podzol, clay, sand) as deep as it really is, glaciers with thick ice, and real lake beds.
 - **Real sky:** real daylight and moon, real weather, seasons and today's snow depth.
 - **Any scale:** 1:1 down to 1:32 for a whole country.
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.

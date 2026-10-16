@@ -1062,6 +1062,37 @@ Farinotti 2019 is non-commercial), hence the model. Jostedalsbreen comes out
 around 200 m, Konkordiaplatz on the Aletsch 130 m (really 900 m), Vatnajökull
 300 m.
 
+### Forest types (`landcover/ForestTypes`, `TileTiff`)
+New worlds from 2.0.1 (world setting `forestTypes`, config v20; servers keep
+false): after WorldCover fills the gaps (`refineForests`), every generic
+`FOREST` cell (OSM forest or wood without `leaf_type` / `wood`, and WorldCover's
+tree cover) becomes `FOREST_CONIFER` or `FOREST_BROADLEAF` where the maps say
+so; mixed woods and places they do not know stay `FOREST` (the climate's mix).
+Species, biome (Taiga, Birch Forest, Old Growth Pine...) and forest floor
+(podzol under conifers) all follow the land cover. OSM's own leaf type always
+wins.
+
+Europe: CLC+ Backbone 2021 (Copernicus Land Monitoring Service, 10 m, the EEA's
+ArcGIS image service in EPSG:3035), one exportImage per region in lat/lon on a
+lattice fixed per degree of latitude (1/11000° tall), so neighbouring regions
+ask for the same pixels; uncompressed 8-bit, a few kB a region, kept as
+`forest-type-cache/clc-plus/<box>.bin.gz`. Classes 2 (needle-leaved) and 3/4
+(broadleaved deciduous / evergreen) are read as stands: the 3 x 3 pixels around
+a column, conifer where needles outnumber broad leaves two to one, broadleaf the
+other way round, mixed otherwise (single 10 m pixels gave a speckle of biomes).
+
+Elsewhere, and where CLC+ has no trees: the Copernicus Global Land Service Land
+Cover 100 m 2019 forest type layer (CGLS-LC100 v3.0.1, CC BY 4.0), one 1 GB
+BigTIFF on Zenodo (record 3939050) in 256-pixel deflate tiles. `TileTiff` reads
+the tile tables a row of tiles at a time (`table/<row>.bin`) and each tile once
+by a range request (`tiles/<row>/<col>.z`), keeping 160 decoded tiles in memory.
+Values 1 and 3 (evergreen and deciduous needle leaf, larch included) are
+conifer, 2 and 4 broadleaf, 5 mixed; each column reads half a pixel off at
+random. LANDFIRE's vegetation types (US, 30 m) were left out: its image service
+has no attribute table to turn its 900 codes into leaf types. Checked: the Black
+Forest and the Cascades come out coniferous, Fontainebleau, Białowieża and the
+Amazon broadleaved, the Smokies and Hokkaido mixed.
+
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
