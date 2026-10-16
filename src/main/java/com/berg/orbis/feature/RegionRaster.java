@@ -180,6 +180,43 @@ public final class RegionRaster {
         return w <= 0 ? null : waters.get(w - 1);
     }
 
+    /**
+     * Building parts mapped one above another on the same ground (a tower in tiers, a spire on its tower, the Kaaba's
+     * walls, gold band and roof): the column's own building ({@link #building}) is the lowest, these stand over it,
+     * each in its own height band. Per column the packed parts: code | flags << 16 | roof extra << 24. Null while the
+     * region has none.
+     */
+    public java.util.Map<Integer, int[]> stacked;
+
+    /** The parts stacked over a column's own building (packed as in {@link #stacked}), or null. */
+    public int[] stackedAt(int idx) {
+        java.util.Map<Integer, int[]> m = stacked;
+        return m == null ? null : m.get(idx);
+    }
+
+    /** Whether a building (by code) stands at a column, as the column's own or stacked over it. */
+    public boolean hasBuilding(int idx, short code) {
+        if (idx < 0) return false;
+        if (building[idx] == code) return true;
+        int[] s = stackedAt(idx);
+        if (s != null) for (int p : s) if ((short) (p & 0xFFFF) == code) return true;
+        return false;
+    }
+
+    /** Sets a building's flags and roof extra at a column, whether it is the column's own building or stacked. */
+    public void setBuildingCell(int idx, short code, int flags, int extra) {
+        if (building[idx] == code) {
+            buildingFlags[idx] = (byte) flags;
+            roofExtra[idx] = (byte) extra;
+            return;
+        }
+        int[] s = stackedAt(idx);
+        if (s == null) return;
+        for (int i = 0; i < s.length; i++) {
+            if ((short) (s[i] & 0xFFFF) == code) s[i] = (code & 0xFFFF) | (flags & 0xFF) << 16 | (extra & 0xFF) << 24;
+        }
+    }
+
     public BuildingFeature buildingAt(int idx) {
         int b = building[idx];
         if (b <= 0) return null;

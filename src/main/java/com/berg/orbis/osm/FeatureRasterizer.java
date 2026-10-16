@@ -3098,8 +3098,26 @@ public final class FeatureRasterizer {
             }
             surfacePrefetch.prefetch(boxes);
         }
-        for (OsmArea a : mains) rasterizeBuilding(r, a, false, style, atlas);
-        for (OsmArea a : parts) rasterizeBuilding(r, a, true, style, atlas);
+        // Each part's building outline (the one its middle lies in): an outline drawn in parts is replaced by them, and
+        // its own guesses (a dome, minarets) are not made (the parts are its real shape).
+        Map<Long, OsmArea> parentOf = new HashMap<>();
+        java.util.Set<Long> withParts = new java.util.HashSet<>();
+        // Mosques whose real minarets are mapped get no corner minarets guessed for them.
+        List<OsmArea> minaretTowers = new ArrayList<>();
+        for (OsmArea a : mains) if (isMinaret(a.tags())) minaretTowers.add(a);
+        for (OsmArea a : parts) if (isMinaret(a.tags())) minaretTowers.add(a);
+        java.util.Set<Long> withMinarets = new java.util.HashSet<>();
+        for (OsmArea a : mains) if (!minaretTowers.isEmpty() && nearAny(a, minaretTowers, 15)) withMinarets.add(a.id());
+        for (OsmArea p : parts) {
+            OsmArea parent = containing(p, mains);
+            if (parent != null) {
+                parentOf.put(p.id(), parent);
+                withParts.add(parent.id());
+            }
+        }
+        for (OsmArea a : mains) rasterizeBuilding(r, a, false, style, atlas, null, withParts, withMinarets);
+        for (OsmArea a : parts) rasterizeBuilding(r, a, true, style, atlas, parentOf.get(a.id()), withParts, withMinarets);
+        if (!withParts.isEmpty()) openOutlineGaps(r, withParts);
         if (cfg.buildingDoors) placeDoors(r);
     }
 
@@ -3150,22 +3168,49 @@ public final class FeatureRasterizer {
 
     /** Whether the area's centre lies inside one of the buildings' outlines. */
     private static boolean insideAny(OsmArea area, List<OsmArea> buildings) {
-        LatLon c = area.centroid();
-        for (OsmArea b : buildings) {
-            for (List<LatLon> ring : b.outers()) {
-                boolean in = false;
-                for (int i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
-                    LatLon p = ring.get(i), q = ring.get(j);
-                    if ((p.lat() > c.lat()) != (q.lat() > c.lat())
-                            && c.lon() < (q.lon() - p.lon()) * (c.lat() - p.lat()) / (q.lat() - p.lat()) + p.lon()) in = !in;
-                }
-                if (in) return true;
-            }
-        }
-        return false;
+        return containing(area, buildings) != null;
     }
 
-    private void rasterizeBuilding(RegionRaster r, OsmArea area, boolean part, Materials.Style style, HeightStore.Loaded atlas) {
+    /** The first building whose outline holds the area's centre, or null. */
+    private static OsmArea containing(OsmArea area, List<OsmArea> buildings) {
+        // The smallest outline holding it, outside the outlines' holes: the Kaaba's parts lie in the courtyard hole of
+        // the Great Mosque's outline, and were taken for parts of the mosque.
+        LatLon c = area.centroid();
+        OsmArea best = null;
+        double bestSize = Double.MAX_VALUE;
+        for (OsmArea b : buildings) {
+            boolean in = false;
+            for (List<LatLon> ring : b.outers()) in |= inRing(ring, c);
+            if (!in) continue;
+            for (List<LatLon> ring : b.inners()) in &= !inRing(ring, c);
+            if (!in) continue;
+            double[] box = box(b);
+            double size = (box[2] - box[0]) * (box[3] - box[1]);
+            if (size < bestSize) {
+                bestSize = size;
+                best = b;
+            }
+        }
+        return best;
+    }
+
+    private static boolean inRing(List<LatLon> ring, LatLon c) {
+        boolean in = false;
+        for (int i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+            LatLon p = ring.get(i), q = ring.get(j);
+            if ((p.lat() > c.lat()) != (q.lat() > c.lat())
+                    && c.lon() < (q.lon() - p.lon()) * (c.lat() - p.lat()) / (q.lat() - p.lat()) + p.lon()) in = !in;
+        }
+        return in;
+    }
+
+    /**
+     * @param parent    a part's building outline, or null
+     * @param withParts the outlines that have parts in them (drawn by their parts)
+     * @param withMinarets the outlines with their real minarets mapped beside or in them
+     */
+    private void rasterizeBuilding(RegionRaster r, OsmArea area, boolean part, Materials.Style style, HeightStore.Loaded atlas,
+                                   OsmArea parent, java.util.Set<Long> withParts, java.util.Set<Long> withMinarets) {
         if (r.buildings.size() >= Short.MAX_VALUE - 1) return;
         Map<String, String> tags = area.tags();
         List<List<double[]>> rings = new ArrayList<>();
@@ -3237,12 +3282,20 @@ public final class FeatureRasterizer {
         int levels = OsmTags.parseInt(tags.get("building:levels"), -1);
         double heightM = OsmTags.parseLength(tags.get("height"), Double.NaN);
         if (Double.isNaN(heightM)) heightM = OsmTags.parseLength(tags.get("building:height"), Double.NaN);
-        boolean domed = LandmarkRegistry.looksDomed(tags);
+        boolean drawnInParts = !part && withParts.contains(area.id());
+        // An outline mapped in parts: no dome guessed for it (a domed one has its dome among the parts, or roof:shape).
+        boolean domed = drawnInParts && tags.get("roof:shape") == null ? false : LandmarkRegistry.looksDomed(tags);
+        // A dome only guessed (no roof:shape) over a footprint more than 32 m across is a great mosque's or hall's
+        // whole roof: Al-Aqsa stood as 2 blocks of wall under one flattened dome 120 m wide, the Prophet's Mosque 400 m.
+        // Their domes are parts of their own, or not mapped; the rest of such a roof is flat.
+        boolean saysDome = "yes".equals(tags.get("dome")) || "dome".equals(tags.get("building:part")) || "dome".equals(tags.get("building"))
+                || "dome".equals(tags.get("man_made"));
+        if (domed && tags.get("roof:shape") == null && !saysDome && Math.max(halfA, halfB) > 16) domed = false;
         boolean roofOnly = "roof".equals(type) || "shelter".equals(type) || "carport".equals(type) && !tags.containsKey("building:levels");
         if (levels <= 0) {
             levels = defaultLevels(type, halfA, halfB, area.id());
         }
-        RoofShape shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
+        RoofShape shape = roofShapeFor(part || drawnInParts, tags, type, levels, halfA, halfB, domed, area.id());
         int roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
         // A part that says nothing of its own height is measured like a building (lidar, registers, the atlas by its
         // position) instead of falling to the storey guess: Nordahl Grieg school in Bergen is mapped as untagged
@@ -3290,7 +3343,7 @@ public final class FeatureRasterizer {
                     if (roof[2] == 0) shape = RoofShape.FLAT;
                     else if (roof[2] == 1) shape = RoofShape.GABLED;
                     else if (roof[2] == 2) shape = RoofShape.HIPPED;
-                    else shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
+                    else shape = roofShapeFor(part || drawnInParts, tags, type, levels, halfA, halfB, domed, area.id());
                 }
                 roofHeight = shape == RoofShape.FLAT ? 0 : Math.max(1, Math.min(14, (int) Math.round(buildingBlocks((ridge - eave) * cfg.metersPerBlock))));
             } else {
@@ -3300,7 +3353,7 @@ public final class FeatureRasterizer {
                     heightSource = "surface-model";
                     levels = Math.max(1, (int) Math.round(buildingBlocks(heightM) / storey));
                     if (tags.get("roof:shape") == null) {
-                        shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
+                        shape = roofShapeFor(part || drawnInParts, tags, type, levels, halfA, halfB, domed, area.id());
                         roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
                     }
                 }
@@ -3319,7 +3372,7 @@ public final class FeatureRasterizer {
                     heightSource = "database:" + hit.source();
                     levels = hit.floors() > 0 ? hit.floors() : Math.max(1, (int) Math.round(hm / storeyM));
                     if (tags.get("roof:shape") == null) {
-                        shape = hit.flatRoof() ? RoofShape.FLAT : Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
+                        shape = hit.flatRoof() ? RoofShape.FLAT : roofShapeFor(part || drawnInParts, tags, type, levels, halfA, halfB, domed, area.id());
                         roofHeight = shape == RoofShape.FLAT ? 0 : Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
                     }
                     // A height to the gutter: the roof stands on top of it.
@@ -3340,7 +3393,7 @@ public final class FeatureRasterizer {
                 heightSource = "atlas";
                 levels = Math.max(1, (int) Math.round(buildingBlocks(h) / storey));
                 if (tags.get("roof:shape") == null) {
-                    shape = Materials.roofShape(tags, type, levels, halfA, halfB, domed, area.id());
+                    shape = roofShapeFor(part || drawnInParts, tags, type, levels, halfA, halfB, domed, area.id());
                     roofHeight = Materials.roofHeightBlocks(tags, shape, halfA, halfB, storey, this::buildingBlocks);
                 }
             }
@@ -3373,14 +3426,32 @@ public final class FeatureRasterizer {
             int minLevel = OsmTags.parseInt(tags.get("building:min_level"), 0);
             if (minLevel > 0) minHeight = (int) Math.round(buildingBlocks(minLevel * storeyM));
         }
-        if (minHeight >= wallHeight) minHeight = 0;
+        if (minHeight >= wallHeight) {
+            // A thin slab (the Kaaba's roof, 14.6 to 15 m) rounds to no height of its own: one block at its place, not
+            // a wall from the ground (it stood as a black column through the whole building). Nonsense (a bottom above
+            // the top) still starts at the ground.
+            if (!Double.isNaN(minHeightM) && !Double.isNaN(heightM) && minHeightM < heightM) wallHeight = minHeight + 1;
+            else minHeight = 0;
+        }
         if (roofOnly) minHeight = Math.max(minHeight, Math.max(0, wallHeight - 1));
 
-        Materials.BuildingMaterials mats = Materials.building(tags, type, area.id(), realLevels, style, shape, domed);
-        boolean minarets = "mosque".equals(type) && halfB >= 6;
+        // A part without a kind of its own is made of what its building is made of, the same for all its parts (Notre-Dame's
+        // parts came out in brick, white concrete and yellow terracotta side by side, the Florence dome's terracotta in planks).
+        boolean plainPart = part && parent != null && ("yes".equals(type) || type == null);
+        Materials.BuildingMaterials mats = Materials.building(tags, plainPart ? Materials.buildingType(parent.tags()) : type,
+                plainPart ? parent.id() : area.id(), realLevels, style, shape, domed);
+        // Corner minarets are a guess for a plain mosque outline: not over 60 m (a great mosque's corners are not its
+        // minarets' places), nor where its real minarets are mapped (the Prophet's Mosque's 70 m towers).
+        boolean minarets = "mosque".equals(type) && halfB >= 6 && !drawnInParts && Math.max(halfA, halfB) <= 30 && !withMinarets.contains(area.id());
+        // A shrine drawn in parts without storeys (the Kaaba) is a closed mass: no rows of windows guessed into it.
+        boolean shrine = isShrine(tags) || (part && parent != null && isShrine(parent.tags()));
+        // A wall (the Western Wall), ruins, tombs, pyramids, monuments and arches have no windows either (rows of glass
+        // ran up the Mayan pyramid at Chichen Itza).
+        BlockState window = (shrine && !tags.containsKey("building:levels")) || solidMonument(tags, type)
+                || (part && parent != null && solidMonument(parent.tags(), Materials.buildingType(parent.tags()))) ? mats.wall() : mats.window();
 
         BuildingFeature bf = new BuildingFeature(area.id(), tags, type, wallHeight, minHeight, levels, shape, roofHeight,
-                mats.wall(), mats.wallAccent(), mats.roof(), mats.window(), mats.floor(), part, domed, minarets,
+                mats.wall(), mats.wallAccent(), mats.roof(), window, mats.floor(), part, domed, minarets,
                 mats.glassCurtain(), storey, cx, cz, ax, az, halfA, halfB, tags.get("name"));
         bf.baseY = baseY;
         bf.heightSource = heightSource;
@@ -3395,12 +3466,24 @@ public final class FeatureRasterizer {
         final boolean elevatedPart = part && minHeight > 0;
         fillRings(r, rings, (idx, x, z) -> {
             if (idx < 0) return;
-            if (elevatedPart && r.building[idx] != 0) {
+            if (part && r.building[idx] != 0) {
                 BuildingFeature existing = r.buildings.get(r.building[idx] - 1);
-                // A part hovering above another building (skybridge): keep the
-                // lower building's column, we only store one building per column.
-                if (!existing.part) return;
+                // Over another part, or over its own outline (a spire mapped as a part on a tower mapped only as the outline),
+                // a part whose height band does not meet the one below stands on it.
+                boolean ownOutline = !existing.part && parent != null && existing.id == parent.id();
+                if ((existing.part || ownOutline) && stack(r, idx, code, bf)) {
+                    bbox[0] = Math.min(bbox[0], x);
+                    bbox[1] = Math.min(bbox[1], z);
+                    bbox[2] = Math.max(bbox[2], x);
+                    bbox[3] = Math.max(bbox[3], z);
+                    count[0]++;
+                    return;
+                }
+                // A part hovering above another building (skybridge): keep the lower building's column. Over its own
+                // building's outline it replaces the outline, as every part does.
+                if (elevatedPart && !existing.part && (parent == null || existing.id != parent.id())) return;
             }
+            dropOverlapping(r, idx, bf);
             r.building[idx] = code;
             r.buildingFlags[idx] = 0;
             r.roofExtra[idx] = 0;
@@ -3422,6 +3505,7 @@ public final class FeatureRasterizer {
                 return;
             }
         }
+        bf.cells = count[0];
 
         // Per-column flags and roof profile.
         List<double[][]> edges = new ArrayList<>();
@@ -3436,7 +3520,7 @@ public final class FeatureRasterizer {
         for (int z = bbox[1]; z <= bbox[3]; z++) {
             for (int x = bbox[0]; x <= bbox[2]; x++) {
                 int idx = r.index(x, z);
-                if (idx < 0 || r.building[idx] != code) continue;
+                if (idx < 0 || !r.hasBuilding(idx, code)) continue;
                 int flags = 0;
                 boolean west = isSame(r, x - 1, z, code), east = isSame(r, x + 1, z, code);
                 boolean north = isSame(r, x, z - 1, code), south = isSame(r, x, z + 1, code);
@@ -3453,7 +3537,7 @@ public final class FeatureRasterizer {
                     for (double[][] e : edges) dEdge = Math.min(dEdge, pointSegmentDistance(x + 0.5, z + 0.5, e[0], e[1]));
                 }
                 double extra = roofProfile(shape, u, v, halfA, halfB, dEdge, roofHeight, skillionFlip);
-                r.roofExtra[idx] = (byte) Math.max(0, Math.min(255, (int) Math.round(extra)));
+                int extraBlocks = Math.max(0, Math.min(255, (int) Math.round(extra)));
                 if ((shape == RoofShape.GABLED || shape == RoofShape.GAMBREL || shape == RoofShape.SALTBOX)
                         && edge && Math.abs(u) > halfA - 1.6) {
                     flags |= RegionRaster.FLAG_GABLE_END;
@@ -3461,7 +3545,7 @@ public final class FeatureRasterizer {
                 if (minarets && DomeGenerator.isMinaretColumn(u, v, halfA, halfB, 1.6)) {
                     flags |= RegionRaster.FLAG_MINARET;
                 }
-                r.buildingFlags[idx] = (byte) flags;
+                r.setBuildingCell(idx, code, flags, extraBlocks);
             }
         }
 
@@ -3485,8 +3569,145 @@ public final class FeatureRasterizer {
     }
 
     private static boolean isSame(RegionRaster r, int x, int z, short code) {
-        int idx = r.index(x, z);
-        return idx >= 0 && r.building[idx] == code;
+        return r.hasBuilding(r.index(x, z), code);
+    }
+
+    /**
+     * The roof's shape: the map's, else guessed by type, except on a building part, which is flat unless it says otherwise
+     * (as the 3D building scheme has it). Guessed hipped roofs ate 9 m of the walls of Hagia Sophia's parts and pushed
+     * some under their own bottoms, where they stood as solid columns from the ground. An outline drawn in parts is flat
+     * where its parts leave gaps, and a wall is flat on top.
+     */
+    private static RoofShape roofShapeFor(boolean part, Map<String, String> tags, String type, int levels, double halfA, double halfB,
+                                          boolean domed, long id) {
+        // (also a part drawn alone, with no outline round it: tagged building:part and no building)
+        boolean partTagged = tags.get("building:part") != null && !"no".equals(tags.get("building:part")) && tags.get("building") == null;
+        if (tags.get("roof:shape") == null && !domed && (part || partTagged || "wall".equals(type))) return RoofShape.FLAT;
+        return Materials.roofShape(tags, type, levels, halfA, halfB, domed, id);
+    }
+
+    /**
+     * An outline drawn in parts is not drawn itself (the 3D building scheme): where its parts leave gaps it stood in
+     * them at its own height, and the Eiffel Tower's outline (330 m, a pyramid) filled the space between its legs and
+     * platforms as one block 120 m wide. Its columns no part covers are opened when the parts cover at least half of
+     * it; an outline mostly not drawn in parts (only its tower is) keeps them, so the rest of the building stays.
+     */
+    private static void openOutlineGaps(RegionRaster r, java.util.Set<Long> withParts) {
+        int n = r.buildings.size();
+        int[] left = new int[n + 1];
+        for (short code : r.building) if (code > 0) left[code]++;
+        boolean[] open = new boolean[n + 1];
+        boolean any = false;
+        for (int i = 0; i < n; i++) {
+            BuildingFeature bf = r.buildings.get(i);
+            if (bf.part || !withParts.contains(bf.id) || bf.cells <= 0) continue;
+            if (left[i + 1] * 2 <= bf.cells) {
+                open[i + 1] = true;
+                any = true;
+            }
+        }
+        if (!any) return;
+        for (int idx = 0; idx < r.building.length; idx++) {
+            int code = r.building[idx];
+            if (code > 0 && open[code]) {
+                r.building[idx] = 0;
+                r.buildingFlags[idx] = 0;
+                r.roofExtra[idx] = 0;
+            }
+        }
+    }
+
+    /** A mapped minaret (its own outline or part). */
+    private static boolean isMinaret(Map<String, String> tags) {
+        if ("minaret".equals(tags.get("man_made")) || "minaret".equals(tags.get("tower:type")) || "minaret".equals(tags.get("building"))
+                || "minaret".equals(tags.get("building:part"))) return true;
+        String name = tags.get("name");
+        return "tower".equals(tags.get("man_made")) && name != null
+                && (name.contains("مئذنة") || name.contains("منارة") || name.toLowerCase(java.util.Locale.ROOT).contains("minaret"));
+    }
+
+    /** Whether one of the others' middles lies within {@code metres} of the area's box. */
+    private static boolean nearAny(OsmArea area, List<OsmArea> others, double metres) {
+        double[] b = box(area);
+        double dLat = metres / 111_320.0, dLon = dLat / Math.max(0.05, Math.cos(Math.toRadians(b[0])));
+        for (OsmArea o : others) {
+            if (o == area) continue;
+            LatLon c = o.centroid();
+            if (c.lat() >= b[0] - dLat && c.lat() <= b[2] + dLat && c.lon() >= b[1] - dLon && c.lon() <= b[3] + dLon) return true;
+        }
+        return false;
+    }
+
+    /** A monument with no rooms behind its walls: a wall, ruins, a tomb, a pyramid, an arch, a stupa. */
+    private static boolean solidMonument(Map<String, String> tags, String type) {
+        String h = tags.get("historic");
+        if (h != null) {
+            switch (h) {
+                case "ruins", "archaeological_site", "monument", "memorial", "tomb", "pyramid", "city_gate", "citywalls", "wayside_shrine" -> {
+                    return true;
+                }
+                default -> { }
+            }
+        }
+        if (type == null) return false;
+        return switch (type) {
+            case "wall", "city_wall", "pyramid", "sphinx", "monument", "triumphal_arch", "ruins", "stupa", "tomb", "mausoleum", "obelisk" -> true;
+            default -> false;
+        };
+    }
+
+    /** A shrine or other religious building that is no hall (building=religious or shrine): the Kaaba. */
+    private static boolean isShrine(Map<String, String> tags) {
+        String b = tags.get("building");
+        return "religious".equals(b) || "shrine".equals(b);
+    }
+
+    /** The height band a building fills over its base, in blocks: [bottom, top). */
+    private static int bandBottom(BuildingFeature b) {
+        return b.minHeightBlocks;
+    }
+
+    private static int bandTop(BuildingFeature b) {
+        return b.heightBlocks + (b.roofShape == RoofShape.FLAT ? 0 : b.roofHeightBlocks);
+    }
+
+    private static boolean bandsOverlap(BuildingFeature a, BuildingFeature b) {
+        return bandBottom(a) < bandTop(b) && bandBottom(b) < bandTop(a);
+    }
+
+    /**
+     * Puts a part over or under the part already at a column when their height bands do not meet (the lowest stays the
+     * column's own building, the other is stacked over it); false when they meet (the new part replaces the old, as
+     * before). A stacked part its band meets is replaced too.
+     */
+    private static boolean stack(RegionRaster r, int idx, short code, BuildingFeature bf) {
+        BuildingFeature own = r.buildings.get(r.building[idx] - 1);
+        if (bandsOverlap(own, bf)) return false;
+        dropOverlapping(r, idx, bf);
+        if (r.stacked == null) r.stacked = new HashMap<>();
+        int[] s = r.stacked.get(idx);
+        int[] grown = s == null ? new int[1] : java.util.Arrays.copyOf(s, s.length + 1);
+        if (bandBottom(bf) < bandBottom(own)) {
+            // The new part is the lower one: it becomes the column's own, the old one goes over it with its flags.
+            grown[grown.length - 1] = (r.building[idx] & 0xFFFF) | (r.buildingFlags[idx] & 0xFF) << 16 | (r.roofExtra[idx] & 0xFF) << 24;
+            r.building[idx] = code;
+            r.buildingFlags[idx] = 0;
+            r.roofExtra[idx] = 0;
+        } else {
+            grown[grown.length - 1] = code & 0xFFFF;
+        }
+        r.stacked.put(idx, grown);
+        return true;
+    }
+
+    /** Takes out the parts stacked at a column whose height band the given building's meets. */
+    private static void dropOverlapping(RegionRaster r, int idx, BuildingFeature bf) {
+        int[] s = r.stackedAt(idx);
+        if (s == null) return;
+        int[] kept = java.util.Arrays.stream(s).filter(p -> !bandsOverlap(r.buildings.get((p & 0xFFFF) - 1), bf)).toArray();
+        if (kept.length == s.length) return;
+        if (kept.length == 0) r.stacked.remove(idx);
+        else r.stacked.put(idx, kept);
     }
 
     /** The door sides in {@link RegionRaster#DOOR_SIDE_SHIFT} order: east, west, south, north. */

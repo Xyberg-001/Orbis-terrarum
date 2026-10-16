@@ -438,6 +438,14 @@ public final class ColumnPainter {
         // ---- building ----------------------------------------------------------------
         if (bf != null) {
             paintBuilding(s, x, z, bf, r, idx, climate);
+            // Parts stacked over it, each in its own band (no doors, minarets or shaped roofs up there).
+            int[] stack = r.stackedAt(idx);
+            if (stack != null) {
+                for (int p : stack) {
+                    BuildingFeature up = r.buildings.get((p & 0xFFFF) - 1);
+                    if (!up.suppressed) paintBuilding(s, x, z, up, r, idx, climate, (p >>> 16) & 0xFF, (p >>> 24) & 0xFF, false);
+                }
+            }
             boolean railThrough = rf != null && rf.isRail() && !rf.tunnel && rf.layer >= 0;
             if ((rf != null && rf.tunnel && rf.layer >= 0) || railThrough || dec == DecorType.EMBEDDED_RAIL) {
                 // A passage through the building (tunnel=building_passage / covered), or a railway running into
@@ -972,17 +980,22 @@ public final class ColumnPainter {
     // ------------------------------------------------------------------ buildings
 
     private void paintBuilding(Sink s, int x, int z, BuildingFeature bf, RegionRaster r, int idx, BiomeClassifier.Climate climate) {
+        paintBuilding(s, x, z, bf, r, idx, climate, r.buildingFlags[idx], r.roofExtraAt(idx), true);
+    }
+
+    /** One building's band of a column ({@code own}: the column's own building, else a part stacked over it). */
+    private void paintBuilding(Sink s, int x, int z, BuildingFeature bf, RegionRaster r, int idx, BiomeClassifier.Climate climate,
+                               int flags, int extra, boolean own) {
         int base = clampY(bf.baseY);
-        int flags = r.buildingFlags[idx];
+        if (!own) flags &= ~(RegionRaster.FLAG_DOOR | RegionRaster.FLAG_MINARET);
         boolean edge = (flags & RegionRaster.FLAG_EDGE) != 0;
         boolean corner = (flags & RegionRaster.FLAG_CORNER) != 0;
         boolean door = (flags & RegionRaster.FLAG_DOOR) != 0 && cfg.buildingDoors;
         boolean gableEnd = (flags & RegionRaster.FLAG_GABLE_END) != 0;
         boolean minaret = (flags & RegionRaster.FLAG_MINARET) != 0;
         boolean roofOnly = (flags & RegionRaster.FLAG_ROOF_ONLY) != 0;
-        int extra = r.roofExtraAt(idx);
         // Pitched roofs are shingled with stairs and capped with a slab (RoofBlocks picks the family).
-        RoofBlocks.Set3 roofSet = bf.roofShape.isPitched() ? RoofBlocks.of(bf.roof) : null;
+        RoofBlocks.Set3 roofSet = bf.roofShape.isPitched() && own ? RoofBlocks.of(bf.roof) : null;
         BlockState roof = roofSet != null ? roofSet.full() : bf.roof;
 
         int wallBottom = base + 1 + bf.minHeightBlocks;

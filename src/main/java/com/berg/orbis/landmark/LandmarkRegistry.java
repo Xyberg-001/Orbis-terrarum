@@ -228,6 +228,9 @@ public final class LandmarkRegistry {
         String roof = tags.get("roof:shape");
         if (roof != null) return "dome".equals(roof) || "onion".equals(roof);
         return "yes".equals(tags.get("dome"))
+                || "dome".equals(tags.get("man_made")) || "dome".equals(tags.get("building")) || "dome".equals(tags.get("building:part"))
+                || "gurdwara".equals(tags.get("building"))
+                || ("place_of_worship".equals(tags.get("amenity")) && "sikh".equals(tags.get("religion")))
                 || "mosque".equals(tags.get("building"))
                 || ("place_of_worship".equals(tags.get("amenity")) && "muslim".equals(tags.get("religion")))
                 || "planetarium".equals(tags.get("amenity"))

@@ -43,6 +43,8 @@ public final class BuildingFeature {
     public final double halfA, halfB;
     /** Ground level (terrain Y at the lowest footprint vertex); walls start at baseY + 1. */
     public int baseY;
+    /** How many columns its footprint covered when it was drawn (before parts were drawn over it). */
+    public int cells;
     /** Whether this footprint is fully or partially covered by a landmark schematic (then skipped). */
     public boolean suppressed;
     public final String name;

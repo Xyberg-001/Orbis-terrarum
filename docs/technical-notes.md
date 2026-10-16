@@ -641,7 +641,11 @@ Kartverket's surface model (building heights) stays.
 - **Materials**: `building:material` / `roof:material` (brick, stone,
   concrete, wood, plaster, glass, metal, slate, roof_tiles, copper, thatch,
   tar_paper, …) map to matching blocks; material words in the colour field
-  are handled too.
+  are handled too. A stone, brick or historic building (its material, a
+  `historic` tag, or a church, mosque, temple, castle, monument and the like)
+  is matched among masonry blocks only, its roof colour too unless the roof
+  is metal or wood: the Colosseum's sand colour came out as birch wood and
+  Brunelleschi's terracotta dome as jungle planks.
 - **Defaults** when nothing is tagged: chosen per building type
   (house / apartments / office / industrial / church / mosque / barn / …)
   with a regional style from latitude (Nordic: white, falu-red, ochre wood
@@ -651,7 +655,31 @@ Kartverket's surface model (building heights) stays.
   pyramidal, skillion, gambrel, mansard, round, dome, onion, cone; ridge
   along the footprint's longest edge; hipped/pyramidal use true distance
   to the outline so L-shapes work; `roof:height` / `roof:levels` honoured.
-  Mosques and `dome=yes` get domes; mosques get four corner minarets.
+  Mosques, gurdwaras, `dome=yes`, `building=dome`, `building:part=dome` and
+  `man_made=dome` get domes; mosques get four corner minarets. A dome only
+  guessed (no `roof:shape`, no dome tag) is left out over a footprint more
+  than 32 m across (a great mosque's whole roof, which stood as 2 blocks of
+  wall under one flattened dome), and corner minarets over one more than
+  60 m across or where the mosque's real minarets are mapped beside it.
+- **3D-mapped buildings (parts)**: as the 3D building scheme has it, a part
+  without `roof:shape` is flat, and an outline that has parts is drawn by its
+  parts: no dome or minarets are guessed for it, its roof is flat where parts
+  leave gaps, and the gaps are left open when the parts cover at least half of
+  it (the space between the Eiffel Tower's legs and platforms, which its 330 m
+  outline filled as one block 120 m wide). Parts are matched to the smallest
+  outline holding their middle, outside its holes (the Kaaba's parts lie in
+  the courtyard hole of the Great Mosque's outline). Parts mapped one above
+  another on the same ground (a tower in tiers, a spire on its tower, the
+  Kaaba's walls, gold band and roof) are kept in a column together, each in
+  its own height band (`RegionRaster.stacked`); before, one part per column
+  won and the Kaaba stood as black ribs of different heights with gold blocks
+  floating. A thin part (a 0.4 m roof slab) is one block at its height instead
+  of a wall from the ground. A part with no kind of its own takes its
+  building's default materials (all parts of a building alike); a shrine
+  (`building=religious` or `shrine`) drawn in parts without storeys, and a
+  `building=wall`, get no windows. Checked against 57 landmarks worldwide
+  (scratchpad audit: the region built at 1:1 with the place in its middle,
+  every building near it listed with what was decided).
 - **Facades**: hollow interiors with a floor slab per storey, window rows
   (glass; tinted glass curtain walls for tall offices; stained glass for
   churches), corner quoins in an accent block, parapet band on flat roofs,
@@ -2973,8 +3001,9 @@ tunnel such as e4mc or playit) handles fresh exploration comfortably.
   only: at 1:2 the Nygårdstunnelen portals sank 4 blocks into flat ground.)
 - Relief mode is not 1:1 above 1500 m of regional elevation, and the very
   top of the Himalaya is squeezed; a 4064-block engine cannot hold Earth.
-- One building per column: a `building:part` that floats above another
-  building (skybridge) is dropped in favour of the lower building.
+- A `building:part` that floats above another building that is not its own
+  (a skybridge) is dropped in favour of the lower building; parts of one
+  building stack.
 - Roof stairs and ridge slabs are chosen by colour; a roof block with no
   close-coloured stairs in the running Minecraft version stays in full-block
   steps (bright concrete colours on 26.2, gold domes, thatch).

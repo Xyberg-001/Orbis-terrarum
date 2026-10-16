@@ -354,6 +354,41 @@ public final class BlockPalette {
         return nearest(ROOFS, rgb).state();
     }
 
+    /** The nearest wall in colour among stone, brick, concrete and terracotta (no wood, wool or plants). */
+    public static BlockState nearestMasonryWall(int rgb) {
+        List<Entry> stone = MASONRY;
+        if (stone == null) {
+            stone = new ArrayList<>();
+            for (Entry e : WALLS) if (isMasonry(e.name())) stone.add(e);
+            if (stone.isEmpty()) stone = WALLS;
+            MASONRY = stone;
+        }
+        return nearest(stone, rgb).state();
+    }
+
+    private static volatile List<Entry> MASONRY, MASONRY_ROOFS;
+
+    /** The nearest roof in colour among stone, brick, tile and concrete (for stone buildings: no planks on a cathedral dome). */
+    public static BlockState nearestMasonryRoof(int rgb) {
+        List<Entry> stone = MASONRY_ROOFS;
+        if (stone == null) {
+            stone = new ArrayList<>();
+            for (Entry e : ROOFS) if (isMasonry(e.name())) stone.add(e);
+            if (stone.isEmpty()) stone = ROOFS;
+            MASONRY_ROOFS = stone;
+        }
+        return nearest(stone, rgb).state();
+    }
+
+    private static boolean isMasonry(String name) {
+        for (String w : new String[]{"plank", "wood", "log", "stem", "hyphae", "bamboo", "wool", "carpet", "leaves", "mushroom", "wart",
+                "hay", "sponge", "slime", "honey", "coral", "moss", "glass", "ice", "snow", "froglight", "lamp", "lantern", "shroom", "dried_kelp",
+                "pale_oak", "copper", "gold", "iron", "diamond", "emerald", "lapis", "redstone", "netherite", "amethyst", "sculk", "pumpkin", "melon"}) {
+            if (name.contains(w)) return false;
+        }
+        return true;
+    }
+
     public static Entry nearest(List<Entry> candidates, int rgb) {
         double[] lab = toLab(rgb);
         double hue = hueDegrees(rgb);
