@@ -14,7 +14,7 @@
   --ok: #2f7a4a; --ok-bg: #e2f1e6;
   --part: #8a6a12; --part-bg: #f6edcf;
   --no: #a23b3b; --no-bg: #f6dfdf;
-  --c-geo: #8b5a2b; --c-dsm: #6a4a9a; --c-bldg: #7a3e66; --c-ortho: #1f7a72; --c-roads: #b0452b; --c-lake: #2b6a8f;
+  --c-geo: #8b5a2b; --c-dsm: #6a4a9a; --c-bldg: #7a3e66; --c-ortho: #1f7a72; --c-roads: #b0452b; --c-lake: #2b6a8f; --c-ice: #3f7fa8; --c-soil: #7a5c2e; --c-sea: #1d4f8a; --c-forest: #2f6b2a; --c-river: #2a7f9e;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "Barlow", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
@@ -24,7 +24,7 @@
     --paper: #131916; --sheet: #1a221e; --ink: #e3eae5; --ink-soft: #a5b3ac; --rule: #2e3a34;
     --contour: #e08a5a; --water: #7cb6d8;
     --ok: #7fd09a; --ok-bg: #1c3526; --part: #e0c063; --part-bg: #3a3218; --no: #f09a9a; --no-bg: #3d2121;
-    --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8;
+    --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8; --c-ice: #a9d4f0; --c-soil: #d6b37e; --c-sea: #86b2ea; --c-forest: #8fcf86; --c-river: #7fd0e6;
     color-scheme: dark;
   }
 }
@@ -32,7 +32,7 @@
   --paper: #131916; --sheet: #1a221e; --ink: #e3eae5; --ink-soft: #a5b3ac; --rule: #2e3a34;
   --contour: #e08a5a; --water: #7cb6d8;
   --ok: #7fd09a; --ok-bg: #1c3526; --part: #e0c063; --part-bg: #3a3218; --no: #f09a9a; --no-bg: #3d2121;
-  --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8;
+  --c-geo: #d1a06e; --c-dsm: #b79be6; --c-bldg: #e09ac8; --c-ortho: #6fd0c6; --c-roads: #f09a7e; --c-lake: #7cb6d8; --c-ice: #a9d4f0; --c-soil: #d6b37e; --c-sea: #86b2ea; --c-forest: #8fcf86; --c-river: #7fd0e6;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -85,6 +85,7 @@ td.country small { display: block; font-weight: 400; color: var(--ink-soft); fon
 .cat { font: 600 11px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px 4px 9px; border-left: 3px solid currentColor; white-space: nowrap; }
 .cat.geo { color: var(--c-geo); } .cat.dsm { color: var(--c-dsm); } .cat.bldg { color: var(--c-bldg); }
 .cat.ortho { color: var(--c-ortho); } .cat.roads { color: var(--c-roads); } .cat.lake { color: var(--c-lake); }
+.cat.ice { color: var(--c-ice); } .cat.soil { color: var(--c-soil); } .cat.sea { color: var(--c-sea); } .cat.forest { color: var(--c-forest); } .cat.river { color: var(--c-river); }
 .ep { font: 12px/1.4 var(--mono); word-break: break-all; color: var(--ink-soft); }
 .note { color: var(--ink-soft); font-size: 13px; }
 .pill { font: 600 11px/1 var(--body); padding: 4px 8px; border-radius: 999px; white-space: nowrap; display: inline-block; }
@@ -101,7 +102,7 @@ footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--ru
 
 <div class="wrap">
   <header>
-    <span class="eyebrow">Orbis Terrarum · research, 1 October 2026</span>
+    <span class="eyebrow">Orbis Terrarum · research, 1 and 16 October 2026</span>
     <h1>Orbis Source Atlas</h1>
     <p class="lede">Open national services, country by country, that could give the rest of the world what Norway already has: measured building heights and roofs, sharp aerial photos, road widths and lanes, bedrock and lake depths. Eight research passes covered every region; each endpoint was tried from your own network.</p>
     <div class="legend">
@@ -111,6 +112,11 @@ footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--ru
       <span><i class="sw" style="background:var(--c-roads)"></i>Roads: width, lanes</span>
       <span><i class="sw" style="background:var(--c-geo)"></i>Bedrock geology</span>
       <span><i class="sw" style="background:var(--c-lake)"></i>Lake depths</span>
+      <span><i class="sw" style="background:var(--c-sea)"></i>Sea depths</span>
+      <span><i class="sw" style="background:var(--c-ice)"></i>Glaciers and ice</span>
+      <span><i class="sw" style="background:var(--c-soil)"></i>Soil and depth to rock</span>
+      <span><i class="sw" style="background:var(--c-forest)"></i>Forest type</span>
+      <span><i class="sw" style="background:var(--c-river)"></i>River widths</span>
     </div>
   </header>
 
@@ -179,18 +185,18 @@ footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--ru
     </div>
   </section>
 
-  <footer>Compiled from eight research passes on 1 October 2026. Orbis already uses Mapterhorn terrain (which includes many of these countries' lidar ground models), ESA WorldCover, Esri imagery, OpenStreetMap, GlobalBuildingAtlas, Open Waters, MET Norway and Open-Meteo; none of those are repeated here. In the mod since then: Macrostrat's map polygons (step 1, rock types worldwide) 21 orthophoto services (step 2; Berlin's and New York State's left out, see their rows) 11 lidar surface models (step 3) 5 building registers (step 4) 4 road databases (step 5) 2 lake surveys (step 6) and the German LoD2 import (step 7).</footer>
+  <footer>Compiled from eight research passes on 1 October 2026, and a ninth on 16 October 2026 (glaciers, soil, sea and lake depths, forest type, river widths, building footprints and 3D tunnels: the new categories). Orbis already uses Mapterhorn terrain (which includes many of these countries' lidar ground models), ESA WorldCover, Esri imagery, OpenStreetMap, GlobalBuildingAtlas, Open Waters, MET Norway and Open-Meteo; none of those are repeated here. In the mod since then: Macrostrat's map polygons (step 1, rock types worldwide) 21 orthophoto services (step 2; Berlin's and New York State's left out, see their rows) 11 lidar surface models (step 3) 5 building registers (step 4) 4 road databases (step 5) 2 lake surveys (step 6) and the German LoD2 import (step 7).</footer>
 </div>
 
 <script>
-const CATS = { geo: "Geology", dsm: "Surface model", bldg: "Buildings", ortho: "Photos", roads: "Roads", lake: "Lakes" };
+const CATS = { geo: "Geology", dsm: "Surface model", bldg: "Buildings", ortho: "Photos", roads: "Roads", lake: "Lakes", sea: "Sea depth", ice: "Glaciers", soil: "Soil", forest: "Forest type", river: "Rivers" };
 // [region, country, sub, cat, provider, protocol, endpoint, access(open|key|reg|blocked), detail, status(yes|part|no)]
 const R = [
 ["World","World","Macrostrat","geo","Macrostrat geologic units, best map per area","REST JSON point query","https://macrostrat.org/api/v2/geologic_units/map?lat={lat}&lng={lng}","open","Lithology, age, colour · 1:10M world, finer locally · CC BY 4.0","yes"],
 ["World","World","Macrostrat","geo","Macrostrat map polygons","Vector tiles","https://tiles.macrostrat.org/carto/{z}/{x}/{y}","open","CC BY 4.0 · in Orbis since 1 Oct 2026 (zoom 10/8/6/4 per place)","yes"],
 ["World","World","EOX","ortho","Sentinel-2 cloudless 2016 and 2017","WMTS","https://tiles.maps.eox.at/wmts/1.0.0/WMTSCapabilities.xml","open","10 m · only 2016/2017 are CC BY; later years non-commercial","yes"],
 ["World","World","GLOBathy","lake","GLOBathy modelled lake bathymetry","Download (16.7 GB)","https://springernature.figshare.com/articles/dataset/GLOBathy_Bathymetry_Rasters/13404635","open","1.4 M lakes, modelled · CC0 · Orbis already uses its depths","yes"],
-["World","World","Overture","bldg","Overture buildings (height, floors)","GeoParquet on S3","s3://overturemaps-us-west-2/release/2026-09-23.0/theme=buildings/","open","Heights sparse outside OSM · ODbL","yes"],
+["World","World","Overture","bldg","Overture buildings (OSM + Google + Microsoft + Esri footprints; height, floors, roof shape)","PMTiles (z0-14), GeoParquet on S3","https://tiles.overturemaps.org/<release>/buildings.pmtiles","open","Fills footprints where OSM is thin (Lagos z14 tile 1.1 MB, rural Kenya 2.5 KB) · ODbL · monthly releases, resolve the latest from stac.overturemaps.org · probed 16 Oct 2026","yes"],
 ["World","Arctic","Greenland, Alaska, Arctic Canada","dsm","PGC ArcticDEM mosaics","STAC + cloud GeoTIFF","https://stac.pgc.umn.edu/api/v1/","open","2 m stereo surface model · cite PGC","yes"],
 ["Africa","Africa","continent","ortho","Digital Earth Africa GeoMAD annual","WMS","https://ows.digitalearth.africa/wms","open","10 m · CC BY 4.0 · retry on CloudFront 403","yes"],
 ["Africa","Africa","continent","geo","BRGM/CGMW Geological Map of Africa","WMS (http only)","http://mapsref.brgm.fr/wxs/1GG/IGC35_CGMW_BRGM_Africa_Geology","open","1:10M","yes"],
@@ -337,11 +343,42 @@ const R = [
 ["Middle East","United Arab Emirates","Abu Dhabi","bldg","AD-SDI buildings (floors)","ArcGIS REST query","https://arcgis.sdi.abudhabi.ae/agspublish/rest/services/OpenData/ADSDI_OpenData/MapServer/353","open","785,004 buildings · terms not checked","yes"],
 ["Middle East","United Arab Emirates","Abu Dhabi","roads","AD-SDI road surface polygons","ArcGIS REST query","https://arcgis.sdi.abudhabi.ae/agspublish/rest/services/OpenData/ADSDI_OpenData/MapServer/111","open","True width from polygons","yes"],
 ["Africa","South Africa","Cape Town","bldg","Building footprints (BLD_HGT metres)","ArcGIS REST","https://citymaps.capetown.gov.za/agsext/rest/services/Theme_Based/ODP_SPLIT_6/MapServer/2","open","287,328 buildings · terms not checked","yes"],
-["Africa","South Africa","","ortho","NGI aerial imagery (via OSM proxy)","XYZ","https://aerial.openstreetmap.org.za/layer/ngi-aerial/{z}/{x}/{y}.jpg","reg","25–50 cm · proxy meant for OSM; ask NGI","yes"]
+["Africa","South Africa","","ortho","NGI aerial imagery (via OSM proxy)","XYZ","https://aerial.openstreetmap.org.za/layer/ngi-aerial/{z}/{x}/{y}.jpg","reg","25–50 cm · proxy meant for OSM; ask NGI","yes"],
+["World", "Global South", "Google", "bldg", "Open Buildings 2.5D Temporal v1 (presence, count, height 2016-2023)", "Tiled GeoTIFF on GCS (range reads)", "https://storage.googleapis.com/open-buildings-temporal-data/v1/", "open", "Heights for footprints that have none, 4 m effective · CC BY 4.0 or ODbL · per-UTM-zone manifests", "yes"],
+["World", "World", "Microsoft", "bldg", "Global ML Building Footprints (2026-08-13)", "CSV.gz per zoom-9 quadkey", "https://bfppub.blob.core.windows.net/$web/2026-08-13/dataset-links.csv", "open", "CDLA-Permissive-2.0 (no longer ODbL) · 130 MB per city file, no small-area read; already inside Overture", "part"],
+["Northern Europe", "Norway", "", "roads", "NVDB tunnel bores (object type 67, Tunnelløp), 3D", "REST API v4", "https://nvdbapiles.atlas.vegvesen.no/vegobjekter/api/v4/vegobjekter/67", "open", "Tunnel floor heights · NLOD · in Orbis since 16 Oct 2026", "yes"],
+["Western Europe", "France", "", "roads", "BD TOPO road sections under ground, 3D", "WFS 2.0 with CQL filter", "https://data.geopf.fr/wfs/ows?TYPENAMES=BDTOPO_V3:troncon_de_route", "open", "Tunnel floor heights where IGN knows them (-1000 = unknown: the Mont Blanc tunnel) · Licence Ouverte · in Orbis since 16 Oct 2026", "yes"],
+["Northern Europe", "Finland", "", "roads", "Digiroad bridge/underpass/tunnel links, 3D (silta_alik -11 = tunnel)", "OGC API Features", "https://avoinapi.vaylapilvi.fi/vaylatiedot/ogc/features/v1/collections/digiroad:dr_tielinkki_silta_alikulku_tunneli", "open", "Tunnel floor heights · CC BY 4.0 · in Orbis since 16 Oct 2026", "yes"],
+["Western Europe", "Switzerland", "", "roads", "swissTLM3D roads with tunnels, 3D", "Nationwide download only", "https://www.swisstopo.admin.ch/en/landscape-model-swisstlm3d", "open", "The web API (api3.geo.admin.ch) gives flat lines without a tunnel flag; 3D only in the multi-GB download", "part"],
+["World", "World", "GLIMS / NSIDC", "ice", "RGI 7.0 glacier outlines", "WFS (GLIMS GeoServer)", "https://www.glims.org/geoserver/ows?service=WFS&typeNames=GLIMS:RGI2000-v7.0-G-<region>", "open", "Where the ice is, with names · free, cite (CC BY 4.0 per the RGI guide) · Aletsch 0.05 x 0.1 deg: 17 glaciers, 220 KB, 2 s", "yes"],
+["World", "World", "Millan et al. 2022", "ice", "Global glacier ice thickness and velocity, 50 m", "Tiled GeoTIFF per RGI-6 region (range reads; OGGM mirror)", "https://cluster.klima.uni-bremen.de/~oggm/velocities/millan22/thickness/", "open", "Thick ice over real bedrock · NO LICENCE STATED: ask the authors before building", "part"],
+["World", "World", "Farinotti et al. 2019", "ice", "Consensus glacier ice thickness (per glacier, RGI 6)", "Regional zips, 12.5 GB", "https://www.research-collection.ethz.ch/handle/20.500.11850/315707", "open", "CC BY-NC-SA 4.0 (non-commercial): optional import only · ETH collection rate-limited (HTTP 429)", "part"],
+["Polar", "Antarctica, Greenland", "NSIDC", "ice", "BedMachine Antarctica v4, Greenland v7 (bed and ice thickness)", "netCDF / GeoTIFF behind NASA Earthdata login", "https://nsidc.org/data/nsidc-0756", "reg", "Ice sheets up to 4 km thick (beyond the world's height); every user would need a login", "no"],
+["World", "World", "ISRIC", "soil", "SoilGrids 2.0 (sand, silt, clay, soil groups; 6 depths to 2 m)", "WCS 2.0.1 (mapserv)", "https://maps.isric.org/mapserv?map=/map/sand.map&SERVICE=WCS", "open", "Surface block by real soil texture: sand, clay, mud, podzol · 250 m · CC BY 4.0 · about 0.7 KB a layer per region, 1 s · the REST API was down", "yes"],
+["World", "World", "ISRIC (Shangguan et al. 2017)", "soil", "Depth to bedrock (BDTICM), probability of rock within 2 m (BDRLOG)", "One 8.5 GB BigTIFF, row strips (range reads)", "https://files.isric.org/soilgrids/former/2017-03-10/data/BDTICM_M_250m_ll.tif", "open", "Dirt as thick as the real soil, rock at the surface where it is shallow · 250 m · ODbL · 0.6-1.1 MB per region (whole-planet rows)", "yes"],
+["World", "World", "ORNL DAAC (Pelletier et al. 2016)", "soil", "Soil and sedimentary deposit thickness, 1 km", "GeoTIFF behind NASA Earthdata login", "https://daac.ornl.gov/cgi-bin/dsviewer.pl?ds_id=1304", "reg", "Coarser than Shangguan; login needed", "no"],
+["Europe", "EEA38 + UK", "Copernicus CLMS", "forest", "CLC+ Backbone 2021 (needle-leaved, broadleaved deciduous, broadleaved evergreen trees)", "ArcGIS ImageServer exportImage", "https://image.discomap.eea.europa.eu/arcgis/rest/services/CLC_plus/CLMS_CLCplus_RASTER_2021_010m_eu/ImageServer", "open", "Conifer or broadleaf trees by the real map · 10 m · free with attribution · about 5 KB per region", "yes"],
+["Europe", "EEA38", "Copernicus CLMS", "forest", "HRL Dominant Leaf Type / Forest Type 2018", "ArcGIS ImageServer", "https://copernicus.discomap.eea.europa.eu/arcgis/rest/services/GioLandPublic/HRL_DominantLeafType2018/ImageServer", "open", "10 m · superseded for this by CLC+ 2021", "yes"],
+["North America", "USA", "USGS LANDFIRE", "forest", "Existing Vegetation Type (LF2024)", "ArcGIS ImageServer exportImage", "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_EVT_CONUS/ImageServer", "open", "Conifer, hardwood, mixed by the real map · 30 m · public domain · about 2 KB per region", "yes"],
+["World", "World", "Copernicus Global Land Service", "forest", "CGLS-LC100 v3.0.1 2019 (evergreen/deciduous, needle/broad leaf forest classes)", "BigTIFF on Zenodo (range reads)", "https://zenodo.org/records/3939050", "open", "Global fallback for leaf type · 100 m · CC BY 4.0 · needs the BigTIFF tile index read once", "yes"],
+["Northern Europe", "Norway", "NIBIO", "forest", "SR16 forest resource map (spruce, pine, deciduous; tree height)", "WMS (colours to decode); WCS answers 400", "https://wms.nibio.no/cgi-bin/sr16", "open", "Real species and heights at 16 m · NLOD", "yes"],
+["Northern Europe", "Sweden", "SLU", "forest", "SLU Skogskarta 2018 (share of each species)", "3.5 GB strip GeoTIFFs", "https://gis.slu.se/data/slu_forest_map/2018/data/", "open", "No licence stated; files not tiled", "part"],
+["World", "World", "Allen & Pavelsky (GRWL)", "river", "Global River Widths from Landsat V01.01 (summary statistics V01.02)", "Zip download (43 MB summary, 3.1 GB vectors)", "https://zenodo.org/records/1297434", "open", "Real widths of rivers 30 m and wider for OSM river lines · CC BY 4.0 · one-time import", "yes"],
+["World", "World", "SWOT (SWORD)", "river", "SWOT River Database v17c (width at nodes every 200 m)", "Zip download, 3.7-4.2 GB per format", "https://zenodo.org/records/22259077", "open", "Finer than GRWL along each river · CC BY 4.0 · large import", "yes"],
+["World", "World", "MERIT Hydro", "river", "MERIT Hydro river width, 90 m", "Download after registration", "http://hydro.iis.u-tokyo.ac.jp/~yamadai/MERIT_Hydro/", "reg", "CC BY-NC 4.0 or ODbL share-alike; password-gated", "no"],
+["World", "World", "Open Waters", "sea", "Seascape at zoom 15-16 (NOAA S-102, UK nearshore surveys, NZ coastal lidar, Lakes Geneva and Neuchâtel)", "Terrarium WebP tiles", "https://tiles.openwaters.io/seascape/{z}/{x}/{y}.webp", "open", "1-16 m sea floor where those surveys are; elsewhere zoom 15-16 is the coarser data enlarged · CC BY 4.0 · Orbis reads zoom 14 today", "yes"],
+["North America", "USA", "NOAA", "sea", "BlueTopo (2-16 m, NAVD88)", "Cloud GeoTIFFs on S3 + tile index", "https://noaa-ocs-nationalbathymetry-pds.s3.amazonaws.com/BlueTopo/", "open", "Same datum as US land heights (Seascape's S-102 is on low water: a 0.5-3 m step at coasts possible) · public domain style, credit NOAA", "yes"],
+["Northern Europe", "Norway", "Kartverket", "sea", "Sjøkart Dybdedata soundings (Dybdepunkt)", "WFS (GML only)", "https://wfs.geonorge.no/skwms1/wfs.dybdedata", "open", "Denser than the 50 m grid in harbours · CC BY 4.0 · heavy GML, contour layers come back whole", "yes"],
+["Northern Europe", "Sweden", "Sjöfartsverket", "sea", "Sea depth data", "Restricted", "https://www.sjofartsverket.se/", "blocked", "Classified; needs a dissemination permit", "no"],
+["Oceania", "Australia", "Geoscience Australia", "sea", "AusSeabed survey grids (often 1-5 m, patchy)", "S3 per survey", "https://ausseabed-public-warehouse-bathymetry.s3.ap-southeast-2.amazonaws.com/", "open", "CC BY 4.0 · Seascape candidate", "part"],
+["Western Europe", "Switzerland", "", "lake", "swissBATHY3D (22 lakes, 1-3 m)", "STAC whole-lake zips", "https://data.geo.admin.ch/browser/index.html#/collections/ch.swisstopo.swissbathy3d", "open", "15-390 MB per lake (Lucerne) · free with credit · Geneva and Neuchâtel already in Seascape", "yes"],
+["North America", "Canada", "Québec", "lake", "GBLQ lake bathymetry (about 2,210 lakes as soundings and isobaths)", "Zip per lake on Azure + 41 MB index", "https://www.donneesquebec.ca/recherche/dataset/bathymetries-lacs", "open", "About 1 MB per lake · CC BY 4.0 · fits Orbis's contour code", "yes"],
+["North America", "USA", "Michigan", "lake", "Inland lake contours (25,492)", "ArcGIS FeatureServer", "https://services3.arcgis.com/Jdnp1TjADvSDxMAX/arcgis/rest/services/DNRHydrologyOPENDATA/FeatureServer/1", "open", "About 80 KB per region · catalogue says no restrictions but no licence text: ask the DNR", "yes"],
+["North America", "Canada", "British Columbia", "lake", "Lake bathymetry contours", "WFS", "https://openmaps.gov.bc.ca/geo/pub/wfs", "open", "Access Only, not an open licence", "part"]
 ];
 
 const STATUS = { yes: ["Answered", "v-yes"], part: ["Partly", "v-part"], no: ["No answer", "v-no"] };
-const ACCESS = { open: "Open, no key", key: "Free key or account", reg: "Ask first" };
+const ACCESS = { open: "Open, no key", key: "Free key or account", reg: "Ask first", blocked: "Restricted" };
 const state = { cat: "", region: "", access: "", q: "" };
 try { const s = JSON.parse(localStorage.getItem("atlas-filters") || "{}"); Object.assign(state, s); } catch (e) {}
 
