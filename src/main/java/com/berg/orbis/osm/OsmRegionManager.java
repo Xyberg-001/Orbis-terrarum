@@ -519,6 +519,8 @@ public final class OsmRegionManager {
                 data = provider.getData(south, west, north, east);
                 break;
             } catch (IOException e) {
+                // A replaced model's region stopping, not a failure (the new model fetches it): the worker stops quietly.
+                if (shutdown) throw new java.util.concurrent.CancellationException("world model replaced");
                 attempt++;
                 failed.incrementAndGet();
                 System.err.println("[orbis] Region " + rx + "," + rz + " OSM fetch failed (" + e.getMessage() + ")");

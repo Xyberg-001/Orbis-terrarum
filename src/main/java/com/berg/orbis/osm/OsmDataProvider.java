@@ -181,6 +181,7 @@ public class OsmDataProvider {
                 endpointIndex.incrementAndGet();
                 System.err.println("[orbis] " + e.getMessage() + " -- switching endpoint, cooling down " + (wait / 1000) + " s");
             } catch (IOException e) {
+                if (closed) throw e; // the world model was replaced: the endpoint did not fail, nothing to log
                 last = e;
                 passOver(endpoint, PASS_OVER_MS);
                 endpointIndex.incrementAndGet();
