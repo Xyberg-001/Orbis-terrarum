@@ -19,6 +19,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <li>A lake surveyed by NVE (Norway) gets its real bed: the smoothest surface through its depth contours and
  * sounded points with the shore at 0 m, and past the deepest contour down to the lake's recorded greatest
  * depth.</li>
+ * <li>A lake whose bed Open Waters' Seascape holds (the Great Lakes, Geneva, Neuchâtel, the Bodensee, Tahoe, Baikal,
+ * Victoria, Winnipeg...: depth below the lake's surface in its tiles, 0 where it has none) gets that bed the same way,
+ * from a grid of its depths across the lake, where they cover at least half of it.</li>
  * <li>Any other lake or reservoir is a bowl: its depth grows with the distance from the shore (islands included),
  * reaching the greatest depth at the point furthest from any shore, as GLOBathy builds its beds. The greatest
  * depth is NVE's figure, else GLOBathy's (imported per area), else an estimate from the lake's area.</li>
@@ -51,6 +54,17 @@ public final class WaterBeds {
 
     public WaterBeds withSurveys(LakeSurveys surveys) {
         this.surveys = surveys;
+        return this;
+    }
+
+    /** Seascape's tiles, for lake beds it holds (new worlds); null without. */
+    private volatile com.berg.orbis.dem.TileSource lakeFloors;
+    private final Map<Integer, com.berg.orbis.dem.BicubicElevationSampler> floorSamplers = new ConcurrentHashMap<>();
+    /** Set while a lake is shaped when Seascape's tiles could not be read (per thread: regions are shaped in parallel). */
+    private final ThreadLocal<Boolean> lakeFloorsFailed = ThreadLocal.withInitial(() -> false);
+
+    public WaterBeds withLakeFloors(com.berg.orbis.dem.TileSource seascape) {
+        this.lakeFloors = seascape;
         return this;
     }
 
@@ -98,9 +112,11 @@ public final class WaterBeds {
             System.err.println("[orbis] Lake bed of " + b.area().id() + " not shaped: " + e);
             return null;
         }
-        // Not kept when NVE was failing: the plain bowl built meanwhile was used for the lake's other regions too, which then met the
-        // surveyed bed of regions built later with a step
-        if (s != null && !(nve != null && nve.failing())) {
+        // Not kept when NVE or Seascape was failing: the plain bowl built meanwhile was used for the lake's other regions too, which
+        // then met the surveyed bed of regions built later with a step
+        boolean failed = lakeFloorsFailed.get();
+        lakeFloorsFailed.set(false);
+        if (s != null && !(nve != null && nve.failing()) && !failed) {
             if (shapes.size() > 24) shapes.clear(); // a surveyed lake holds a depth grid of up to 4 MB
             shapes.put(b.area().id(), s);
         }
@@ -167,6 +183,12 @@ public final class WaterBeds {
         if (b.kind() == WaterFeature.Kind.RIVER) {
             return new Bowl(field, riverDepthM(2 * field.inradius() * metresPerBlock));
         }
+        // Seascape's lake beds.
+        com.berg.orbis.dem.TileSource floors = lakeFloors;
+        if (floors != null && b.kind() != WaterFeature.Kind.POND && areaKm2 >= 0.2) {
+            List<NveLakes.Sounding> grid = seascapeDepths(field, floors, (south + north) / 2);
+            if (grid != null) return new Surveyed(field, grid, Double.NaN, rings, mapper);
+        }
         // GLOBathy: the lake whose outlet lies on (or just off) this shore and whose area matches.
         if (global != null) {
             double pad = 0.01;
@@ -186,6 +208,36 @@ public final class WaterBeds {
             if (!Double.isNaN(depth) && depth > 0) return new Bowl(field, depth);
         }
         return new Bowl(field, estimateMaxDepthM(b.kind(), areaKm2));
+    }
+
+    /**
+     * Seascape's depths over a lake on an even grid (at most about 150 x 150 points, from the zoom whose pixels are about
+     * that far apart), or null where they cover less than half of it or the tiles cannot be read.
+     */
+    private List<NveLakes.Sounding> seascapeDepths(DistanceField field, com.berg.orbis.dem.TileSource floors, double midLat) {
+        int stride = Math.max(1, (int) Math.ceil(Math.max(field.w, field.h) / 150.0));
+        double spacingM = stride * field.cell * metresPerBlock;
+        double pixelZ0 = 40_075_016.0 * Math.cos(Math.toRadians(midLat)) / 512;
+        int zoom = (int) Math.max(6, Math.min(14, Math.floor(Math.log(pixelZ0 / Math.max(1, spacingM)) / Math.log(2))));
+        com.berg.orbis.dem.BicubicElevationSampler s = floorSamplers.computeIfAbsent(zoom, z -> new com.berg.orbis.dem.BicubicElevationSampler(floors, z));
+        List<NveLakes.Sounding> out = new ArrayList<>();
+        int inside = 0;
+        try {
+            for (int gz = stride / 2; gz < field.h; gz += stride) {
+                for (int gx = stride / 2; gx < field.w; gx += stride) {
+                    if (field.dist[gz * field.w + gx] <= 1) continue; // the shore stays at 0 m
+                    inside++;
+                    double x = field.minX + (gx + 0.5) * field.cell, z = field.minZ + (gz + 0.5) * field.cell;
+                    double[] ll = mapper.toLatLonExact(x, z);
+                    double v = s.sampleMeters(ll[0], ll[1]);
+                    if (!Double.isNaN(v) && v < -0.5) out.add(new NveLakes.Sounding(ll[0], ll[1], -v));
+                }
+            }
+        } catch (RuntimeException e) {
+            lakeFloorsFailed.set(true);
+            return null;
+        }
+        return inside >= 8 && out.size() * 2 >= inside ? out : null;
     }
 
     /** Greatest depth (m) of a lake nobody measured: grows with its area (3 m for a small tarn, about 8 m at 1 km², 16 m at 10 km²). */

@@ -775,8 +775,12 @@ public class OrbisMod implements ModInitializer {
                 if (global != null) System.out.println("[orbis] Lake depths found in lake-depths/: GLOBathy greatest depths for " + global.size() + " lakes (CC0)");
                 com.berg.orbis.water.LakeSurveys surveys = cfg.lakeSurveySources == null || cfg.lakeSurveySources.isEmpty() ? null
                         : new com.berg.orbis.water.LakeSurveys(cfg, data.resolve("lake-depth-cache"));
-                rasterizer.setWaterBeds(new com.berg.orbis.water.WaterBeds(mapper, cfg.metersPerBlock, nve, global)
-                        .withSurveys(surveys == null || surveys.isEmpty() ? null : surveys));
+                com.berg.orbis.water.WaterBeds beds = new com.berg.orbis.water.WaterBeds(mapper, cfg.metersPerBlock, nve, global)
+                        .withSurveys(surveys == null || surveys.isEmpty() ? null : surveys);
+                if (cfg.seascapeLakes && cfg.bathymetryTileUrl != null && cfg.bathymetryTileUrl.contains("openwaters")) {
+                    beds.withLakeFloors(new DemTileProvider(data.resolve("dem-cache"), cfg.bathymetryTileUrl, 64));
+                }
+                rasterizer.setWaterBeds(beds);
             }
             // The rock under each place: NGU's bedrock map in Norway, Macrostrat's world map everywhere else (and
             // where NGU has nothing). Each keeps its downloads in a folder of its own.

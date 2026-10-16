@@ -190,6 +190,11 @@ public class OrbisConfig {
      */
     public boolean riverWidths = true;
     /**
+     * Lake beds from Open Waters' Seascape where it holds them (the Great Lakes, Geneva, Neuchâtel, the Bodensee, Tahoe, Baikal,
+     * Victoria...), after NVE's and the national surveys. New worlds take this value; a world keeps its own.
+     */
+    public boolean seascapeLakes = true;
+    /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
      * vanilla's per real square kilometre; 1 keeps vanilla's.
@@ -1037,12 +1042,13 @@ public class OrbisConfig {
             surveyedTunnels = false;
         }
         if (configVersion < 20 && dedicatedServer()) {
-            // As above: a server's world keeps its ground, woods, buildings and rivers (set groundLayers, forestTypes,
-            // overtureBuildings and riverWidths to true for a new world).
+            // As above: a server's world keeps its ground, woods, buildings, rivers and lakes (set groundLayers, forestTypes,
+            // overtureBuildings, riverWidths and seascapeLakes to true for a new world).
             groundLayers = false;
             forestTypes = false;
             overtureBuildings = false;
             riverWidths = false;
+            seascapeLakes = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.
