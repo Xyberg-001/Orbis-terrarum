@@ -71,6 +71,12 @@ public final class RegionRaster {
     public byte[] seaShore;
     /** Depth of the lake or river bed below the water surface per column, in blocks (0 = the water body's own depth); null when not shaped. */
     public short[] bedDepth;
+    /** The soil under each column (geology.Soils.pack: profile and texture, 0 = unknown: dirt as before); null where no soil map covers the region. */
+    public byte[] soil;
+    /** Blocks of loose ground (soil and sediment) between the top block and the rock, plus one (0 = unknown: three); null when not known. */
+    public byte[] soilDepth;
+    /** Blocks of glacier ice under the top block (0 = none or unknown: three of packed ice); null where no glacier outline covers the region. */
+    public short[] iceDepth;
     /** The streets' colour in this region's aerial photo (0xRRGGBB), the neutral reference for roof colours; -1 = none. */
     public int imageryStreetColour = -2;
 
@@ -215,12 +221,26 @@ public final class RegionRaster {
         return rock == null ? 0 : rock[idx];
     }
 
+    public int soilAt(int idx) {
+        return soil == null ? 0 : soil[idx] & 0xFF;
+    }
+
+    /** Blocks of loose ground between the top block and the rock, or -1 when not known. */
+    public int soilDepthAt(int idx) {
+        return soilDepth == null ? -1 : (soilDepth[idx] & 0xFF) - 1;
+    }
+
+    public int iceDepthAt(int idx) {
+        return iceDepth == null ? 0 : iceDepth[idx];
+    }
+
     public int roadDirAt(int idx) {
         return roadDir[idx] & 0xFF;
     }
 
     public long approxBytes() {
         long n = (long) stride * stride;
-        return n * (1 + 2 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + (roadUnder != null ? 5 : 0) + (rock != null ? 1 : 0) + (bedDepth != null ? 2 : 0));
+        return n * (1 + 2 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + (roadUnder != null ? 5 : 0) + (rock != null ? 1 : 0) + (bedDepth != null ? 2 : 0)
+                + (soil != null ? 1 : 0) + (soilDepth != null ? 1 : 0) + (iceDepth != null ? 2 : 0));
     }
 }

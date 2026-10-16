@@ -21,7 +21,7 @@ import java.util.List;
 public class OrbisConfig {
 
     /** Bumped when defaults change in a way that an old file should pick up (network settings, world height). */
-    public static final int CURRENT_CONFIG_VERSION = 19;
+    public static final int CURRENT_CONFIG_VERSION = 20;
     public int configVersion = CURRENT_CONFIG_VERSION;
 
     /** Fixed by data/minecraft/dimension_type/overworld.json: the engine maximum of Y -2032..2031. */
@@ -166,6 +166,12 @@ public class OrbisConfig {
      * a world keeps its own.
      */
     public boolean surveyedTunnels = true;
+    /**
+     * The ground between the grass and the rock as the soil maps have it (SoilGrids' soil groups and texture, Shangguan's
+     * depth to bedrock): peat, podzol, clay, sand or red earth, as deep as it really is, rock under cliffs, and glaciers as
+     * thick as their size and shape make them (Randolph Glacier Inventory). New worlds take this value; a world keeps its own.
+     */
+    public boolean groundLayers = true;
     /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
@@ -1012,6 +1018,10 @@ public class OrbisConfig {
         if (configVersion < 19 && dedicatedServer()) {
             // As above: a server's world keeps its tunnels (set surveyedTunnels to true for a new world).
             surveyedTunnels = false;
+        }
+        if (configVersion < 20 && dedicatedServer()) {
+            // As above: a server's world keeps its ground (set groundLayers to true for a new world).
+            groundLayers = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.

@@ -114,6 +114,9 @@ public final class DataSources {
         l.add(world("overpass", "OpenStreetMap downloads (Overpass)", List.of("osm-cache"), null));
         l.add(world("worldcover", "Land cover (ESA WorldCover)", List.of("worldcover-cache"), null));
         l.add(world("macrostrat", "Rock types (Macrostrat)", List.of("geology-macrostrat-cache"), null));
+        l.add(world("soilgrids", "Soil types (SoilGrids)", List.of("soil-cache"), null));
+        l.add(world("soil-depth", "Soil depth to bedrock (SoilGrids 2017)", List.of("soil-depth-cache"), null));
+        l.add(world("rgi-glaciers", "Glacier outlines (RGI 7)", List.of("glacier-cache"), null));
         l.add(world("map-backgrounds", "Map and preview backgrounds", List.of("map-tile-cache", "preview", "outline-cache"), null));
         // ---- photos (worldwide or national, as configured)
         for (OrbisConfig.ImagerySource s : c.imagerySources) {

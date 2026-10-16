@@ -790,6 +790,11 @@ public class OrbisMod implements ModInitializer {
                 }
                 if (!maps.isEmpty()) rasterizer.setBedrock(new com.berg.orbis.geology.Rocks(maps));
             }
+            // What the ground is made of under the grass, how deep it goes, and how thick the glaciers are.
+            if (cfg.groundLayers) {
+                rasterizer.setGround(new com.berg.orbis.geology.Soils(data.resolve("soil-cache"), data.resolve("soil-depth-cache")),
+                        new com.berg.orbis.geology.Glaciers(data.resolve("glacier-cache")));
+            }
             if (cfg.nvdbRoadWidths || cfg.surveyedTunnels) rasterizer.setNvdb(new com.berg.orbis.osm.NvdbRoads.Store(data.resolve("nvdb-cache")));
             if (cfg.surveyedTunnels) rasterizer.setTunnelSurveys(new com.berg.orbis.osm.TunnelSurveys(data.resolve("tunnel-survey-cache")));
             if (cfg.nvdbRoadWidths && cfg.roadSources != null && !cfg.roadSources.isEmpty()) {

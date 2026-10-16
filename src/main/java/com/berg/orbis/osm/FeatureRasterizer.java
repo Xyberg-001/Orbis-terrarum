@@ -141,6 +141,15 @@ public final class FeatureRasterizer {
         this.bedrock = map;
     }
 
+    /** The soil map (what the ground is made of and how deep it goes) and the glacier outlines (how thick the ice is); either may be null. */
+    private volatile com.berg.orbis.geology.Soils soils;
+    private volatile com.berg.orbis.geology.Glaciers glaciers;
+
+    public void setGround(com.berg.orbis.geology.Soils soils, com.berg.orbis.geology.Glaciers glaciers) {
+        this.soils = soils;
+        this.glaciers = glaciers;
+    }
+
     public void setElevationMeters(Elevation metres) {
         this.elevationMeters = metres;
     }
@@ -300,6 +309,8 @@ public final class FeatureRasterizer {
         stepDone(st, "canopy");
         if (bedrock != null && cfg.bedrockTypes) rasterizeBedrock(r);
         stepDone(st, "rock");
+        if (cfg.groundLayers && (soils != null || glaciers != null)) rasterizeGround(r);
+        stepDone(st, "soil");
         st.report(regionX, regionZ);
         return r;
     }
@@ -382,6 +393,69 @@ public final class FeatureRasterizer {
             }
         }
         if (any) r.rock = rock;
+    }
+
+    /**
+     * Each column's soil (what the ground under the top block is made of, and how many blocks of it lie over the rock) and,
+     * on glaciers the inventory knows, how thick the ice is. The soil map's 250 m pixels meet along a dithered seam, not a
+     * staircase; the depth is blended between them and rounded up or down per column, so a layer boundary is never a flat
+     * shelf across a hillside.
+     */
+    private void rasterizeGround(RegionRaster r) {
+        double[] a = mapper.toLatLonExact(r.originX, r.originZ + r.stride);
+        double[] b = mapper.toLatLonExact(r.originX + r.stride, r.originZ);
+        double south = Math.min(a[0], b[0]), west = Math.min(a[1], b[1]), north = Math.max(a[0], b[0]), east = Math.max(a[1], b[1]);
+        double vmpb = cfg.verticalMetersPerBlock();
+        int n = r.stride * r.stride;
+        com.berg.orbis.geology.Soils soilMap = soils;
+        com.berg.orbis.geology.Soils.Area area = soilMap == null ? null : soilMap.area(south - 0.01, west - 0.01, north + 0.01, east + 0.01);
+        if (area != null) {
+            byte[] profile = area.hasProfiles() ? new byte[n] : null;
+            byte[] depth = area.hasDepth() ? new byte[n] : null;
+            boolean anyProfile = false, anyDepth = false;
+            final double pixel = 0.0020833;
+            for (int dz = 0; dz < r.stride; dz++) {
+                for (int dx = 0; dx < r.stride; dx++) {
+                    int idx = dz * r.stride + dx;
+                    int x = r.originX + dx, z = r.originZ + dz;
+                    double[] ll = mapper.toLatLonExact(x + 0.5, z + 0.5);
+                    long h = groundHash(x, z);
+                    if (profile != null) {
+                        double jLat = ((h & 0xFFFF) / 65535.0 - 0.5) * pixel, jLon = (((h >>> 16) & 0xFFFF) / 65535.0 - 0.5) * pixel;
+                        int code = area.soilAt(ll[0] + jLat, ll[1] + jLon);
+                        profile[idx] = (byte) code;
+                        anyProfile |= code != 0;
+                    }
+                    if (depth != null) {
+                        double m = area.depthAt(ll[0], ll[1]);
+                        if (!Double.isNaN(m)) {
+                            int blocks = (int) Math.floor(m / vmpb + ((h >>> 32) & 0xFFFF) / 65536.0);
+                            depth[idx] = (byte) (Math.max(0, Math.min(125, blocks)) + 1);
+                            anyDepth = true;
+                        }
+                    }
+                }
+            }
+            if (anyProfile) r.soil = profile;
+            if (anyDepth) r.soilDepth = depth;
+        }
+        com.berg.orbis.geology.Glaciers ice = glaciers;
+        if (ice != null) {
+            byte glacier = LandCover.GLACIER.code();
+            java.util.function.IntPredicate iceCell = idx -> r.landCover[idx] == glacier
+                    || com.berg.orbis.imagery.GroundClass.byCode(r.groundClass[idx]) == com.berg.orbis.imagery.GroundClass.SNOW;
+            boolean any = false;
+            for (int idx = 0; idx < n && !any; idx++) any = iceCell.test(idx);
+            if (any) r.iceDepth = ice.iceDepth(r, mapper, vmpb, iceCell);
+        }
+    }
+
+    private static long groundHash(int x, int z) {
+        long h = x * 0x9E3779B97F4A7C15L ^ z * 0xC2B2AE3D27D4EB4FL ^ 0x5011L;
+        h ^= h >>> 31;
+        h *= 0xBF58476D1CE4E5B9L;
+        h ^= h >>> 29;
+        return h;
     }
 
     // =====================================================================
