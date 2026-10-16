@@ -674,7 +674,28 @@ Kartverket's surface model (building heights) stays.
   its own height band (`RegionRaster.stacked`); before, one part per column
   won and the Kaaba stood as black ribs of different heights with gold blocks
   floating. A thin part (a 0.4 m roof slab) is one block at its height instead
-  of a wall from the ground. A part with no kind of its own takes its
+  of a wall from the ground. Every part stands on its building's ground (the
+  outline's base: heights count from it), not on the lowest point under its
+  own footprint: in the Great Mosque of Mecca, in a valley, a minaret's 36 m
+  began 7 blocks above the roof it stands on and galleries and domes hung
+  over their halls. A part with no height of its own (the storey guess) under
+  a part standing higher reaches up to it. Two parts starting at the same
+  height are one or the other (the newer wins: a tower drawn inside a lower
+  block); a part starting higher stands on the lower one even where their
+  mapped heights overlap a little (Hagia Sophia's domes start at 23 m on a
+  hall mapped to 25 m); a part wholly inside another's band adds nothing.
+  Where a part over its own outline has nothing mapped under it, the outline
+  stays below it up to where the part begins (St Peter's drum from 54 m,
+  Hagia Sophia's domes from 23 m: the church's inside is left to the outline),
+  except under a tower, an arch, a bridge or a roof, where the space is open
+  (the Eiffel Tower's arches). A building (not a part) starting above the
+  ground over another one stands on it, on its ground (hotel towers over
+  their podium in Mecca). Measured on 21 3D-mapped landmarks: columns whose
+  lowest building starts in the air fell from 8,831 to 1,241 at St Peter's,
+  2,966 to 193 at Hagia Sophia, 3,180 to 44 at the Empire State Building; what
+  remains is meant to be raised (canopies on posts, bridge decks, the Arc de
+  Triomphe's vault, Bernini's colonnade roof). `windows=no` is honoured and
+  `building:facade:colour` read as the wall colour. A part with no kind of its own takes its
   building's default materials (all parts of a building alike); a shrine
   (`building=religious` or `shrine`) drawn in parts without storeys, and a
   `building=wall`, get no windows. Checked against 57 landmarks worldwide

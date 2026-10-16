@@ -15,7 +15,7 @@ public final class BuildingFeature {
     public final Map<String, String> tags;
     public final String type;
     /** Wall height in blocks above the base, roof excluded. */
-    public final int heightBlocks;
+    public int heightBlocks; // raised once the parts are in for a part with no height of its own under a part standing on it
     /** For building:part elements that start above the ground (bridges between towers, cantilevers). */
     public final int minHeightBlocks;
     public final int levels;

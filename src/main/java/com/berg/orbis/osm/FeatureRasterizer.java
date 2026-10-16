@@ -3115,8 +3115,14 @@ public final class FeatureRasterizer {
                 withParts.add(parent.id());
             }
         }
-        for (OsmArea a : mains) rasterizeBuilding(r, a, false, style, atlas, null, withParts, withMinarets);
-        for (OsmArea a : parts) rasterizeBuilding(r, a, true, style, atlas, parentOf.get(a.id()), withParts, withMinarets);
+        for (OsmArea a : mains) rasterizeBuilding(r, a, false, style, atlas, null, withParts, withMinarets, Map.of());
+        // Every part stands on its building's ground (heights and min_height count from it, as the 3D building scheme has
+        // it): each part found its own from the lowest point under it, and in the Great Mosque of Mecca, in a valley, a
+        // minaret's 36 m began 7 blocks above the roof it stands on, and galleries and domes hung over their halls.
+        Map<Long, Integer> baseOf = new HashMap<>();
+        for (BuildingFeature b : r.buildings) if (!b.part) baseOf.putIfAbsent(b.id, b.baseY);
+        for (OsmArea a : parts) rasterizeBuilding(r, a, true, style, atlas, parentOf.get(a.id()), withParts, withMinarets, baseOf);
+        if (r.stacked != null) raiseUnmeasuredParts(r);
         if (!withParts.isEmpty()) openOutlineGaps(r, withParts);
         if (cfg.buildingDoors) placeDoors(r);
     }
@@ -3208,9 +3214,10 @@ public final class FeatureRasterizer {
      * @param parent    a part's building outline, or null
      * @param withParts the outlines that have parts in them (drawn by their parts)
      * @param withMinarets the outlines with their real minarets mapped beside or in them
+     * @param baseOf       the outlines' base Y by id (a part stands on its outline's)
      */
     private void rasterizeBuilding(RegionRaster r, OsmArea area, boolean part, Materials.Style style, HeightStore.Loaded atlas,
-                                   OsmArea parent, java.util.Set<Long> withParts, java.util.Set<Long> withMinarets) {
+                                   OsmArea parent, java.util.Set<Long> withParts, java.util.Set<Long> withMinarets, Map<Long, Integer> baseOf) {
         if (r.buildings.size() >= Short.MAX_VALUE - 1) return;
         Map<String, String> tags = area.tags();
         List<List<double[]>> rings = new ArrayList<>();
@@ -3321,6 +3328,10 @@ public final class FeatureRasterizer {
         if (r.hasCoastline) {
             int cidx = r.index((int) Math.floor(cx), (int) Math.floor(cz));
             if (cidx >= 0 && r.isSea(cidx) && baseY < cfg.seaLevelY) baseY = cfg.seaLevelY;
+        }
+        if (part && parent != null) {
+            Integer parentBase = baseOf.get(parent.id());
+            if (parentBase != null) baseY = parentBase;
         }
 
         // No height tags? Measure the building from a lidar surface model when one covers it.
@@ -3447,7 +3458,7 @@ public final class FeatureRasterizer {
         boolean shrine = isShrine(tags) || (part && parent != null && isShrine(parent.tags()));
         // A wall (the Western Wall), ruins, tombs, pyramids, monuments and arches have no windows either (rows of glass
         // ran up the Mayan pyramid at Chichen Itza).
-        BlockState window = (shrine && !tags.containsKey("building:levels")) || solidMonument(tags, type)
+        BlockState window = (shrine && !tags.containsKey("building:levels")) || solidMonument(tags, type) || "no".equals(tags.get("windows"))
                 || (part && parent != null && solidMonument(parent.tags(), Materials.buildingType(parent.tags()))) ? mats.wall() : mats.window();
 
         BuildingFeature bf = new BuildingFeature(area.id(), tags, type, wallHeight, minHeight, levels, shape, roofHeight,
@@ -3464,20 +3475,64 @@ public final class FeatureRasterizer {
         final int[] bbox = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE};
         final int[] count = {0};
         final boolean elevatedPart = part && minHeight > 0;
+        // A building (not a part) starting above the ground over another one stands on it, from its ground (hotel towers
+        // mapped from 25 and 40 m over their podium in Mecca stood in the air, the podium gone under them).
+        final boolean elevatedMain = !part && minHeight > 0 && !roofOnly;
+        final boolean[] onPodium = {false};
+        // The outline kept under this part where nothing else is mapped below it (made on first need, see below).
+        final BuildingFeature[] under = {null};
+        final short[] underCode = {0};
         fillRings(r, rings, (idx, x, z) -> {
             if (idx < 0) return;
-            if (part && r.building[idx] != 0) {
-                BuildingFeature existing = r.buildings.get(r.building[idx] - 1);
-                // Over another part, or over its own outline (a spire mapped as a part on a tower mapped only as the outline),
-                // a part whose height band does not meet the one below stands on it.
-                boolean ownOutline = !existing.part && parent != null && existing.id == parent.id();
-                if ((existing.part || ownOutline) && stack(r, idx, code, bf)) {
+            if (elevatedMain && r.building[idx] != 0) {
+                BuildingFeature below = r.buildings.get(r.building[idx] - 1);
+                if (!onPodium[0]) {
+                    bf.baseY = below.baseY;
+                    onPodium[0] = true;
+                }
+                if (bf.baseY == below.baseY && stackPart(r, idx, code, bf)) {
                     bbox[0] = Math.min(bbox[0], x);
                     bbox[1] = Math.min(bbox[1], z);
                     bbox[2] = Math.max(bbox[2], x);
                     bbox[3] = Math.max(bbox[3], z);
                     count[0]++;
                     return;
+                }
+            }
+            if (part && r.building[idx] != 0) {
+                BuildingFeature existing = r.buildings.get(r.building[idx] - 1);
+                // Over another part, or over its own outline (a spire mapped as a part on a tower mapped only as the outline),
+                // a part whose height band does not meet the one below stands on it.
+                boolean ownOutline = !existing.part && parent != null && existing.id == parent.id();
+                if (existing.part ? stackPart(r, idx, code, bf) : ownOutline && stack(r, idx, code, bf)) {
+                    bbox[0] = Math.min(bbox[0], x);
+                    bbox[1] = Math.min(bbox[1], z);
+                    bbox[2] = Math.max(bbox[2], x);
+                    bbox[3] = Math.max(bbox[3], z);
+                    count[0]++;
+                    return;
+                }
+                // Over its own building's outline, where nothing is mapped under it: the outline stays below it, up to
+                // where the part begins. The domes of St Peter's and Hagia Sophia are mapped from 54 and 23 m with the
+                // church's inside left to the outline, and hung in the air once parts replaced their outline. Not
+                // under a tower, an arch, a bridge or a roof, where the space below is open (the Eiffel Tower's arches).
+                if (ownOutline && elevatedPart && enclosedBelow(existing.type)) {
+                    if (under[0] == null) {
+                        under[0] = outlineUnder(existing, bf.minHeightBlocks);
+                        r.buildings.add(under[0]);
+                        underCode[0] = (short) r.buildings.size();
+                    }
+                    r.building[idx] = underCode[0];
+                    r.buildingFlags[idx] = 0;
+                    r.roofExtra[idx] = 0;
+                    if (stack(r, idx, code, bf)) {
+                        bbox[0] = Math.min(bbox[0], x);
+                        bbox[1] = Math.min(bbox[1], z);
+                        bbox[2] = Math.max(bbox[2], x);
+                        bbox[3] = Math.max(bbox[3], z);
+                        count[0]++;
+                        return;
+                    }
                 }
                 // A part hovering above another building (skybridge): keep the lower building's column. Over its own
                 // building's outline it replaces the outline, as every part does.
@@ -3546,6 +3601,22 @@ public final class FeatureRasterizer {
                     flags |= RegionRaster.FLAG_MINARET;
                 }
                 r.setBuildingCell(idx, code, flags, extraBlocks);
+            }
+        }
+        if (under[0] != null) {
+            // The outline kept below: its walls where its columns meet the outside.
+            short uc = underCode[0];
+            for (int z = bbox[1]; z <= bbox[3]; z++) {
+                for (int x = bbox[0]; x <= bbox[2]; x++) {
+                    int idx = r.index(x, z);
+                    if (idx < 0 || r.building[idx] != uc) continue;
+                    boolean west = isSame(r, x - 1, z, uc), east = isSame(r, x + 1, z, uc);
+                    boolean north = isSame(r, x, z - 1, uc), south = isSame(r, x, z + 1, uc);
+                    int flags = 0;
+                    if (!(west && east && north && south)) flags |= RegionRaster.FLAG_EDGE;
+                    if ((flags & RegionRaster.FLAG_EDGE) != 0 && (!west || !east) && (!north || !south)) flags |= RegionRaster.FLAG_CORNER;
+                    r.setBuildingCell(idx, uc, flags, 0);
+                }
             }
         }
 
@@ -3617,6 +3688,49 @@ public final class FeatureRasterizer {
         }
     }
 
+    /**
+     * A part with no height of its own (the storey guess) under a part standing higher on the same ground reaches up to
+     * it: the King Fahd extension of the Great Mosque of Mecca has no height, stood 9 m on its storey guess, and the
+     * floor mapped over it from 21 m hung in the air.
+     */
+    private static void raiseUnmeasuredParts(RegionRaster r) {
+        Map<BuildingFeature, Integer> need = new HashMap<>();
+        for (Map.Entry<Integer, int[]> e : r.stacked.entrySet()) {
+            int idx = e.getKey();
+            if (r.building[idx] <= 0) continue;
+            List<BuildingFeature> col = new ArrayList<>();
+            col.add(r.buildings.get(r.building[idx] - 1));
+            for (int p : e.getValue()) col.add(r.buildings.get((p & 0xFFFF) - 1));
+            col.sort(java.util.Comparator.comparingInt(b -> b.baseY + b.minHeightBlocks));
+            for (int i = 0; i + 1 < col.size(); i++) {
+                BuildingFeature lower = col.get(i), upper = col.get(i + 1);
+                if (!"default".equals(lower.heightSource) || lower.baseY != upper.baseY) continue;
+                int reach = upper.minHeightBlocks;
+                if (reach > lower.heightBlocks) need.merge(lower, reach, Math::max);
+            }
+        }
+        for (Map.Entry<BuildingFeature, Integer> e : need.entrySet()) e.getKey().heightBlocks = e.getValue();
+    }
+
+    /** Whether a building's outline stands for an enclosed inside (not a tower, an arch, a bridge or a roof over open space). */
+    private static boolean enclosedBelow(String type) {
+        return switch (type) {
+            case "tower", "bridge", "roof", "shelter", "carport", "triumphal_arch", "monument", "gate", "city_gate", "pagoda", "stadium",
+                 "grandstand", "transformer_tower", "water_tower", "mast", "communications_tower", "canopy" -> false;
+            default -> true;
+        };
+    }
+
+    /** An outline's own building, from its ground up to {@code topBlocks}, as a part of it (flat on top). */
+    private static BuildingFeature outlineUnder(BuildingFeature o, int topBlocks) {
+        BuildingFeature f = new BuildingFeature(o.id, o.tags, o.type, topBlocks, 0, Math.max(1, Math.min(o.levels, topBlocks / Math.max(2, o.storeyBlocks))),
+                RoofShape.FLAT, 0, o.wall, o.wallAccent, o.roof, o.window, o.floor, true, false, false, o.glassCurtain, o.storeyBlocks,
+                o.cx, o.cz, o.axisX, o.axisZ, o.halfA, o.halfB, o.name);
+        f.baseY = o.baseY;
+        f.heightSource = "outline";
+        return f;
+    }
+
     /** A mapped minaret (its own outline or part). */
     private static boolean isMinaret(Map<String, String> tags) {
         if ("minaret".equals(tags.get("man_made")) || "minaret".equals(tags.get("tower:type")) || "minaret".equals(tags.get("building"))
@@ -3675,6 +3789,60 @@ public final class FeatureRasterizer {
         return bandBottom(a) < bandTop(b) && bandBottom(b) < bandTop(a);
     }
 
+    private static int bottomY(BuildingFeature b) {
+        return b.baseY + bandBottom(b);
+    }
+
+    private static int topY(BuildingFeature b) {
+        return b.baseY + bandTop(b);
+    }
+
+    /** Whether a part gives way to a newer one: both start at the same height, or it lies wholly inside the newer one's band. */
+    private static boolean replacedBy(BuildingFeature old, BuildingFeature newer) {
+        // (the outline kept under a part gives way to a real part from its ground)
+        if (keptOutline(old)) return bottomY(newer) <= bottomY(old) && topY(newer) > bottomY(old);
+        return bottomY(old) == bottomY(newer) || (bottomY(old) >= bottomY(newer) && topY(old) <= topY(newer));
+    }
+
+    private static boolean keptOutline(BuildingFeature b) {
+        return "outline".equals(b.heightSource);
+    }
+
+    /**
+     * A part over or under the part already at a column. Two parts starting at the same height are one or the other (the
+     * newer replaces the older: a tower drawn inside a lower block); a part starting higher stands on the lower one even
+     * where the mapped heights overlap a little (Hagia Sophia's domes start at 23 m on a hall mapped to 25 m, and the hall
+     * gave way to them: the domes hung in the air). A part wholly inside another's band adds nothing. False when it
+     * replaces the column's own building.
+     */
+    private static boolean stackPart(RegionRaster r, int idx, short code, BuildingFeature bf) {
+        BuildingFeature own = r.buildings.get(r.building[idx] - 1);
+        if (replacedBy(own, bf)) return false;
+        // inside the column's own building (a kept outline excepted: a real part inside it is drawn over it)
+        if (!keptOutline(own) && bottomY(bf) >= bottomY(own) && topY(bf) <= topY(own)) return true;
+        int[] s = r.stackedAt(idx);
+        if (s != null) {
+            for (int p : s) {
+                BuildingFeature o = r.buildings.get((p & 0xFFFF) - 1);
+                if (!keptOutline(o) && bottomY(bf) > bottomY(o) && topY(bf) <= topY(o)) return true; // inside one already stacked
+            }
+        }
+        dropOverlapping(r, idx, bf);
+        if (r.stacked == null) r.stacked = new HashMap<>();
+        s = r.stacked.get(idx);
+        int[] grown = s == null ? new int[1] : java.util.Arrays.copyOf(s, s.length + 1);
+        if (bottomY(bf) < bottomY(own)) {
+            grown[grown.length - 1] = (r.building[idx] & 0xFFFF) | (r.buildingFlags[idx] & 0xFF) << 16 | (r.roofExtra[idx] & 0xFF) << 24;
+            r.building[idx] = code;
+            r.buildingFlags[idx] = 0;
+            r.roofExtra[idx] = 0;
+        } else {
+            grown[grown.length - 1] = code & 0xFFFF;
+        }
+        r.stacked.put(idx, grown);
+        return true;
+    }
+
     /**
      * Puts a part over or under the part already at a column when their height bands do not meet (the lowest stays the
      * column's own building, the other is stacked over it); false when they meet (the new part replaces the old, as
@@ -3704,7 +3872,7 @@ public final class FeatureRasterizer {
     private static void dropOverlapping(RegionRaster r, int idx, BuildingFeature bf) {
         int[] s = r.stackedAt(idx);
         if (s == null) return;
-        int[] kept = java.util.Arrays.stream(s).filter(p -> !bandsOverlap(r.buildings.get((p & 0xFFFF) - 1), bf)).toArray();
+        int[] kept = java.util.Arrays.stream(s).filter(p -> !replacedBy(r.buildings.get((p & 0xFFFF) - 1), bf)).toArray();
         if (kept.length == s.length) return;
         if (kept.length == 0) r.stacked.remove(idx);
         else r.stacked.put(idx, kept);

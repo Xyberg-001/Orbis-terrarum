@@ -114,7 +114,7 @@ public final class Materials {
         boolean glassCurtain = false;
 
         BlockState wall = null;
-        String colourRaw = firstTag(tags, "building:colour", "building:color", "colour", "color");
+        String colourRaw = firstTag(tags, "building:colour", "building:color", "building:facade:colour", "building:facade:color", "colour", "color");
         // Mappers sometimes put a material word in the colour field ("brick", "slate", "wood").
         if (colourRaw != null) wall = wallForMaterial(lower(colourRaw), h);
         Integer colour = wall == null ? BlockPalette.parseColour(colourRaw) : null;
