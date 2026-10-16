@@ -1134,6 +1134,25 @@ has no attribute table to turn its 900 codes into leaf types. Checked: the Black
 Forest and the Cascades come out coniferous, Fontainebleau, Białowieża and the
 Amazon broadleaved, the Smokies and Hokkaido mixed.
 
+### The far view past the loaded regions (`worldgen/FarGround`)
+
+Distant Horizons and Voxy paint columns nobody has generated with
+`worldgen/FarTerrain`, from the elevation, the climate (Köppen, observed snow and
+ice) and ESA WorldCover. Where no region is loaded, `FarGround` reads the maps
+the regions read, a sixteenth of a degree at a time (two low-priority threads,
+at most 30 s of waiting per column, 256 cells kept): the bedrock map (the rock
+of bare ground and cliffs), SoilGrids' soil groups only (the grass top: moss on
+peat, podzol, coarse dirt; the depth never shows from afar) and the forest type
+maps at no finer than 10 m (a WorldCover wood becomes coniferous or broadleaved,
+and SR16's spruce and pine pick the species). Lakes past the map data freeze
+with the climate, as the chunks' do. Only inside the world: the scenery past its
+border stays the terrain alone. Glacier ice depth is left out (the surface is
+the same; only the inside of the ice differs). Measured 20 km from the origin
+(4,096 columns each): Jotunheimen's bare rock went from stone to deepslate (the
+Jotun nappe's gabbro), Elverum's woods from the climate's oak, dark oak and
+birch to spruce and pine on podzol, the Flow Country from grass to podzol and
+mud in patches.
+
 ### Buildings OSM lacks (`osm/OvertureBuildings`)
 New worlds from 2.0.1 at 1:4 or finer (world setting `overtureBuildings`, config
 v20; servers keep false). Overture's buildings theme (ODbL) merges OSM with

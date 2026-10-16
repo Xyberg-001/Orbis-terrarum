@@ -157,6 +157,19 @@ public final class FeatureRasterizer {
         this.forestTypes = types;
     }
 
+    /** The maps behind the regions' rock, soil and forest kinds (null where off), for the far view past the regions. */
+    public com.berg.orbis.geology.Rocks bedrock() {
+        return bedrock;
+    }
+
+    public com.berg.orbis.geology.Soils soils() {
+        return soils;
+    }
+
+    public com.berg.orbis.landcover.ForestTypes forestTypes() {
+        return forestTypes;
+    }
+
     /** Buildings OSM does not have yet (Overture's footprints from Google, Microsoft and others), or null. */
     private volatile OvertureBuildings overture;
 
@@ -639,7 +652,7 @@ public final class FeatureRasterizer {
         return in;
     }
 
-    private static long groundHash(int x, int z) {
+    public static long groundHash(int x, int z) {
         long h = x * 0x9E3779B97F4A7C15L ^ z * 0xC2B2AE3D27D4EB4FL ^ 0x5011L;
         h ^= h >>> 31;
         h *= 0xBF58476D1CE4E5B9L;

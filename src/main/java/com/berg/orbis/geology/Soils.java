@@ -199,6 +199,11 @@ public final class Soils {
      * read. A part that fails is left out (the ground there is drawn as before).
      */
     public Area area(double south, double west, double north, double east) {
+        return area(south, west, north, east, true);
+    }
+
+    /** As above; without {@code withDepth} only the soil groups (the far view shows the top, never the depth). */
+    public Area area(double south, double west, double north, double east, boolean withDepth) {
         if (!covers(south, north)) return null;
         if (System.currentTimeMillis() < failedUntil) return null;
         Tile[] t = null;
@@ -209,7 +214,7 @@ public final class Soils {
             t = new Tile[(i1 - i0 + 1) * (j1 - j0 + 1)];
             int k = 0;
             for (int i = i0; i <= i1; i++) for (int j = j0; j <= j1; j++) t[k++] = tile(i, j);
-            soil = soilDepth.window(south, west, north, east);
+            soil = withDepth ? soilDepth.window(south, west, north, east) : null;
             if (soil != null && anyDeep(soil)) rock = rockDepth.window(south, west, north, east);
         } catch (IOException | InterruptedException | RuntimeException e) {
             failedUntil = System.currentTimeMillis() + 10 * 60_000L;

@@ -140,6 +140,10 @@ public final class OsmRegionManager {
     /** Last known player block positions (x, z). */
     private volatile int[][] players = new int[0][];
 
+    public FeatureRasterizer rasterizer() {
+        return rasterizer;
+    }
+
     public OsmRegionManager(OrbisConfig cfg, CoordinateMapper mapper, OsmDataProvider provider, FeatureRasterizer rasterizer) {
         this.cfg = cfg;
         this.mapper = mapper;

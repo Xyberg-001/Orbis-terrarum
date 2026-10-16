@@ -368,6 +368,11 @@ public final class WorldModel {
         }
     }
 
+    /** The region builder (and the maps it reads), or null without map data. */
+    public com.berg.orbis.osm.FeatureRasterizer rasterizer() {
+        return regions == null ? null : regions.rasterizer();
+    }
+
     /** OSM raster if it is already decoded, else null. Never blocks. */
     public RegionRaster rasterIfLoaded(int x, int z) {
         return regions == null ? null : regions.getIfLoadedForBlock(x, z);

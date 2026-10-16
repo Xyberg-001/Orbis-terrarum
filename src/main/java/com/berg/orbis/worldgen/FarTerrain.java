@@ -18,7 +18,8 @@ import java.util.List;
  * painter, with the map data when its region is already loaded), so the far view meets the real chunks when they
  * come. Close by (fine detail) the full terrain tiles are read; farther out the coarse ones, a few dozen times fewer
  * downloads for a view that cannot show the difference. Trees, buildings and other decoration are the generator's
- * later work and are not here.
+ * later work and are not here, except the far view's own trees and towns. Past the loaded regions the rock, soil and
+ * forest maps the regions read are read too ({@link FarGround}), so bare mountains show their rock and woods their kind.
  *
  * <p>Thread-safe: the painter and the model are shared by the world generator's threads already.
  */
@@ -40,11 +41,14 @@ public final class FarTerrain {
 
     private final WorldModel model;
     private final int minY, maxY;
+    /** The rock, soil and forest maps for columns past the loaded regions (null with none of them on). */
+    private final FarGround ground;
 
     public FarTerrain(WorldModel model, int minY, int height) {
         this.model = model;
         this.minY = minY;
         this.maxY = minY + height - 1;
+        this.ground = FarGround.of(model);
     }
 
     /**
@@ -109,12 +113,25 @@ public final class FarTerrain {
             int g = sink.groundTop();
             sink.set(x, g, z, Blocks.GRAVEL.defaultBlockState());
             sink.fill(x, g + 1, terrainY, z, Blocks.WATER.defaultBlockState());
+            // Frozen over when the world's lakes are (the chunks' lakes freeze by the same climate).
+            if (climate.waterFrozen()) sink.set(x, terrainY, z, Blocks.ICE.defaultBlockState());
             return sink.runs();
         }
         LandCover cover = model.worldCoverLand(code, x, z);
+        // Past the regions, the maps they read: the rock of bare ground and cliffs, the soil's top, the kind of wood (inside the
+        // world only: the scenery past its border stays the terrain alone).
+        FarGround.Sample g = raster == null && ground != null && !HardLimit.blocks(x >> 4, z >> 4)
+                ? ground.at(x, z, cover != null && cover.isForest()) : FarGround.Sample.NONE;
+        if (cover == LandCover.FOREST) {
+            if (g.leaf() == com.berg.orbis.landcover.ForestTypes.Leaf.CONIFER) cover = LandCover.FOREST_CONIFER;
+            else if (g.leaf() == com.berg.orbis.landcover.ForestTypes.Leaf.BROADLEAF) cover = LandCover.FOREST_BROADLEAF;
+        }
         Capture sink = new Capture(Math.max(minY, terrainY - DEPTH));
-        model.painter().paint(sink, x, z, terrainY, climate, raster, idx, model.cfg().waterLevelY() - 60, cover);
-        if (cover != null && cover.isForest() && model.cfg().generateTrees) trees(sink, x, z, cover, climate, detail);
+        model.painter().paint(sink, x, z, terrainY, climate, raster, idx, model.cfg().waterLevelY() - 60, cover, 0, g.rock(), g.soil());
+        if (cover != null && cover.isForest() && model.cfg().generateTrees) {
+            int kind = raster != null && idx >= 0 ? raster.treeKindAt(idx) : g.kind();
+            trees(sink, x, z, cover, climate, detail, kind);
+        }
         if (cover == LandCover.RESIDENTIAL && model.cfg().generateBuildings) town(sink, x, z);
         return sink.runs();
     }
@@ -166,12 +183,12 @@ public final class FarTerrain {
      * the world's trees are (autumn included). Coarser, where a column stands for 2 to 8 blocks and single crowns would
      * only flicker: a closed canopy of the column's own kind at tree height, a little uneven.
      */
-    private void trees(Capture sink, int x, int z, LandCover cover, BiomeClassifier.Climate climate, int detail) {
+    private void trees(Capture sink, int x, int z, LandCover cover, BiomeClassifier.Climate climate, int detail, int kind) {
         int ground = sink.groundTop();
         if (ground < model.cfg().waterLevelY() || ground + 16 > maxY) return;
         boolean autumn = model.cfg().autumnColours;
         if (detail > 0) {
-            TreeBuilder.Species s = Decorator.pickSpecies(cover, climate, x, z);
+            TreeBuilder.Species s = Decorator.pickSpecies(cover, climate, x, z, kind);
             if (s == null) return;
             long h = ColumnPainter.hash(x >> 3, z >> 3, 0xCA70);
             int top = ground + (conifer(s) ? 9 : 7) + (int) Math.floorMod(h, 3);
@@ -183,7 +200,7 @@ public final class FarTerrain {
             for (int cz = cz0 - 1; cz <= cz0 + 1; cz++) {
                 long h = ColumnPainter.hash(cx, cz, 0x7A33);
                 int tx = cx * TREE_CELL + (int) Math.floorMod(h, TREE_CELL), tz = cz * TREE_CELL + (int) Math.floorMod(h >>> 8, TREE_CELL);
-                TreeBuilder.Species s = Decorator.pickSpecies(cover, climate, tx, tz);
+                TreeBuilder.Species s = Decorator.pickSpecies(cover, climate, tx, tz, kind);
                 if (s == null) continue;
                 boolean cone = conifer(s);
                 int height = (cone ? 9 : 6) + (int) Math.floorMod(h >>> 16, 4);

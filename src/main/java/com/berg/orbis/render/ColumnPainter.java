@@ -118,6 +118,15 @@ public final class ColumnPainter {
      */
     public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx, int deepslateTop, LandCover noRasterCover,
                       int drop) {
+        paint(s, x, z, terrainY, climate, r, idx, deepslateTop, noRasterCover, drop, 0, 0);
+    }
+
+    /**
+     * As above, with the rock and soil codes to paint where there is no raster ({@code noRasterRock}, {@code noRasterSoil};
+     * 0 for none): the far view's, from the same maps the regions read.
+     */
+    public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx, int deepslateTop, LandCover noRasterCover,
+                      int drop, int noRasterRock, int noRasterSoil) {
         terrainY = clampY(terrainY);
         boolean hasRaster = r != null && idx >= 0;
         LandCover lc = hasRaster ? r.landCoverAt(idx) : noRasterCover != null ? noRasterCover : LandCover.NONE;
@@ -296,7 +305,7 @@ public final class ColumnPainter {
         com.berg.orbis.geology.Soils.Texture texture = com.berg.orbis.geology.Soils.Texture.UNKNOWN;
         int iceDepth = 0;
         // The real rock under this column (bedrock map), else plain stone.
-        BlockState rock = hasRaster ? com.berg.orbis.geology.Rocks.Rock.of(r.rockAt(idx)).block : STONE;
+        BlockState rock = com.berg.orbis.geology.Rocks.Rock.of(hasRaster ? r.rockAt(idx) : noRasterRock).block;
         if (bf != null) {
             top = bf.minHeightBlocks > 0 ? groundBlock(lc, gc, climate, h, x, z) : bf.floor;
             sub = rock;
@@ -321,16 +330,17 @@ public final class ColumnPainter {
             }
             sub = subBlock(top, lc, climate);
             deep = rock;
-            if (hasRaster && cfg.groundLayers) {
-                iceDepth = r.iceDepthAt(idx);
+            if ((hasRaster || noRasterSoil != 0) && cfg.groundLayers) {
+                iceDepth = hasRaster ? r.iceDepthAt(idx) : 0;
                 if (iceDepth > 0) {
                     // A glacier the inventory knows: its ice, thick in the middle and thin at the edges, then the rock.
                     looseDepth = iceDepth;
                 } else if (sub == DIRT) {
-                    int known = r.soilDepthAt(idx);
+                    int known = hasRaster ? r.soilDepthAt(idx) : -1;
                     if (known >= 0) looseDepth = known;
-                    profile = com.berg.orbis.geology.Soils.Profile.of(r.soilAt(idx));
-                    texture = com.berg.orbis.geology.Soils.Texture.of(r.soilAt(idx));
+                    int soil = hasRaster ? r.soilAt(idx) : noRasterSoil;
+                    profile = com.berg.orbis.geology.Soils.Profile.of(soil);
+                    texture = com.berg.orbis.geology.Soils.Texture.of(soil);
                     if (drop >= 3) {
                         top = STONE;
                         looseDepth = 0;
