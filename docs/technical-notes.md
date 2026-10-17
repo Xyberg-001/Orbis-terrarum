@@ -2590,16 +2590,20 @@ on there, with a hand tool for panning; creating a world (the new-world settings
 preview selection after copying it into the world.
 
 **National data on the world generator map** (`client/map/CoverageOverlay`, the layers button under the
-night button; on by default for the game session): a teal shade over every country and state whose own
-services Orbis reads (`DataSources.list`, the national ones: lidar building heights, aerial photos, building
-and road registers, lake surveys, Norway's rock, snow and forest maps, Quebec's lakes), lighter for one,
-stronger for two and three or more, with a key under the button; the cursor box lists the sources under the
-cursor. The shapes are the same outlines that decide which services are asked (`orbis-coverage.json`, via
-`DataSources.outline`; a source without one, its box). Worked out on a 4-pixel grid of the screen, row by
-row across each outline's edges, again only when the view moves (the whole world in about 40 ms). At the
-whole-world zoom a source smaller than a cell (New York's building register) does not show; zoomed in, the
-grid agrees with the services' own coverage test (Bergen 6, Oslo 6, Paris 4, Amsterdam 3, Zurich 2,
-Montreal 2, Tokyo 1, Sydney 1, New York 1).
+night button; on by default for the game session). Until 17 Oct 2026 a teal shade by how many national services
+overlap (1, 2, 3+) covered the map at every zoom with a key on the map: zoomed into a city the whole view was one
+shade and said nothing, and the key covered pins. Now the map is shaded only while the view is at least 150 km
+across (`COVERAGE_MIN_KM`, where borders show), in two levels with a line along their edges: stronger where
+buildings get their real heights (lidar surface models, building registers), lighter for other national data
+(aerial photos, roads, lakes, rock, snow, forest); the key is in the side panel. The side panel's **Data at the
+cursor** (or **at the spawn** when the cursor is off the map) says what is better there, by what it improves
+(`DataSources.topic`: buildings, aerial photos, roads, nature), teal where it is national and grey where the
+worldwide sources are used: Bergen "real heights and roofs, lidar (Kartverket)", roads "widths and lanes (NVDB)",
+nature "rock types, lake depths, snow depth today, forest types"; Paris lidar and BD TOPO, IGN photos, BD TOPO
+roads; Mecca and London worldwide only. Terrain has no row: lidar terrain comes through Mapterhorn, which does not
+say where its tiles are lidar. The shapes are the same outlines that decide which services are asked
+(`orbis-coverage.json`, via `DataSources.outline`; a source without one, its box), worked out on a 4-pixel grid of
+the screen, row by row across each outline's edges, again only when the view moves.
 
 **What's here and landmark pins on the world generator map.** A right-click opens a menu (as on the world
 map): **Set the spawn here**, or **What's here**, the world map's card (`client/map/PlaceCard`, shared)

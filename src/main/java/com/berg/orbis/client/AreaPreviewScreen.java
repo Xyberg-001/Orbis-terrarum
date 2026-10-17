@@ -46,6 +46,14 @@ public final class AreaPreviewScreen extends Screen {
     private static boolean coverageOn = true;
     private Button coverageButton;
     private com.berg.orbis.client.map.CoverageOverlay coverage;
+    /** Whether the map shows national data now (on, and zoomed out far enough to see borders). */
+    private boolean coverageShown;
+    /** The view must be this wide (km) for the national data shade: zoomed in, a view is one country and a shade said nothing. */
+    private static final double COVERAGE_MIN_KM = 150;
+    /** The side panel's "Data here": for which place (rounded), and its rows {label, value, national?}. */
+    private String dataKey;
+    private List<String[]> dataRows = List.of();
+    private int lastMouseX = -1, lastMouseY = -1;
     /** The landmarks the world would get, as gold pins (looked up when the centre or scale settles). */
     private final LandmarkPreview landmarks = new LandmarkPreview();
     /** The What's here card, and the right-click menu. */
@@ -742,7 +750,12 @@ public final class AreaPreviewScreen extends Screen {
         if (layer.labels != null) drawTiles(g, layer.labels, mw, mh, false);
         g.pose().popMatrix();
         // National data, over the map but under the selection and the markers.
-        if (coverageOn) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+        double[] mid = latLonAt(mapRight() / 2, (TOP_H + height) / 2);
+        double viewKm = mapW() / (scale * PreviewPlan.mercPerMeter(mid[0])) / 1000;
+        coverageShown = coverageOn && viewKm >= COVERAGE_MIN_KM;
+        if (coverageShown) {
             if (coverage == null) coverage = new com.berg.orbis.client.map.CoverageOverlay();
             long key = Double.doubleToLongBits(cx) * 31 + Double.doubleToLongBits(cy) * 17 + Double.doubleToLongBits(scale) * 7 + width * 131L + height;
             coverage.draw(g, view::gui, 0, TOP_H, mapRight(), height, key);
@@ -942,13 +955,6 @@ public final class AreaPreviewScreen extends Screen {
             double m = tiles.elevationAt(ll[0], ll[1], z);
             if (!Double.isNaN(m)) parts.add(String.format(Locale.ROOT, m < 0 ? "%,.0f m below sea level" : "%,.0f m above sea level", Math.abs(m)));
         }
-        if (coverageOn && coverage != null) {
-            List<String> here = coverage.namesAt(mouseX, mouseY);
-            if (!here.isEmpty()) {
-                parts.add(Component.translatable("orbisterrarum.preview.coverage.here", here.size()).getString());
-                parts.addAll(here);
-            }
-        }
         String state = sel == null || sel.isEmpty() ? null : Component.translatable(in ? "orbisterrarum.preview.in" : "orbisterrarum.preview.out").getString();
         if (state != null) parts.add(state);
         int left = select != null ? select.textLeft(0, height, 4 + MapSelectTool.STRIP_W + 6) : 4 + MapSelectTool.STRIP_W + 6;
@@ -987,7 +993,7 @@ public final class AreaPreviewScreen extends Screen {
     }
 
     /**
-     * The coverage button's symbol, three stacked layers (teal when on, grey when off), and, when on, the key under it.
+     * The coverage button's symbol, three stacked layers (teal when on, grey when off; its key is in the side panel).
      * It sits under the night button, or in its place on maps without one.
      */
     private void drawCoverageButton(GuiGraphicsExtractor g) {
@@ -998,10 +1004,6 @@ public final class AreaPreviewScreen extends Screen {
         for (int i = 0; i < 3; i++) {
             int yy = y + i * 4, inset = i == 1 ? 0 : 1;
             g.fill(x + inset, yy, x + 12 - inset, yy + 2, colour);
-        }
-        if (coverageOn && coverage != null) {
-            coverage.drawLegend(g, font, mapRight() - 4, coverageButton.getY() + 24,
-                    Component.translatable("orbisterrarum.preview.coverage.key").getString());
         }
     }
 
@@ -1071,6 +1073,7 @@ public final class AreaPreviewScreen extends Screen {
                 y += 10;
             }
             y += 6;
+            y = dataHere(g, draw, y, w);
             y = landmarksLine(g, draw, y, w);
             return help(g, draw, y, w) - y0;
         }
@@ -1130,8 +1133,102 @@ public final class AreaPreviewScreen extends Screen {
             }
         }
         y += 6;
+        y = dataHere(g, draw, y, w);
         y = landmarksLine(g, draw, y, w);
         return help(g, draw, y, w) - y0;
+    }
+
+    /**
+     * "Data here": what national data makes better at the cursor (or the spawn when the cursor is off the map), by what
+     * it improves (buildings, aerial photos, roads, nature), in teal where it is national and grey where the worldwide
+     * sources are used; and the key while the map shows national data.
+     */
+    private int dataHere(GuiGraphicsExtractor g, boolean draw, int y, int w) {
+        boolean cursor = onMap(lastMouseX, lastMouseY);
+        double[] at = cursor ? latLonAt(lastMouseX, lastMouseY) : new double[]{lat0, lon0};
+        if (draw) g.text(font, Component.translatable(cursor ? "orbisterrarum.preview.data.cursor" : "orbisterrarum.preview.data.spawn"), 0, y, WHITE);
+        y += 12;
+        for (String[] r : dataRows(at[0], at[1])) y = dataRow(g, draw, w, y, r[0], r[1], r[2].equals("1"));
+        if (coverageShown) {
+            y += 2;
+            for (int lv = 2; lv >= 1; lv--) {
+                if (draw) {
+                    g.fill(0, y + 1, 10, y + 8, com.berg.orbis.client.map.CoverageOverlay.swatch(lv));
+                    g.text(font, Component.translatable(lv == 2 ? "orbisterrarum.preview.data.key.best" : "orbisterrarum.preview.data.key.other"), 14, y, GREY);
+                }
+                y += 10;
+            }
+        }
+        return y + 4;
+    }
+
+    private List<String[]> dataRows(double lat, double lon) {
+        String key = String.format(Locale.ROOT, "%.3f,%.3f", lat, lon);
+        if (key.equals(dataKey)) return dataRows;
+        com.berg.orbis.config.OrbisConfig cfg = com.berg.orbis.OrbisMod.config();
+        java.util.Map<com.berg.orbis.config.DataSources.Topic, List<com.berg.orbis.config.DataSources.Source>> by =
+                new java.util.EnumMap<>(com.berg.orbis.config.DataSources.Topic.class);
+        boolean worldPhotos = false;
+        for (com.berg.orbis.config.DataSources.Source s : com.berg.orbis.config.DataSources.list(cfg)) {
+            if (s.kind() == com.berg.orbis.config.DataSources.Kind.BUILT_IN
+                    && com.berg.orbis.config.DataSources.topic(s, cfg) == com.berg.orbis.config.DataSources.Topic.PHOTOS) worldPhotos = true;
+            if (s.kind() != com.berg.orbis.config.DataSources.Kind.NATIONAL || !s.overlaps(lat - 0.002, lon - 0.002, lat + 0.002, lon + 0.002)) continue;
+            by.computeIfAbsent(com.berg.orbis.config.DataSources.topic(s, cfg), k -> new ArrayList<>()).add(s);
+        }
+        List<String[]> rows = new ArrayList<>();
+        var b = by.getOrDefault(com.berg.orbis.config.DataSources.Topic.BUILDINGS, List.of());
+        boolean lidar = false;
+        for (var s : b) lidar |= com.berg.orbis.config.DataSources.isLidar(s, cfg);
+        rows.add(new String[]{tr("orbisterrarum.preview.data.buildings"), b.isEmpty() ? tr("orbisterrarum.preview.data.buildings.world")
+                : Component.translatable(lidar ? "orbisterrarum.preview.data.buildings.lidar" : "orbisterrarum.preview.data.buildings.register", providers(b)).getString(),
+                b.isEmpty() ? "0" : "1"});
+        var ph = by.getOrDefault(com.berg.orbis.config.DataSources.Topic.PHOTOS, List.of());
+        rows.add(new String[]{tr("orbisterrarum.preview.data.photos"), !ph.isEmpty()
+                ? Component.translatable("orbisterrarum.preview.data.photos.national", providers(ph)).getString()
+                : tr(worldPhotos ? "orbisterrarum.preview.data.photos.world" : "orbisterrarum.preview.data.photos.none"), ph.isEmpty() ? "0" : "1"});
+        var rd = by.getOrDefault(com.berg.orbis.config.DataSources.Topic.ROADS, List.of());
+        rows.add(new String[]{tr("orbisterrarum.preview.data.roads"), rd.isEmpty() ? tr("orbisterrarum.preview.data.roads.world")
+                : Component.translatable("orbisterrarum.preview.data.roads.national", providers(rd)).getString(), rd.isEmpty() ? "0" : "1"});
+        var na = by.getOrDefault(com.berg.orbis.config.DataSources.Topic.NATURE, List.of());
+        List<String> subjects = new ArrayList<>();
+        for (var s : na) {
+            String sub = com.berg.orbis.config.DataSources.subject(s);
+            if (!subjects.contains(sub)) subjects.add(sub);
+        }
+        rows.add(new String[]{tr("orbisterrarum.preview.data.nature"), na.isEmpty() ? tr("orbisterrarum.preview.data.nature.world")
+                : String.join(", ", subjects), na.isEmpty() ? "0" : "1"});
+        dataKey = key;
+        dataRows = rows;
+        return rows;
+    }
+
+    private static String providers(List<com.berg.orbis.config.DataSources.Source> list) {
+        List<String> out = new ArrayList<>();
+        for (var s : list) {
+            String p = com.berg.orbis.config.DataSources.provider(s);
+            if (!out.contains(p)) out.add(p);
+        }
+        return String.join(", ", out);
+    }
+
+    /** A Data here row: the label, and its value beside it or wrapped under it, teal when national, grey when worldwide. */
+    private int dataRow(GuiGraphicsExtractor g, boolean draw, int w, int y, String label, String value, boolean national) {
+        int colour = national ? 0xFF2DD4BF : GREY;
+        int lw = font.width(label) + 8;
+        if (lw + font.width(value) <= w) {
+            if (draw) {
+                g.text(font, label, 0, y, GREY);
+                g.text(font, value, w - font.width(value), y, colour);
+            }
+            return y + 11;
+        }
+        if (draw) g.text(font, label, 0, y, GREY);
+        y += 10;
+        for (FormattedCharSequence l : font.split(Component.literal(value), w - 8)) {
+            if (draw) g.text(font, l, 8, y, colour);
+            y += 10;
+        }
+        return y + 1;
     }
 
     private int help(GuiGraphicsExtractor g, boolean draw, int y, int w) {

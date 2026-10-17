@@ -26,6 +26,47 @@ public final class DataSources {
 
     public enum Kind { BUILT_IN, NATIONAL, IMPORTED }
 
+    /** What a national source makes better: buildings, aerial photos (roof and ground colours), roads, or nature. */
+    public enum Topic { BUILDINGS, PHOTOS, ROADS, NATURE }
+
+    /**
+     * What a national source improves: lidar surface models and building registers give buildings their real heights;
+     * aerial photos; road registers; the rest (lakes, rock, snow, forest) is nature.
+     */
+    public static Topic topic(Source s, OrbisConfig c) {
+        if (isLidar(s, c)) return Topic.BUILDINGS;
+        for (OrbisConfig.BuildingSource b : c.buildingSources) if (b != null && s.id().equals(b.name)) return Topic.BUILDINGS;
+        for (OrbisConfig.ImagerySource i : c.imagerySources) if (i != null && s.id().equals(i.name)) return Topic.PHOTOS;
+        for (OrbisConfig.RoadSource r : c.roadSources) if (r != null && s.id().equals(r.name)) return Topic.ROADS;
+        if ("nvdb-roads".equals(s.id())) return Topic.ROADS;
+        return Topic.NATURE;
+    }
+
+    /** Whether a source is a lidar surface model (building and tree tops). */
+    public static boolean isLidar(Source s, OrbisConfig c) {
+        for (OrbisConfig.ElevationSource e : c.surfaceModelSources) if (e != null && s.id().equals(e.name)) return true;
+        return false;
+    }
+
+    /** Who a source is from: the last bracket of its label ("Road widths and lanes (NVDB)": NVDB), else its id. */
+    public static String provider(Source s) {
+        String l = s.label();
+        int open = l.lastIndexOf('('), close = l.lastIndexOf(')');
+        return open >= 0 && close > open ? l.substring(open + 1, close) : s.id();
+    }
+
+    /** What a source is, without who it is from ("Forest types: spruce, pine, broadleaf (NIBIO SR16)": forest types). */
+    public static String subject(Source s) {
+        String l = s.label();
+        int cut = l.length();
+        for (char ch : new char[]{'(', ':'}) {
+            int i = l.indexOf(ch);
+            if (i > 0) cut = Math.min(cut, i);
+        }
+        l = l.substring(0, cut).trim();
+        return l.isEmpty() ? s.id() : Character.toLowerCase(l.charAt(0)) + l.substring(1);
+    }
+
     /**
      * One source. {@code folders} are relative to the data folder; with a {@code prefix} only the files directly in
      * the (single) folder whose names start with it are the source's ("" for every file directly in it, none of its

@@ -1,7 +1,6 @@
 package com.berg.orbis.client.map;
 
 import com.berg.orbis.config.DataSources;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 import java.util.ArrayList;
@@ -9,36 +8,42 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Where Orbis has national data, shaded on a map: the countries and states whose own services it reads (lidar building
- * heights, aerial photos, building and road registers, lake surveys, Norway's rock, snow and forest maps...), more
- * strongly where more of them overlap, from the same outlines that decide which services are asked. Worked out on a grid
- * of the screen, row by row across each outline (only again when the view moves).
+ * Where Orbis has national data, shaded on a zoomed-out map in two levels: stronger where buildings get their real
+ * heights (lidar surface models, building registers), lighter where only other national data is read (aerial photos,
+ * roads, lakes, rock, snow, forest), each edged with a line; from the same outlines that decide which services are
+ * asked. Worked out on a grid of the screen, row by row across each outline (only again when the view moves). Zoomed
+ * in, a whole view is usually one country and a shade said nothing, so the world generator map draws it only when the
+ * view is wide (see AreaPreviewScreen) and says in its side panel what is better at the cursor.
  */
 public final class CoverageOverlay {
     /** Grid cell, in GUI pixels. */
     private static final int CELL = 4;
     private static final int TEAL = 0x14B8A6;
-    private static final int[] ALPHA = {0, 0x30, 0x50, 0x70};
+    private static final int[] ALPHA = {0, 0x30, 0x68};
+    private static final int EDGE = 0xD02DD4BF;
 
     /** Converts a place to GUI coordinates on the map. */
     public interface Projection {
         double[] gui(double lat, double lon);
     }
 
-    private final List<DataSources.Source> sources = new ArrayList<>();
     private final List<List<double[]>> outlines = new ArrayList<>();
+    /** Per source: 2 where it gives buildings their real heights, else 1. */
+    private final List<Integer> levels = new ArrayList<>();
 
     private long viewKey = Long.MIN_VALUE;
     private int left, top, cols, rows;
-    /** Per cell: how many sources cover it, and which (bits, the first 64). */
-    private int[] count = new int[0];
-    private long[] which = new long[0];
+    /** Per cell: 0 (worldwide only), 1 (national data) or 2 (real building heights). */
+    private byte[] level = new byte[0];
+    /** The edges between cells of different levels, as {x0, y0, x1, y1} on the screen. */
+    private final List<int[]> edges = new ArrayList<>();
 
     public CoverageOverlay() {
-        for (DataSources.Source s : DataSources.list(com.berg.orbis.OrbisMod.config())) {
+        var cfg = com.berg.orbis.OrbisMod.config();
+        for (DataSources.Source s : DataSources.list(cfg)) {
             if (s.kind() != DataSources.Kind.NATIONAL) continue;
-            sources.add(s);
             outlines.add(DataSources.outline(s));
+            levels.add(DataSources.topic(s, cfg) == DataSources.Topic.BUILDINGS ? 2 : 1);
         }
     }
 
@@ -50,60 +55,25 @@ public final class CoverageOverlay {
         if (view != viewKey || x0 != left || y0 != top) build(p, x0, y0, x1, y1, view);
         for (int r = 0; r < rows; r++) {
             int y = top + r * CELL;
-            int runStart = 0, runLevel = level(count[r * cols]);
+            int runStart = 0, runLevel = level[r * cols];
             for (int c = 1; c <= cols; c++) {
-                int lv = c < cols ? level(count[r * cols + c]) : -1;
+                int lv = c < cols ? level[r * cols + c] : -1;
                 if (lv == runLevel) continue;
                 if (runLevel > 0) g.fill(left + runStart * CELL, y, Math.min(x1, left + c * CELL), Math.min(y1, y + CELL), ALPHA[runLevel] << 24 | TEAL);
                 runStart = c;
                 runLevel = lv;
             }
         }
+        for (int[] e : edges) g.fill(e[0], e[1], Math.min(x1, e[2]), Math.min(y1, e[3]), EDGE);
     }
 
-    private static int level(int n) {
-        return Math.min(3, n);
-    }
-
-    /** The national sources at a point of the map (GUI coordinates), by name. */
-    public List<String> namesAt(int x, int y) {
-        List<String> out = new ArrayList<>();
-        int c = (x - left) / CELL, r = (y - top) / CELL;
-        if (c < 0 || r < 0 || c >= cols || r >= rows) return out;
-        long bits = which[r * cols + c];
-        for (int i = 0; i < Math.min(64, sources.size()); i++) {
-            if ((bits & (1L << i)) != 0) out.add(sources.get(i).label());
-        }
-        return out;
-    }
-
-    /** The key: shade swatches for one, two and three or more sources, top right at (right, y). Returns its bottom. */
-    public int drawLegend(GuiGraphicsExtractor g, Font font, int right, int y, String title) {
-        String[] labels = {"1", "2", "3+"};
-        int sw = 10, gap = 4;
-        int w = font.width(title) + 8;
-        int row = 0;
-        for (String l : labels) row += sw + 3 + font.width(l) + gap;
-        w = Math.max(w, row + 6);
-        int x = right - w;
-        g.fill(x, y, right, y + 26, 0xC0000000);
-        g.text(font, title, x + 4, y + 3, 0xFFFFFFFF);
-        int cx = x + 4;
-        for (int i = 0; i < labels.length; i++) {
-            g.fill(cx, y + 14, cx + sw, y + 22, 0xFF000000 | blend(i + 1));
-            g.text(font, labels[i], cx + sw + 3, y + 14, 0xFFA0A8B0);
-            cx += sw + 3 + font.width(labels[i]) + gap;
-        }
-        return y + 26;
-    }
-
-    /** The legend's swatch colour: the shade over a mid-grey map. */
-    private static int blend(int level) {
-        double a = ALPHA[level] / 255.0;
+    /** The colour of a level's shade over a mid-grey map, for the key (1: national data, 2: real building heights). */
+    public static int swatch(int lv) {
+        double a = ALPHA[lv] / 255.0;
         int base = 0x80;
         int r = (int) Math.round(((TEAL >> 16) & 0xFF) * a + base * (1 - a)), gg = (int) Math.round(((TEAL >> 8) & 0xFF) * a + base * (1 - a));
         int b = (int) Math.round((TEAL & 0xFF) * a + base * (1 - a));
-        return r << 16 | gg << 8 | b;
+        return 0xFF000000 | r << 16 | gg << 8 | b;
     }
 
     private void build(Projection p, int x0, int y0, int x1, int y1, long view) {
@@ -112,11 +82,10 @@ public final class CoverageOverlay {
         top = y0;
         cols = Math.max(1, (x1 - x0 + CELL - 1) / CELL);
         rows = Math.max(1, (y1 - y0 + CELL - 1) / CELL);
-        count = new int[cols * rows];
-        which = new long[cols * rows];
+        level = new byte[cols * rows];
         double[] xs = new double[64];
-        for (int si = 0; si < sources.size(); si++) {
-            long bit = si < 64 ? 1L << si : 0;
+        for (int si = 0; si < outlines.size(); si++) {
+            byte lv = (byte) (int) levels.get(si);
             for (double[] ring : outlines.get(si)) {
                 // The ring on the screen (its box first: skip it when it lies off the map).
                 int pts = (ring.length - 4) / 2;
@@ -124,13 +93,13 @@ public final class CoverageOverlay {
                 double[] sx = new double[pts], sy = new double[pts];
                 double minX = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, minY = Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
                 for (int i = 0; i < pts; i++) {
-                    double[] s = p.gui(ring[4 + i * 2], ring[5 + i * 2]);
-                    sx[i] = s[0];
-                    sy[i] = s[1];
-                    minX = Math.min(minX, s[0]);
-                    maxX = Math.max(maxX, s[0]);
-                    minY = Math.min(minY, s[1]);
-                    maxY = Math.max(maxY, s[1]);
+                    double[] sc = p.gui(ring[4 + i * 2], ring[5 + i * 2]);
+                    sx[i] = sc[0];
+                    sy[i] = sc[1];
+                    minX = Math.min(minX, sc[0]);
+                    maxX = Math.max(maxX, sc[0]);
+                    minY = Math.min(minY, sc[1]);
+                    maxY = Math.max(maxY, sc[1]);
                 }
                 if (maxX < x0 || minX > x1 || maxY < y0 || minY > y1) continue;
                 // Row by row: where the row's middle crosses the ring's edges, inside between each pair.
@@ -149,13 +118,23 @@ public final class CoverageOverlay {
                         int c0 = Math.max(0, (int) Math.ceil((xs[k] - x0) / CELL - 0.5)), c1 = Math.min(cols - 1, (int) Math.floor((xs[k + 1] - x0) / CELL - 0.5));
                         for (int c = c0; c <= c1; c++) {
                             int idx = r * cols + c;
-                            // A source with several rings (islands) counts once per cell.
-                            if ((which[idx] & bit) != 0 && bit != 0) continue;
-                            count[idx]++;
-                            which[idx] |= bit;
+                            if (level[idx] < lv) level[idx] = lv;
                         }
                     }
                 }
+            }
+        }
+        // The edges: a line on the higher level's side wherever two neighbouring cells differ.
+        edges.clear();
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < cols; c++) {
+                int lv = level[r * cols + c];
+                if (lv == 0) continue;
+                int x = x0 + c * CELL, y = y0 + r * CELL;
+                if (c > 0 && level[r * cols + c - 1] < lv) edges.add(new int[]{x, y, x + 1, y + CELL});
+                if (c + 1 < cols && level[r * cols + c + 1] < lv) edges.add(new int[]{x + CELL - 1, y, x + CELL, y + CELL});
+                if (r > 0 && level[(r - 1) * cols + c] < lv) edges.add(new int[]{x, y, x + CELL, y + 1});
+                if (r + 1 < rows && level[(r + 1) * cols + c] < lv) edges.add(new int[]{x, y + CELL - 1, x + CELL, y + CELL});
             }
         }
     }
