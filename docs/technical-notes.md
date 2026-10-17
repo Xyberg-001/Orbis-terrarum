@@ -2034,6 +2034,11 @@ No extra software or DNS change is needed on the player's side.
   around the place (60 m for peaks, 30 m otherwise), and a "Grand Tour"
   challenge wants all of them. Places with a Wikipedia entry rank first.
   The pack rebuilds itself when new map data arrives (`Landmarks.rebuildSoon`). Vanilla clients get all of it from the server.
+  Names are English where the map has one (`name:en`, else `int_name` in Latin letters; `Landmarks.english`,
+  17 Oct 2026): Kaaba, Hagia Sophia, Eiffel Tower, Bryggen Hanseatic Wharf. Mecca, Bergen, Paris, Istanbul, Agra
+  and New York kept 2 names of 207 in another script (no English name mapped). The advancement ids are still made
+  from the map's own name (`Landmark.localName`), so worlds made before keep their progress; their titles turn
+  English when the pack is next rebuilt (new map data, or `/orbis landmarks`).
 - **Caves and dungeons** (`vanillaCaves`): vanilla's cave tunnels (the
   worm carver with rooms, branches and lava below vanilla Y -56) are
   re-implemented inside the same underground band as the structures: per
