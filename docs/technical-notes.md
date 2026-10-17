@@ -1578,6 +1578,29 @@ the mod see theirs too. `liveStatusBar` (Mod Menu Performance, `/orbis settings`
 turns it off.
 
 ### Generation pipeline (`worldgen/RealWorldChunkGenerator`)
+
+**Slow regions in the Sahara (17-18 Oct 2026).** Walking in a Sahara world felt slow: building a map region took
+12-18 s (median 15.8 s over 21 regions) though none held a building, road or lake, and some took minutes. A
+headless server at 22.25 N, 10.30 E (JFR, `-Dorbis.profileRegions=true` for the step times) found three causes:
+- **Roads graded along their whole length.** A region's map data holds whole ways, and `gradeProfile` sampled the
+  ground across the road once per block along all of a desert highway (hundreds of km) for the half kilometre in the
+  region: regions with one road took 5 to 7 minutes, 9 s with the terrain cached; 944 of 994 s of elevation waiting
+  came from `roadBed`. Now only the stretch within `GRADE_CLIP_BLOCKS` (384) of the raster is graded, and an end
+  outside it is not pinned: 1.5-3 s, like the regions without roads; the road tests are unchanged.
+- **Soil depth from ISRIC's file server.** The depth to bedrock is read in full-width rows of two planet files, and
+  files.isric.org sent 12-45 KB/s to the user's connection (1 MB in 22 s): 10-30 s of rows per region, over three
+  minutes for the first ones of an area (3 tries of 60 s), and then a failure that dropped the soil groups too. Now a
+  region waits at most 5 s (`Soils.DEPTH_WAIT_MS`), the download goes on in the background (two at a time) and keeps
+  the rows on disk, the regions after a wait that ran out do not wait until a download comes back (or 2 minutes),
+  the row reads try twice for 20 s, and a failure leaves out only the depth. On a slow link the soil depth can then
+  differ between neighbouring regions (underground only). ISRIC's map service has no copy of the depth maps.
+- **Land cover looked up block by block.** `WorldCoverProvider.classAt` formatted the 3-degree granule's name and
+  looked it up for each of a region's 330,000 cells: 0.9-2.5 s a region; the last granule is kept now (0.13-0.3 s).
+
+What remains for a fresh area is a one-time wait while its data arrives: a WorldCover granule's header (3 degrees,
+about 90 s the first time), a soil-group tile (a quarter degree, 20-25 s) and the terrain tiles, after which regions
+build in about 2 s (median of 32). Two of the three Overpass servers (kumi.systems, private.coffee) failed that
+night, which made map data take 50-190 s a region; that is outside Orbis.
 - OSM is streamed per 512 × 512 m region with a 32 m margin (so nothing
   breaks at region edges), fetched from Overpass, cached on disk (gzip) and
   kept in a bounded LRU. Downloads are priority-scheduled: a region a chunk

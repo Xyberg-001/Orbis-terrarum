@@ -1683,15 +1683,29 @@ public final class FeatureRasterizer {
     private static final double GRADE_MAX_OFFSET = 1.0;
     /** How far beyond a road's edges the road bed is looked for (a mapped line can be metres off the real street). */
     private static final double GRADE_SEARCH_M = 6.0;
+    /**
+     * How far past the region's raster (blocks) a road is graded. A region's map data holds whole ways, and a desert
+     * highway is hundreds of kilometres long: grading all of it sampled the ground (and downloaded terrain) along the
+     * whole road for the half kilometre inside the region. A Sahara region with one road took 5 to 7 minutes to
+     * build, 9 s with the terrain cached (17 Oct 2026). The grade is local (a 4 m window, pins a few blocks long,
+     * a slope limit that spreads only where the ground is steeper than the road may be), so a window this far past
+     * the edge gives both regions the same heights at their seam.
+     */
+    private static final int GRADE_CLIP_BLOCKS = 384;
 
     /**
      * The graded height of a ground road along its length, one value per block: the ground under the centreline,
      * smoothed over about 4 m either way, pinned to the ground at both end nodes (so every way meeting at a junction
      * arrives at the same height) and never more than one block off the ground at the centreline.
      */
-    private double[] gradeProfile(Drawn g, boolean freeStart, boolean freeEnd) {
+    private double[] gradeProfile(Drawn g, boolean freeStart, boolean freeEnd, double bx0, double bz0, double bx1, double bz1) {
         List<double[]> pts = g.pts();
         int n = (int) Math.ceil(g.length()) + 1;
+        // Only the stretch within the box (the region's raster and GRADE_CLIP_BLOCKS round it) is sampled; the rest of
+        // the profile carries the nearest sampled height, and an end outside the box is not pinned to its node.
+        double[] window = alongWithin(pts, bx0, bz0, bx1, bz1);
+        int aLo = window == null ? 0 : Math.max(0, (int) Math.floor(window[0]));
+        int aHi = window == null ? n - 1 : Math.min(n - 1, (int) Math.ceil(window[1]));
         double[] raw = new double[n];
         int half = g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0);
         int span = half + Math.max(2, (int) Math.round(mapper.blocks(GRADE_SEARCH_M)));
@@ -1712,7 +1726,8 @@ public final class FeatureRasterizer {
             double len = Math.max(1e-9, Math.hypot(p1[0] - p0[0], p1[1] - p0[1]));
             double t = Math.max(0, Math.min(1, (s - segStart) / len));
             double ux = (p1[0] - p0[0]) / len, uz = (p1[1] - p0[1]) / len;
-            double e = roadBed(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, -uz, ux, half, span, cross);
+            double e = a < aLo || a > aHi ? Double.NaN
+                    : roadBed(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, -uz, ux, half, span, cross);
             if (Double.isNaN(e)) e = last;
             raw[a] = e;
             if (!Double.isNaN(e)) last = e;
@@ -1721,13 +1736,14 @@ public final class FeatureRasterizer {
         for (double v : raw) if (!Double.isNaN(v)) { first = v; break; }
         if (Double.isNaN(first)) return null;
         for (int a = 0; a < n && Double.isNaN(raw[a]); a++) raw[a] = first;
-        double node0 = elevationAt(pts.get(0)[0], pts.get(0)[1]);
-        double node1 = elevationAt(pts.get(pts.size() - 1)[0], pts.get(pts.size() - 1)[1]);
+        // An end at a bridge or tunnel is left to its ramp or cutting: pinned to the portal node's ground (up on the
+        // slope), the road's last cross-section stood as a ridge above the cutting. An end far outside the region
+        // is not pinned (nor its ground looked up).
+        boolean pin0 = !freeStart && aLo == 0, pin1 = !freeEnd && aHi == n - 1;
+        double node0 = pin0 ? elevationAt(pts.get(0)[0], pts.get(0)[1]) : Double.NaN;
+        double node1 = pin1 ? elevationAt(pts.get(pts.size() - 1)[0], pts.get(pts.size() - 1)[1]) : Double.NaN;
         if (Double.isNaN(node0)) node0 = raw[0];
         if (Double.isNaN(node1)) node1 = raw[n - 1];
-        // An end at a bridge or tunnel is left to its ramp or cutting: pinned to the portal node's ground (up on the
-        // slope), the road's last cross-section stood as a ridge above the cutting.
-        boolean pin0 = !freeStart, pin1 = !freeEnd;
         int w = Math.max(2, (int) Math.round(mapper.blocks(GRADE_WINDOW_M)));
         // The ends meet the ground at their nodes (shared by every way there); the blend to them is kept gradual.
         int pinReach = Math.max(4, w);
@@ -1789,6 +1805,41 @@ public final class FeatureRasterizer {
             if (!changed) return;
         }
         for (int i = 0; i < last; i++) p[i + 1] = Math.max(p[i] - s, Math.min(p[i] + s, p[i + 1]));
+    }
+
+    /**
+     * The stretch of a polyline (block coordinates) inside a box, as distances along it {from, to}; null when the whole
+     * line is inside (nothing to leave out). A line wholly outside gives its full length, as before.
+     */
+    static double[] alongWithin(List<double[]> pts, double bx0, double bz0, double bx1, double bz1) {
+        double from = Double.MAX_VALUE, to = -Double.MAX_VALUE, at = 0;
+        boolean allInside = true;
+        for (int i = 0; i + 1 < pts.size(); i++) {
+            double[] p0 = pts.get(i), p1 = pts.get(i + 1);
+            double dx = p1[0] - p0[0], dz = p1[1] - p0[1], len = Math.sqrt(dx * dx + dz * dz);
+            // Liang-Barsky: the part of the segment inside the box, as t0..t1.
+            double t0 = 0, t1 = 1;
+            double[] pp = {-dx, dx, -dz, dz}, qq = {p0[0] - bx0, bx1 - p0[0], p0[1] - bz0, bz1 - p0[1]};
+            boolean in = true;
+            for (int k = 0; k < 4 && in; k++) {
+                if (pp[k] == 0) {
+                    if (qq[k] < 0) in = false;
+                } else {
+                    double t = qq[k] / pp[k];
+                    if (pp[k] < 0) t0 = Math.max(t0, t);
+                    else t1 = Math.min(t1, t);
+                    if (t0 > t1) in = false;
+                }
+            }
+            if (!in || t0 > 0 || t1 < 1) allInside = false;
+            if (in) {
+                from = Math.min(from, at + t0 * len);
+                to = Math.max(to, at + t1 * len);
+            }
+            at += len;
+        }
+        if (allInside) return null;
+        return from > to ? new double[]{0, at} : new double[]{from, to};
     }
 
     /**
@@ -2338,7 +2389,9 @@ public final class FeatureRasterizer {
             for (Drawn g : groundWays) {
                 if (g.rf().isRail() || g.length() < 2) continue;
                 double[] profile = gradeProfile(g, structureEnds.contains(nodeKey(g.pts().get(0))),
-                        structureEnds.contains(nodeKey(g.pts().get(g.pts().size() - 1))));
+                        structureEnds.contains(nodeKey(g.pts().get(g.pts().size() - 1))),
+                        r.originX - GRADE_CLIP_BLOCKS, r.originZ - GRADE_CLIP_BLOCKS,
+                        r.originX + r.stride + GRADE_CLIP_BLOCKS, r.originZ + r.stride + GRADE_CLIP_BLOCKS);
                 if (profile == null) continue;
                 graded.put(g, profile);
                 int half = g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0);

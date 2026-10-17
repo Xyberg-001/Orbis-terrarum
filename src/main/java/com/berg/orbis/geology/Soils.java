@@ -111,7 +111,21 @@ public final class Soils {
     private final Path tileDir;
     private final RowTiff soilDepth;
     private final RowTiff rockDepth;
-    private volatile long failedUntil;
+    private volatile long failedUntil, depthFailedUntil;
+    /**
+     * Set when a region's wait for its depth ran out: the regions after it do not wait at all (their downloads still go
+     * on) until a download comes back or this passes. Otherwise every region paid the whole wait while the server was slow.
+     */
+    private volatile long depthSlowUntil;
+    /** How long a region waits for its soil depth before it is built with the usual depth (the download goes on). */
+    private static final long DEPTH_WAIT_MS = 5_000;
+    /** The depth downloads: two at a time, at most 16 waiting (more are left out, and asked again by later regions). */
+    private static final java.util.concurrent.ExecutorService DEPTH_POOL = new java.util.concurrent.ThreadPoolExecutor(2, 2, 30,
+            java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.ArrayBlockingQueue<>(16), r -> {
+        Thread t = new Thread(r, "Orbis-soil-depth");
+        t.setDaemon(true);
+        return t;
+    }, new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
     private final Map<String, Tile> tiles = java.util.Collections.synchronizedMap(new LinkedHashMap<>(32, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, Tile> e) {
@@ -214,13 +228,52 @@ public final class Soils {
             t = new Tile[(i1 - i0 + 1) * (j1 - j0 + 1)];
             int k = 0;
             for (int i = i0; i <= i1; i++) for (int j = j0; j <= j1; j++) t[k++] = tile(i, j);
-            soil = withDepth ? soilDepth.window(south, west, north, east) : null;
-            if (soil != null && anyDeep(soil)) rock = rockDepth.window(south, west, north, east);
         } catch (IOException | InterruptedException | RuntimeException e) {
             failedUntil = System.currentTimeMillis() + 10 * 60_000L;
             System.err.println("[orbis] Soil map unavailable (" + e.getMessage() + "); the ground is drawn as before for 10 minutes");
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return null;
+        }
+        // The depth is a separate download (two whole-planet files, read a few full-width rows at a time from ISRIC's file
+        // server, which sent 12-45 KB/s to the user's connection: 10-30 s for a region's rows, minutes for the first of
+        // an area, 17 Oct 2026). A region waits for it at most DEPTH_WAIT_MS; the download goes on in the background and
+        // keeps the rows on disk, so later regions there have them at once. When the wait runs out, the region is built
+        // with the soil groups and the usual depth. When it fails, only the depth is left out for a while (the groups
+        // were dropped too until 17 Oct 2026).
+        if (withDepth && System.currentTimeMillis() >= depthFailedUntil) {
+            java.util.concurrent.CompletableFuture<RowTiff.Window[]> f;
+            try {
+                f = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        RowTiff.Window s0 = soilDepth.window(south, west, north, east);
+                        RowTiff.Window r0 = s0 != null && anyDeep(s0) ? rockDepth.window(south, west, north, east) : null;
+                        depthSlowUntil = 0; // a download came back: regions wait for theirs again
+                        return new RowTiff.Window[]{s0, r0};
+                    } catch (IOException | InterruptedException e) {
+                        throw new java.util.concurrent.CompletionException(e);
+                    }
+                }, DEPTH_POOL);
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                f = null; // enough depth downloads queued: this region goes without
+            }
+            if (f != null) {
+                try {
+                    long wait = System.currentTimeMillis() < depthSlowUntil ? 0 : DEPTH_WAIT_MS;
+                    RowTiff.Window[] w = wait == 0 ? f.getNow(null) : f.get(wait, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    if (w == null) throw new java.util.concurrent.TimeoutException();
+                    soil = w[0];
+                    rock = w[1];
+                } catch (java.util.concurrent.TimeoutException e) {
+                    // still downloading: this region uses the usual depth; the rows land on disk for the next ones
+                    if (System.currentTimeMillis() >= depthSlowUntil) depthSlowUntil = System.currentTimeMillis() + 2 * 60_000L;
+                } catch (java.util.concurrent.ExecutionException | RuntimeException e) {
+                    depthFailedUntil = System.currentTimeMillis() + 10 * 60_000L;
+                    Throwable c = e.getCause() != null ? e.getCause() : e;
+                    System.err.println("[orbis] Soil depth unavailable (" + c.getMessage() + "); soil groups stay, the depth is left out for 10 minutes");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
         return new Area(t, soil, rock);
     }

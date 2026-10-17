@@ -158,12 +158,14 @@ final class RowTiff {
 
     private byte[] range(long offset, long length) throws IOException, InterruptedException {
         IOException last = null;
-        for (int attempt = 0; attempt < 3; attempt++) {
+        // Two tries of 20 s: three of 60 s (plus the pauses) held every region in a new area for over three minutes on a
+        // slow connection, and then failed anyway (Sahara, 17 Oct 2026); the soil depth is skipped for a while instead.
+        for (int attempt = 0; attempt < 2; attempt++) {
             if (com.berg.orbis.OrbisMod.stopping()) throw new IOException("stopping");
             try {
                 Map<String, String> h = new HashMap<>(HEADERS);
                 h.put("Range", "bytes=" + offset + "-" + (offset + length - 1));
-                OrbisHttp.Response r = OrbisHttp.get(url, h, 60);
+                OrbisHttp.Response r = OrbisHttp.get(url, h, 20);
                 if (r.status() == 206 && r.body().length == length) return r.body();
                 last = new IOException("HTTP " + r.status() + " (" + r.body().length + " of " + length + " bytes)");
             } catch (IOException e) {
