@@ -2975,6 +2975,15 @@ builders 25-31%, the map regions 10-12%. The sweep sat at its 128 requests in fl
 so the cap is 256 (`-Dorbis.pregenInFlight=N` for tests); at 256 the sweep sometimes waits for the disk
 queue. Left for later: the terrain fill looks each block up in the section's palette (4.3% of CPU) and
 recounts touched sections afterwards (4.6%); the CPU is not the limit, so neither was changed.
+Lithium 0.26.2 (same day, same area, 256 in flight): loads without a Mixin conflict or error, but does
+not speed up pre-generation: 81.8 and 72.3 chunks/s against 87.8 and 81.9 without it in the runs just
+before or after (plain runs at 256 ranged 74.9-87.8). Its gains are in ticking (mobs, hoppers, redstone),
+which a paused sweep does not do; fine to use for playing. With a fixed seed, two plain worlds matched in
+75% of the chunks: the rest differ in the deep underground band only (sculk, sculk veins, deepslate
+facing, around Y -1830 at Bergen), where features placed on several threads land in a different order;
+with Lithium the same kind of difference reached most chunks. Both runs, with and without it, logged
+Minecraft's "unsafe terrain read during worldgen" 24 times at chunk [4, -93] (a feature reading two
+chunks away; not yet traced).
 
 ## Exploring a whole country
 
