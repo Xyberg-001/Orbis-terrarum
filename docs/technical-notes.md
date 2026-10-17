@@ -1949,9 +1949,35 @@ No extra software or DNS change is needed on the player's side.
     blocks down towards its tunnel in one region and stayed on the ground in
     the next: a 10-block wall across six lanes. Road steps across region
     edges (16 Oct 2026, scratchpad seam probe): Bergen 5 x 5 km 46 -> 13,
-    Mecca 3 x 3 km 230 -> 171; what is left is on bridge decks (up to 6
-    blocks) and in tunnels (up to 11), whose own heights still depend on what
-    each region sees above and under them.
+    Mecca 3 x 3 km 230 -> 171 at first.
+  - Bridges and tunnels two regions draw: a bridge within a region margin
+    of an edge, with every bridge it forms one with (pieces joined end to
+    end, ways side by side within 12 m of deck), takes its deck from what
+    both regions know alike (`sharedBridgeProfile`): the ground along it
+    (the sea at sea level), and the roads, railways and paths under its
+    width (another bridge's own deck where one runs under it) from map boxes
+    on a fixed world grid (`CORRIDOR_CELL`, 0.002 degrees) along it and 12 m
+    to either side. A box wholly inside the region's own data is served by
+    that data; the others come from the map lookup (the same source and
+    cache as regions). The ways beside it are levelled as a group, each
+    deck worked out the same way. A tunnel near an edge is pushed down under
+    the buildings and the streets over its width from the same boxes, with
+    two blocks more under a street (its graded height is not known to
+    both). Before, each region worked these out from what lay under or over
+    them inside its own data: decks stepped up to 9 blocks and tunnel floors
+    up to 11 at region edges. Bridges and tunnels away from the edges keep
+    the details only their region knows (graded streets under them, water,
+    `unifyParallelBridges`). Road steps across region edges, 16-17 Oct 2026:
+    Mecca 3 x 3 km 230 -> 3, Bergen 5 x 5 km 46 -> 2 (1:1), 0 -> 0 (1:2).
+    Road tests: steps 1:2 22 -> 16, deck (paths) 3 -> 0, thin tunnel cover
+    82 -> 76 / 29 -> 24; at 1:2 near region edges, 4 deck cells where a slip
+    road merges into Nygaardstangen bru (2 blocks) and 3 headroom cells
+    (streets in cuttings over tunnels) are new.
+  - A ramp or cutting runs until it is within half a block of the road it
+    meets (within a block, its last cell could round up while the road
+    beyond rounded down: a two-block step), and at a region edge it is
+    limited by the distance of the road's centre point, so the road stays
+    level across its width.
   Counts on the four test areas (roads, 1:1 / 1:2): steps 94 / 70 -> 7 / 22
   (the rest mostly the touching legs of the Nordre Skuteviksveien
   switchback), road-under-road headroom 43 / 5 -> 0 / 0, bridge-deck

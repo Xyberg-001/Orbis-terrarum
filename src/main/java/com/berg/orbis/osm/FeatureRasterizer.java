@@ -315,7 +315,7 @@ public final class FeatureRasterizer {
             stepDone(st, "forest");
             if (cfg.generateRoads) {
                 List<Cover> covers = cfg.generateBuildings ? buildingCovers(areasBigFirst) : List.of();
-                rasterizeTransport(r, data.ways(), nvdbIndex(r, nvdbSegments), covers);
+                rasterizeTransport(r, data, nvdbIndex(r, nvdbSegments), covers);
             }
             stepDone(st, "roads");
             if (cfg.generateBuildings) {
@@ -1904,7 +1904,8 @@ public final class FeatureRasterizer {
         return out;
     }
 
-    private void rasterizeTransport(RegionRaster r, List<OsmWay> ways, NvdbRoads.Index nvdbIndex, List<Cover> covers) {
+    private void rasterizeTransport(RegionRaster r, OsmData regionData, NvdbRoads.Index nvdbIndex, List<Cover> covers) {
+        List<OsmWay> ways = regionData.ways();
         TunnelHeights surveyed = new TunnelHeights(r);
         List<OsmWay> lines = new ArrayList<>();
         for (OsmWay w : ways) {
@@ -2074,6 +2075,10 @@ public final class FeatureRasterizer {
         }
         List<Drawn> groundWays = new ArrayList<>();
         List<Drawn> bridges = new ArrayList<>();
+        // Map boxes on the world grid along bridges a neighbouring region also sees (fetched once per region).
+        Map<Long, OsmData> corridorCache = new HashMap<>();
+        java.util.Set<RoadFeature> sharedDecks = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        java.util.Set<Long> nearEdgeBridges = wayLookup != null ? bridgesNearEdge(r, lines) : java.util.Set.of();
         // End nodes of every drawn way: a road that shares an end node with a
         // bridge is its approach, not something the bridge crosses.
         Map<RoadFeature, long[]> wayEnds = new HashMap<>();
@@ -2172,7 +2177,14 @@ public final class FeatureRasterizer {
                     Double d0 = nodeDeck.get(k0), d1 = nodeDeck.get(k1);
                     yStart = d0 != null ? Math.max(d0, e0 + 1) : e0 + 1;
                     yEnd = d1 != null ? Math.max(d1, e1 + 1) : e1 + 1;
-                    deckProfile = bridgeProfile(r, rf, pts, fullHalf, wayLen, yStart, yEnd, isApproach);
+                    // A bridge the next region sees too (within a margin of the edge) takes its deck from what both regions
+                    // know alike; else from everything this region knows under it.
+                    // (with its pieces and the carriageways beside it: one bridge is never worked out two ways)
+                    boolean shared = nearEdgeBridges.contains(way.id());
+                    if (shared) sharedDecks.add(rf);
+                    deckProfile = shared
+                            ? sharedBridgeProfile(rf, pts, wayLen, fullHalf, e0 + 1, e1 + 1, corridorCache, r, regionData)
+                            : bridgeProfile(r, rf, pts, fullHalf, wayLen, yStart, yEnd, isApproach);
                     yStart = deckProfile[0];
                     yEnd = deckProfile[deckProfile.length - 1];
                     nodeDeck.merge(k0, yStart, Math::max);
@@ -2184,8 +2196,23 @@ public final class FeatureRasterizer {
                         boolean in0 = interiorTunnelNode(k0, tunnelEndCount, groundEnds), in1 = interiorTunnelNode(k1, tunnelEndCount, groundEnds);
                         double s0 = in0 ? nodeTunnel.getOrDefault(k0, e0 - tunnelCover) : e0;
                         double s1 = in1 ? nodeTunnel.getOrDefault(k1, e1 - tunnelCover) : e1;
-                        deckProfile = tunnelProfile(r, rf, pts, fullHalf, wayLen, s0, s1, isApproach, covers, in0 ? 0 : portalMargin, in1 ? 0 : portalMargin,
-                                surveyed.along(way, pts, wayLen));
+                        // A tunnel the next region sees too (within a margin of the edge) is pushed down under what both regions
+                        // know alike: the buildings and the streets above it from map boxes on the world grid along it. Under
+                        // what each region knew above it inside its own data, its floor stepped by up to 11 blocks at the edge.
+                        List<Cover> tunnelCovers = covers;
+                        java.util.Collection<OsmWay> above = null;
+                        if (wayLookup != null && seenByNeighbour(r, pts)) {
+                            Map<Long, OsmArea> areasHere = new java.util.LinkedHashMap<>();
+                            Map<Long, OsmWay> waysHere = new java.util.LinkedHashMap<>();
+                            for (OsmData d : corridorData(pts, corridorCache, r, regionData)) {
+                                for (OsmArea a : d.areas()) areasHere.putIfAbsent(a.id(), a);
+                                for (OsmWay o : d.ways()) waysHere.putIfAbsent(o.id(), o);
+                            }
+                            tunnelCovers = cfg.generateBuildings ? buildingCovers(new ArrayList<>(areasHere.values())) : List.of();
+                            above = waysHere.values();
+                        }
+                        deckProfile = tunnelProfile(r, rf, pts, fullHalf, wayLen, s0, s1, isApproach, tunnelCovers, in0 ? 0 : portalMargin, in1 ? 0 : portalMargin,
+                                surveyed.along(way, pts, wayLen), above);
                         // Every way through an interior node meets it at the agreed floor: whatever this way alone
                         // would dig deeper near the node (a street above it, a building the node pass did not see)
                         // is ramped back up to the node at the usual grade rather than left as a step.
@@ -2331,7 +2358,11 @@ public final class FeatureRasterizer {
         // often runs alongside; each got its deck from the terrain at its own two ends, which differ when one
         // starts on the ramp and another on the quay, so the decks came out stepped. Every bridge cell is lifted
         // to the highest deck of any other bridge way running the same direction, on the same layer, within 12 m.
-        if (bridges.size() > 1) unifyParallelBridges(r, bridges, nodeDeck);
+        // (not the bridges two regions draw: their decks come from what both know, and a carriageway beside one may be in
+        // one region's data only; they are levelled with the carriageways beside them in sharedBridgeProfile)
+        List<Drawn> ownBridges = new ArrayList<>();
+        for (Drawn d : bridges) if (!sharedDecks.contains(d.rf())) ownBridges.add(d);
+        if (ownBridges.size() > 1) unifyParallelBridges(r, ownBridges, nodeDeck);
 
         // Approach ramps: a ground way that ends where a bridge deck starts
         // climbs to that deck at a fixed grade, as an embankment. A ramp that
@@ -2357,7 +2388,9 @@ public final class FeatureRasterizer {
                     // under each cell: per cell, half a road took the ramp and half did not (a sawtooth, and an
                     // eight-block drop in O.J. Brochs gate).
                     double terrain = gp != null ? gp[(int) Math.max(0, Math.min(gp.length - 1, Math.round(along)))] : elevationAt(x, z);
-                    if (Double.isNaN(terrain) || ramp < terrain + 1.0) return;
+                    // Until it is within half a block of the road (within a block, its last cell could round up while the
+                    // road beyond rounded down: a two-block step where the ramp onto Nygaardsbroen meets Fjoesangerveien).
+                    if (Double.isNaN(terrain) || ramp < terrain + 0.5) return;
                     short y = (short) Math.round(ramp);
                     if (r.roadY[idx] == RegionRaster.NO_Y || y > r.roadY[idx]) r.roadY[idx] = y;
                 });
@@ -2396,7 +2429,7 @@ public final class FeatureRasterizer {
                     double cut = Math.min(cs + RAMP_GRADE * fromStart, ce + RAMP_GRADE * fromEnd);
                     // As for the ramps: decided per point along the road, so the cutting takes its whole width.
                     double terrain = gp != null ? gp[(int) Math.max(0, Math.min(gp.length - 1, Math.round(along)))] : elevationAt(x, z);
-                    if (Double.isNaN(terrain) || cut > terrain - 1.0) return;
+                    if (Double.isNaN(terrain) || cut > terrain - 0.5) return;
                     short y = (short) Math.round(cut);
                     if (r.roadY[idx] == RegionRaster.NO_Y || y < r.roadY[idx]) r.roadY[idx] = y;
                 });
@@ -2418,8 +2451,11 @@ public final class FeatureRasterizer {
                 double[] gp = e.getValue();
                 walkThickLine(r, g.pts(), g.rf().halfWidth + (g.rf().sidewalk ? 1 : 0), (idx, x, z, dist, along, dir) -> {
                     if (idx < 0 || r.road[idx] != g.code() || r.roadY[idx] == RegionRaster.NO_Y) return;
-                    int lx = x - r.originX, lz = z - r.originZ;
-                    int edge = Math.max(0, Math.min(Math.min(lx - lo, hi - lx), Math.min(lz - lo, hi - lz)));
+                    // The distance to the edge of the road's centre point here, so the road stays level across its width
+                    // (per cell, a road crossing the edge at a slant stepped by two blocks between neighbouring cells).
+                    double[] c = pointAlong(g.pts(), along);
+                    double lx = c[0] - r.originX, lz = c[1] - r.originZ;
+                    double edge = Math.max(0, Math.min(Math.min(lx - lo, hi - lx), Math.min(lz - lo, hi - lz)));
                     double base = gp[(int) Math.max(0, Math.min(gp.length - 1, Math.round(along)))];
                     double allowed = slope * edge;
                     int y = r.roadY[idx];
@@ -2592,10 +2628,19 @@ public final class FeatureRasterizer {
 
     /** A tunnel under another tunnel: its road at least this many blocks under the other's road. */
     private static final int TUNNEL_STACK = 7;
+    /** Extra blocks under a street crossing over a tunnel two regions draw (the street's own height is not known to both). */
+    private static final int STREET_SLACK = 2;
 
     private double[] tunnelProfile(RegionRaster r, RoadFeature rf, List<double[]> pts, double halfWidth, double wayLen,
                                    double y0, double y1, java.util.function.Predicate<RoadFeature> isApproach, List<Cover> covers,
                                    int margin0, int margin1, double[] surveyed) {
+        return tunnelProfile(r, rf, pts, halfWidth, wayLen, y0, y1, isApproach, covers, margin0, margin1, surveyed, null);
+    }
+
+    /** As above; with {@code waysOver} (the ways round it from the world-grid boxes) the streets and tunnels over it come from those. */
+    private double[] tunnelProfile(RegionRaster r, RoadFeature rf, List<double[]> pts, double halfWidth, double wayLen,
+                                   double y0, double y1, java.util.function.Predicate<RoadFeature> isApproach, List<Cover> covers,
+                                   int margin0, int margin1, double[] surveyed, java.util.Collection<OsmWay> waysOver) {
         int n = (int) Math.ceil(wayLen) + 1;
         double[] cap = new double[n];
         Arrays.fill(cap, Double.POSITIVE_INFINITY);
@@ -2643,7 +2688,13 @@ public final class FeatureRasterizer {
         // Streets crossing above it (known only inside this raster; a street in a cutting sits below the terrain), and
         // shallower tunnels: a tube (4 blocks of air, a roof, gravel under the road) needs TUNNEL_STACK blocks under
         // another's road. Without this the two Nygårdstunnelen tubes (layers -1 and -3) shared one floor.
-        if (rf != null) walkThickLine(r, pts, halfWidth, (idx, x, z, dist, along, dir) -> {
+        if (rf != null && waysOver != null) {
+            for (double[] c : crossingsAbove(pts, halfWidth, rf.layer, rf.id, waysOver)) {
+                int a = (int) Math.max(0, Math.min(n - 1, Math.round(c[0])));
+                cap[a] = Math.min(cap[a], c[1]);
+            }
+        }
+        else if (rf != null) walkThickLine(r, pts, halfWidth, (idx, x, z, dist, along, dir) -> {
             if (idx < 0) return;
             RoadFeature above = r.roadAt(idx);
             if (above == null || above == rf || above.layer <= rf.layer || isApproach.test(above)) return;
@@ -2875,6 +2926,446 @@ public final class FeatureRasterizer {
      * {@link #RAMP_GRADE} so the deck never jumps. The ends may come out
      * higher than the banks; the approach roads then get ramps.
      */
+    /**
+     * The bridges two regions draw, with everything they form one bridge with: the pieces joined end to end and the ways
+     * side by side on the same layer (decks within 12 m), all of a group when any of it comes within a margin of the edge.
+     * Their decks are worked out from what both regions know alike (sharedBridgeProfile); the others keep the details only
+     * this region knows (bridgeProfile, unifyParallelBridges). A group worked out partly one way and partly the other
+     * came out uneven (Puddefjordsbroen's carriageways 6 blocks apart).
+     */
+    private java.util.Set<Long> bridgesNearEdge(RegionRaster r, List<OsmWay> lines) {
+        List<OsmWay> bs = new ArrayList<>();
+        List<List<double[]>> ls = new ArrayList<>();
+        for (OsmWay w : lines) {
+            if (w.points().size() < 2 || !OsmTags.has(w.tags(), "bridge") || transportKind(w.tags()) == null) continue;
+            bs.add(w);
+            ls.add(toBlockRing(w.points()));
+        }
+        int n = bs.size();
+        int[] parent = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+        double[][] box = new double[n][];
+        for (int i = 0; i < n; i++) {
+            double x0 = Double.MAX_VALUE, z0 = Double.MAX_VALUE, x1 = -Double.MAX_VALUE, z1 = -Double.MAX_VALUE;
+            for (double[] p : ls.get(i)) {
+                x0 = Math.min(x0, p[0]);
+                x1 = Math.max(x1, p[0]);
+                z0 = Math.min(z0, p[1]);
+                z1 = Math.max(z1, p[1]);
+            }
+            box[i] = new double[]{x0, z0, x1, z1};
+        }
+        double gap = Math.max(3, mapper.blocks(12.0)) + 8;
+        for (int i = 0; i < n; i++) {
+            List<double[]> a = ls.get(i);
+            long a0 = nodeKey(a.get(0)), a1 = nodeKey(a.get(a.size() - 1));
+            for (int j = i + 1; j < n; j++) {
+                if (box[i][2] + gap < box[j][0] || box[j][2] + gap < box[i][0] || box[i][3] + gap < box[j][1] || box[j][3] + gap < box[i][1]) continue;
+                List<double[]> b = ls.get(j);
+                long b0 = nodeKey(b.get(0)), b1 = nodeKey(b.get(b.size() - 1));
+                boolean joined = a0 == b0 || a0 == b1 || a1 == b0 || a1 == b1;
+                boolean beside = !joined && layerOf(bs.get(i).tags()) == layerOf(bs.get(j).tags())
+                        && runsBeside(a, b, Math.max(3, mapper.blocks(12.0)) + besideHalf(bs.get(i).tags()) + besideHalf(bs.get(j).tags()) + 2);
+                if (joined || beside) {
+                    int ri = find(parent, i), rj = find(parent, j);
+                    if (ri != rj) parent[ri] = rj;
+                }
+            }
+        }
+        java.util.Set<Integer> edgeRoots = new java.util.HashSet<>();
+        for (int i = 0; i < n; i++) if (seenByNeighbour(r, ls.get(i))) edgeRoots.add(find(parent, i));
+        java.util.Set<Long> out = new java.util.HashSet<>();
+        for (int i = 0; i < n; i++) if (edgeRoots.contains(find(parent, i))) out.add(bs.get(i).id());
+        return out;
+    }
+
+    private static int find(int[] parent, int i) {
+        while (parent[i] != i) {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        return i;
+    }
+
+    /** Whether a line comes within a region margin of this region's edge (the next region then draws it too, in its margin). */
+    private static boolean seenByNeighbour(RegionRaster r, List<double[]> pts) {
+        double lo = r.originX + 2 * r.margin, hi = r.originX + r.margin + r.size - r.margin;
+        double loZ = r.originZ + 2 * r.margin, hiZ = r.originZ + r.margin + r.size - r.margin;
+        for (double[] p : pts) if (p[0] < lo || p[0] > hi || p[1] < loZ || p[1] > hiZ) return true;
+        return false;
+    }
+
+    /** The world grid of map boxes along bridges, in degrees: two regions asking about one place fetch the same box. */
+    private static final double CORRIDOR_CELL = 0.002;
+    private static final OsmData NO_DATA = new OsmData(List.of(), List.of(), List.of());
+
+    /**
+     * The map round a line on the world grid: boxes of CORRIDOR_CELL degrees along it and 12 m to either side. A box wholly
+     * inside this region's own data is served by that data (it holds every way and area reaching into the box, whole); the
+     * others are fetched (once per region). Two regions thus see the same ways crossing, joining and running beside it.
+     */
+    private List<OsmData> corridorData(List<double[]> pts, Map<Long, OsmData> cache, RegionRaster r, OsmData own) {
+        WayLookup lookup = wayLookup;
+        java.util.LinkedHashSet<Long> cells = new java.util.LinkedHashSet<>();
+        double side = Math.max(2, mapper.blocks(12.0));
+        for (int i = 0; i + 1 < pts.size(); i++) {
+            double[] a = pts.get(i), b = pts.get(i + 1);
+            double len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            double ux = len < 1e-9 ? 1 : (b[0] - a[0]) / len, uz = len < 1e-9 ? 0 : (b[1] - a[1]) / len;
+            for (double s = 0; s <= len + 1e-9; s += 8) {
+                double t = len < 1e-9 ? 0 : Math.min(1, s / len);
+                double px = a[0] + (b[0] - a[0]) * t, pz = a[1] + (b[1] - a[1]) * t;
+                for (int k = -1; k <= 1; k++) {
+                    double[] ll = mapper.toLatLonExact(px - uz * side * k, pz + ux * side * k);
+                    long ci = (long) Math.floor(ll[0] / CORRIDOR_CELL), cj = (long) Math.floor(ll[1] / CORRIDOR_CELL);
+                    cells.add((ci << 32) | (cj & 0xFFFFFFFFL));
+                }
+            }
+        }
+        List<OsmData> out = new ArrayList<>();
+        boolean ownAdded = false;
+        for (long c : cells) {
+            double s0 = (int) (c >> 32) * CORRIDOR_CELL, w0 = (int) (long) c * CORRIDOR_CELL;
+            double[] p0 = mapper.toBlockExact(s0, w0), p1 = mapper.toBlockExact(s0 + CORRIDOR_CELL, w0 + CORRIDOR_CELL);
+            double bx0 = Math.min(p0[0], p1[0]), bx1 = Math.max(p0[0], p1[0]), bz0 = Math.min(p0[1], p1[1]), bz1 = Math.max(p0[1], p1[1]);
+            if (own != null && bx0 >= r.originX + 2 && bx1 <= r.originX + r.stride - 2 && bz0 >= r.originZ + 2 && bz1 <= r.originZ + r.stride - 2) {
+                if (!ownAdded) out.add(own);
+                ownAdded = true;
+                continue;
+            }
+            if (lookup == null) continue;
+            OsmData d = cache.computeIfAbsent(c, k -> {
+                double lat = ((int) (k >> 32) + 0.5) * CORRIDOR_CELL, lon = ((int) (long) k + 0.5) * CORRIDOR_CELL;
+                OsmData got = lookup.dataAround(lat, lon, CORRIDOR_CELL / 2 * 111_320.0);
+                return got == null ? NO_DATA : got;
+            });
+            out.add(d);
+        }
+        return out;
+    }
+
+    /** A bridge's clearance over the ground: 5 m for a main road or railway, 3 for a minor road, 2 for a footbridge. */
+    private double bridgeGroundClearance(RoadFeature rf) {
+        String hw = rf.highway == null ? "" : rf.highway;
+        boolean major = hw.startsWith("motorway") || hw.startsWith("trunk") || hw.startsWith("primary") || hw.startsWith("secondary");
+        return rf.isRail() || (rf.kind == RoadFeature.Kind.ROAD && major) ? heightBlocks(5.0, 2.0)
+                : rf.kind == RoadFeature.Kind.ROAD ? heightBlocks(3.0, 1.5) : heightBlocks(2.0, 1.0);
+    }
+
+    /** Clearance over a road, railway or path crossing under a bridge. */
+    private double clearanceOver(RoadFeature.Kind under) {
+        return under == RoadFeature.Kind.RAIL ? heightBlocks(6.5, 4.0)
+                : under == RoadFeature.Kind.PATH || under == RoadFeature.Kind.STEPS || under == RoadFeature.Kind.TRACK ? heightBlocks(3.5, 3.5)
+                : heightBlocks(5.5, 4.0);
+    }
+
+    /**
+     * The deck of a bridge that two regions draw (it lies within a margin of an edge), from what both know alike: the
+     * ground along the whole bridge (the sea at sea level), and the roads, railways and paths it crosses, from map boxes
+     * on a fixed world grid along it, plus those crossed by the bridge pieces joined to its two ends (a bridge mapped in
+     * pieces meets itself at the same height). Each region worked out the deck from what lay under it inside its own data:
+     * a bridge over a road just past the edge was lifted in one region and not in the next, and stepped by up to 6 blocks.
+     */
+    private double[] sharedBridgeProfile(RoadFeature rf, List<double[]> pts, double wayLen, double halfWidth, double y0, double y1,
+                                         Map<Long, OsmData> cache, RegionRaster r, OsmData own) {
+        return sharedBridgeProfile(rf.id, rf.layer, bridgeGroundClearance(rf), pts, wayLen, halfWidth, y0, y1, cache, r, own, true, 2);
+    }
+
+    /**
+     * @param depth how many bridges down the decks of bridges under it are worked out (0: the ground under them is taken)
+     */
+    private double[] sharedBridgeProfile(long id, int layer, double groundClearance, List<double[]> pts, double wayLen, double halfWidth,
+                                         double y0, double y1, Map<Long, OsmData> cache, RegionRaster r, OsmData own, boolean levelBeside,
+                                         int depth) {
+        int n = (int) Math.ceil(wayLen) + 1;
+        double[] need = new double[n];
+        Arrays.fill(need, Double.NEGATIVE_INFINITY);
+        double along0 = 0;
+        for (int i = 0; i + 1 < pts.size(); i++) {
+            double[] a = pts.get(i), b = pts.get(i + 1);
+            double len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (len < 1e-9) continue;
+            for (double s = 0; s <= len; s += 1.0) {
+                double at = along0 + s;
+                if (at <= 1e-6 || at >= wayLen - 1e-6) continue;
+                double t = elevationAt(a[0] + (b[0] - a[0]) * s / len, a[1] + (b[1] - a[1]) * s / len);
+                if (Double.isNaN(t)) continue;
+                double req = t < cfg.waterLevelY() ? cfg.waterLevelY() + Math.max(2.5, groundClearance) : t + groundClearance;
+                int ai = (int) Math.max(0, Math.min(n - 1, Math.round(at)));
+                need[ai] = Math.max(need[ai], req);
+            }
+            along0 += len;
+        }
+        long k0 = nodeKey(pts.get(0)), k1 = nodeKey(pts.get(pts.size() - 1));
+        List<OsmData> data = corridorData(pts, cache, r, own);
+        // The ways in the boxes (once each), and the bridge pieces joined to this one's ends.
+        Map<Long, OsmWay> ways = new java.util.LinkedHashMap<>();
+        for (OsmData d : data) for (OsmWay o : d.ways()) ways.putIfAbsent(o.id(), o);
+        for (OsmWay o : ways.values()) {
+            if (o.id() == id || o.points().size() < 2) continue;
+            List<double[]> q = toBlockRing(o.points());
+            long q0 = nodeKey(q.get(0)), q1 = nodeKey(q.get(q.size() - 1));
+            boolean joined = q0 == k0 || q0 == k1 || q1 == k0 || q1 == k1;
+            if (joined) {
+                // A bridge piece joined to an end: what it crosses near the joint reaches this end as it reaches its own.
+                if (!OsmTags.has(o.tags(), "bridge") || transportKind(o.tags()) == null) continue;
+                long shared = q0 == k0 || q0 == k1 ? q0 : q1;
+                boolean fromStart = shared == q0;
+                double qLen = lineLength(q);
+                for (double[] c : crossingsUnder(q, besideHalf(o.tags()), layerOf(o.tags()), o.id(), ways.values(), cache, r, own, depth - 1)) {
+                    double fromJoint = fromStart ? c[0] : qLen - c[0];
+                    double req = c[1] - RAMP_GRADE * fromJoint;
+                    int ai = shared == k0 ? 0 : n - 1;
+                    need[ai] = Math.max(need[ai], req);
+                }
+                continue;
+            }
+        }
+        for (double[] c : crossingsUnder(pts, halfWidth, layer, id, ways.values(), cache, r, own, depth)) {
+            int ai = (int) Math.max(0, Math.min(n - 1, Math.round(c[0])));
+            need[ai] = Math.max(need[ai], c[1]);
+        }
+        for (int i = 1; i < n; i++) need[i] = Math.max(need[i], need[i - 1] - RAMP_GRADE);
+        for (int i = n - 2; i >= 0; i--) need[i] = Math.max(need[i], need[i + 1] - RAMP_GRADE);
+        double[] y = new double[n];
+        for (int i = 0; i < n; i++) {
+            double straight = n == 1 ? y0 : y0 + (y1 - y0) * ((double) i / (n - 1));
+            y[i] = Math.max(straight, need[i]);
+        }
+        if (levelBeside) {
+            // The bridge ways running side by side with it on the same layer (decks within 12 m, the same way or the opposite),
+            // and those beside them in turn: the whole group rises to the highest deck of any of them alongside, each deck
+            // worked out the same way. Every way of the group then comes out the same, so a bridge mapped as two carriageways,
+            // a cycleway and a footway stays level across (as unifyParallelBridges levels the others); compared only with its
+            // direct neighbours, Puddefjordsbroen's carriageways stood 6 blocks apart.
+            Map<Long, OsmWay> group = new java.util.LinkedHashMap<>();
+            Map<Long, List<double[]>> lines = new HashMap<>();
+            Map<Long, Double> halves = new HashMap<>();
+            lines.put(id, pts);
+            halves.put(id, halfWidth);
+            java.util.ArrayDeque<Long> todo = new java.util.ArrayDeque<>(List.of(id));
+            while (!todo.isEmpty() && group.size() < 12) {
+                long m = todo.poll();
+                for (OsmWay o : ways.values()) {
+                    if (o.id() == id || group.containsKey(o.id()) || o.points().size() < 2 || !OsmTags.has(o.tags(), "bridge")
+                            || transportKind(o.tags()) == null || layerOf(o.tags()) != layer) continue;
+                    List<double[]> q = toBlockRing(o.points());
+                    double within = Math.max(3, mapper.blocks(12.0)) + halves.get(m) + besideHalf(o.tags());
+                    if (!runsBeside(lines.get(m), q, within)) continue;
+                    group.put(o.id(), o);
+                    lines.put(o.id(), q);
+                    halves.put(o.id(), besideHalf(o.tags()));
+                    todo.add(o.id());
+                }
+            }
+            double reach = Math.max(3, mapper.blocks(12.0)) * 4 + 12;
+            for (OsmWay o : group.values()) {
+                List<double[]> q = lines.get(o.id());
+                double qLen = Math.max(1e-6, lineLength(q));
+                double qe0 = elevationAt(q.get(0)[0], q.get(0)[1]), qe1 = elevationAt(q.get(q.size() - 1)[0], q.get(q.size() - 1)[1]);
+                if (Double.isNaN(qe0)) qe0 = Double.isNaN(qe1) ? cfg.seaLevelY : qe1;
+                if (Double.isNaN(qe1)) qe1 = qe0;
+                double[] other = sharedBridgeProfile(o.id(), layerOf(o.tags()), clearanceFor(o.tags()), q, qLen, besideHalf(o.tags()), qe0 + 1, qe1 + 1,
+                        cache, r, own, false, depth - 1);
+                for (int k = 0; k < other.length; k++) {
+                    double[] at = pointAlong(q, k);
+                    double[] proj = projectOnto(pts, at[0], at[1]);
+                    // (up to and past its ends: where a slip road merges into the carriageway, the cells beside each
+                    // other lie at the end of one of them)
+                    if (proj[1] > reach) continue;
+                    int ai = (int) Math.max(0, Math.min(n - 1, Math.round(proj[0])));
+                    y[ai] = Math.max(y[ai], other[k]);
+                }
+            }
+            // The lifts land where the other ways' points fall along this one: spread them as the needs are spread, so
+            // the deck rises and falls at the ramps' grade instead of in spikes.
+            for (int i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - RAMP_GRADE);
+            for (int i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - RAMP_GRADE);
+        }
+        return y;
+    }
+
+    /** A bridge's ground clearance from its tags (as bridgeGroundClearance does for a drawn one). */
+    private double clearanceFor(Map<String, String> tags) {
+        RoadFeature.Kind kind = transportKind(tags);
+        String hw = tags.get("highway") == null ? "" : tags.get("highway");
+        boolean major = hw.startsWith("motorway") || hw.startsWith("trunk") || hw.startsWith("primary") || hw.startsWith("secondary");
+        return kind == RoadFeature.Kind.RAIL || (kind == RoadFeature.Kind.ROAD && major) ? heightBlocks(5.0, 2.0)
+                : kind == RoadFeature.Kind.ROAD ? heightBlocks(3.0, 1.5) : heightBlocks(2.0, 1.0);
+    }
+
+    /**
+     * Where a bridge line (block coordinates) crosses roads, railways and paths below it: {along the line, deck height
+     * needed there}, from the ground at the crossing plus the clearance for what is crossed. Ways sharing an end node with
+     * the line are its approaches, not crossed.
+     */
+    private List<double[]> crossingsUnder(List<double[]> line, double halfWidth, int layer, long id, java.util.Collection<OsmWay> ways,
+                                          Map<Long, OsmData> cache, RegionRaster r, OsmData own, int depth) {
+        List<double[]> out = new ArrayList<>();
+        long k0 = nodeKey(line.get(0)), k1 = nodeKey(line.get(line.size() - 1));
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (double[] p : line) {
+            minX = Math.min(minX, p[0]);
+            maxX = Math.max(maxX, p[0]);
+            minZ = Math.min(minZ, p[1]);
+            maxZ = Math.max(maxZ, p[1]);
+        }
+        double reach = halfWidth + 1;
+        for (OsmWay o : ways) {
+            if (o.id() == id || o.points().size() < 2) continue;
+            RoadFeature.Kind kind = transportKind(o.tags());
+            if (kind == null || isTunnelWay(o.tags()) || layerOf(o.tags()) >= layer) continue;
+            List<double[]> q = toBlockRing(o.points());
+            long q0 = nodeKey(q.get(0)), q1 = nodeKey(q.get(q.size() - 1));
+            if (q0 == k0 || q0 == k1 || q1 == k0 || q1 == k1) continue;
+            // A bridge under it (Bybanen's viaduct under Nygaardsbroen): its own deck, worked out the same way, not the ground.
+            double[] underDeck = null;
+            if (depth > 0 && OsmTags.has(o.tags(), "bridge")) {
+                double qLen = Math.max(1e-6, lineLength(q));
+                double qe0 = elevationAt(q.get(0)[0], q.get(0)[1]), qe1 = elevationAt(q.get(q.size() - 1)[0], q.get(q.size() - 1)[1]);
+                if (Double.isNaN(qe0)) qe0 = Double.isNaN(qe1) ? cfg.seaLevelY : qe1;
+                if (Double.isNaN(qe1)) qe1 = qe0;
+                underDeck = sharedBridgeProfile(o.id(), layerOf(o.tags()), clearanceFor(o.tags()), q, qLen, besideHalf(o.tags()), qe0 + 1, qe1 + 1,
+                        cache, r, own, false, depth - 1);
+            }
+            double qAlong = 0;
+            // Every block along the other way that lies under the deck's width (crossing it, or running along under it:
+            // Bybanen runs under Nygaardsbroen for a stretch).
+            for (int j = 0; j + 1 < q.size(); j++) {
+                double[] c = q.get(j), d = q.get(j + 1);
+                if (Math.max(c[0], d[0]) < minX - reach || Math.min(c[0], d[0]) > maxX + reach
+                        || Math.max(c[1], d[1]) < minZ - reach || Math.min(c[1], d[1]) > maxZ + reach) continue;
+                double len = Math.hypot(d[0] - c[0], d[1] - c[1]);
+                for (double s = 0; s <= len + 1e-9; s += 1.0) {
+                    double t = len < 1e-9 ? 0 : Math.min(1, s / len);
+                    double x = c[0] + (d[0] - c[0]) * t, z = c[1] + (d[1] - c[1]) * t;
+                    double[] proj = projectOnto(line, x, z);
+                    if (proj[1] > reach) continue;
+                    double ground = underDeck != null ? underDeck[(int) Math.max(0, Math.min(underDeck.length - 1, Math.round(qAlong + s)))]
+                            : elevationAt(x, z);
+                    if (Double.isNaN(ground)) continue;
+                    out.add(new double[]{proj[0], ground + clearanceOver(kind)});
+                }
+                qAlong += len;
+            }
+        }
+        return out;
+    }
+
+    /** The half width a way beside a bridge is given when its deck is worked out for levelling (a path or a road). */
+    private static double besideHalf(Map<String, String> tags) {
+        RoadFeature.Kind kind = transportKind(tags);
+        return kind == RoadFeature.Kind.ROAD || kind == RoadFeature.Kind.RAIL ? 3 : 1;
+    }
+
+    /**
+     * Where a tunnel line crosses under roads, railways, paths and shallower tunnels: {along the line, the highest its
+     * floor may be there}, from the ground at the crossing (a street: the cover under it; a tunnel above: its own cover
+     * and the room for a tube under it). Ways sharing an end node with the line are its approaches.
+     */
+    private List<double[]> crossingsAbove(List<double[]> line, double halfWidth, int layer, long id, java.util.Collection<OsmWay> ways) {
+        List<double[]> out = new ArrayList<>();
+        long k0 = nodeKey(line.get(0)), k1 = nodeKey(line.get(line.size() - 1));
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (double[] p : line) {
+            minX = Math.min(minX, p[0]);
+            maxX = Math.max(maxX, p[0]);
+            minZ = Math.min(minZ, p[1]);
+            maxZ = Math.max(maxZ, p[1]);
+        }
+        double reach = halfWidth + 1;
+        for (OsmWay o : ways) {
+            if (o.id() == id || o.points().size() < 2 || transportKind(o.tags()) == null || layerOf(o.tags()) <= layer) continue;
+            boolean tunnelAbove = isTunnelWay(o.tags()) && layerOf(o.tags()) < 0;
+            List<double[]> q = toBlockRing(o.points());
+            long q0 = nodeKey(q.get(0)), q1 = nodeKey(q.get(q.size() - 1));
+            if (q0 == k0 || q0 == k1 || q1 == k0 || q1 == k1) continue;
+            int slack = tunnelAbove ? TUNNEL_STACK : STREET_SLACK;
+            // Every block of the other way over the tunnel's width (a street crossing it, also where it crosses close to
+            // where two tunnel pieces join: Sotraveien over Nygaardstunnelen).
+            for (int j = 0; j + 1 < q.size(); j++) {
+                double[] c = q.get(j), d = q.get(j + 1);
+                if (Math.max(c[0], d[0]) < minX - reach || Math.min(c[0], d[0]) > maxX + reach
+                        || Math.max(c[1], d[1]) < minZ - reach || Math.min(c[1], d[1]) > maxZ + reach) continue;
+                double len = Math.hypot(d[0] - c[0], d[1] - c[1]);
+                for (double s = 0; s <= len + 1e-9; s += 1.0) {
+                    double t = len < 1e-9 ? 0 : Math.min(1, s / len);
+                    double x = c[0] + (d[0] - c[0]) * t, z = c[1] + (d[1] - c[1]) * t;
+                    double[] proj = projectOnto(line, x, z);
+                    if (proj[1] > reach) continue;
+                    double ground = elevationAt(x, z);
+                    if (Double.isNaN(ground)) continue;
+                    // (more room under a street: its graded height, or a cutting it lies in, is not known here)
+                    out.add(new double[]{proj[0], ground - tunnelCover - slack});
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Whether line q runs beside line p: its middle within {@code within} blocks of p, in the same or opposite direction. */
+    private static boolean runsBeside(List<double[]> p, List<double[]> q, double within) {
+        double qLen = lineLength(q);
+        for (double at = Math.min(2, qLen / 2); at <= qLen; at += 6) {
+            double[] m = pointAlong(q, at);
+            double[] proj = projectOnto(p, m[0], m[1]);
+            if (proj[1] > within) continue;
+            double[] a = pointAlong(p, Math.max(0, proj[0] - 2)), b = pointAlong(p, proj[0] + 2);
+            double[] c = pointAlong(q, Math.max(0, at - 2)), d = pointAlong(q, at + 2);
+            double px = b[0] - a[0], pz = b[1] - a[1], qx = d[0] - c[0], qz = d[1] - c[1];
+            double lp = Math.hypot(px, pz), lq = Math.hypot(qx, qz);
+            if (lp < 1e-9 || lq < 1e-9) continue;
+            if (Math.abs((px * qx + pz * qz) / (lp * lq)) > 0.9) return true;
+        }
+        return false;
+    }
+
+    /** The point at a distance along a line. */
+    private static double[] pointAlong(List<double[]> q, double at) {
+        double along = 0;
+        for (int i = 0; i + 1 < q.size(); i++) {
+            double[] a = q.get(i), b = q.get(i + 1);
+            double len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (along + len >= at || i + 2 == q.size()) {
+                double t = len < 1e-9 ? 0 : Math.max(0, Math.min(1, (at - along) / len));
+                return new double[]{a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t};
+            }
+            along += len;
+        }
+        return q.get(q.size() - 1);
+    }
+
+    /** The nearest point of a line to (x, z): {distance along the line, distance from it}. */
+    private static double[] projectOnto(List<double[]> p, double x, double z) {
+        double best = Double.MAX_VALUE, bestAlong = 0, along = 0;
+        for (int i = 0; i + 1 < p.size(); i++) {
+            double[] a = p.get(i), b = p.get(i + 1);
+            double dx = b[0] - a[0], dz = b[1] - a[1], len2 = dx * dx + dz * dz, len = Math.sqrt(len2);
+            double t = len2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / len2));
+            double d = Math.hypot(a[0] + dx * t - x, a[1] + dz * t - z);
+            if (d < best) {
+                best = d;
+                bestAlong = along + t * len;
+            }
+            along += len;
+        }
+        return new double[]{bestAlong, best};
+    }
+
+    /** A way's layer as the roads take it: a bridge is at least 1, a tunnel at most -1. */
+    private static int layerOf(Map<String, String> tags) {
+        int layer = OsmTags.parseInt(tags.get("layer"), 0);
+        if (OsmTags.has(tags, "bridge") && layer < 1) layer = 1;
+        if (isTunnelWay(tags) && layer > -1 && !"covered".equals(tags.get("tunnel")) && !"building_passage".equals(tags.get("tunnel"))) layer = -1;
+        return layer;
+    }
+
+    private static double lineLength(List<double[]> q) {
+        double len = 0;
+        for (int i = 0; i + 1 < q.size(); i++) len += Math.hypot(q.get(i + 1)[0] - q.get(i)[0], q.get(i + 1)[1] - q.get(i)[1]);
+        return len;
+    }
+
     private double[] bridgeProfile(RegionRaster r, RoadFeature rf, List<double[]> pts, double halfWidth, double wayLen,
                                    double y0, double y1, java.util.function.Predicate<RoadFeature> isApproach) {
         int n = (int) Math.ceil(wayLen) + 1;
