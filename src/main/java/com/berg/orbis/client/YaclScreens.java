@@ -610,13 +610,7 @@ public final class YaclScreens {
                         .option(intSlider("displayFrameRange", 48, 0, 160, 8, () -> c.displayFrameRange, v -> c.displayFrameRange = v,
                                 v -> v == 0 ? Component.translatable("orbisterrarum.opt.displayFrameRange.vanilla") : Component.literal(v + " blocks")))
                         .build())
-                .group(OptionGroup.createBuilder()
-                        .name(t("group.farView"))
-                        .option(bool("farViewFromData", true, () -> c.farViewFromData, v -> c.farViewFromData = v))
-                        .option(bool("voxyFarView", false, () -> c.voxyFarView, v -> c.voxyFarView = v))
-                        .option(intSlider("voxyFarViewChunks", 512, 64, 1024, 64, () -> c.voxyFarViewChunks, v -> c.voxyFarViewChunks = v,
-                                v -> Component.literal(v + " chunks")))
-                        .build())
+                // The far view settings are in the video settings (client/FarViewOptions) since 17 Oct 2026.
                 .build();
     }
 

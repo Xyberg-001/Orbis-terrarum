@@ -30,6 +30,11 @@ New areas need an internet connection while they generate; everything downloaded
 **Create New World → World Type: Orbis Terrarum → Customize**, open the **World generator map**, search a place or right-click
 where you want to spawn (**Set the spawn here**; **What's here** tells you about the place, gold pins are the landmarks to find), and create the world. The other tabs (Features, Look & Climate, Data Sources, Advanced) have sensible defaults.
 
+## Far view
+
+With Distant Horizons or Voxy, Orbis fills the far view with land that is not generated yet. Its settings are in
+**Video Settings**: Sodium's **Orbis Terrarum** page, or **Far view** at the bottom without Sodium.
+
 ## World map (B)
 
 Players need the mod installed on their own game to open it (on a server too); without it they play normally, just without the map.

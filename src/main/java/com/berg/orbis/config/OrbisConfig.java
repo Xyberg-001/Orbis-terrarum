@@ -218,7 +218,7 @@ public class OrbisConfig {
     /**
      * With Voxy installed (singleplayer for now): its far view of land not generated yet, painted from the world's data
      * (compat/voxy/VoxyFarView), out to {@link #voxyFarViewChunks} chunks around the player. A prototype: off unless
-     * switched on (Mod Menu > Orbis Terrarum > Performance > Far view); applies at once.
+     * switched on (Video Settings: Sodium's Orbis Terrarum page, or Far view in Minecraft's own; client/FarViewOptions); applies at once.
      */
     public boolean voxyFarView = false;
     public int voxyFarViewChunks = 512;

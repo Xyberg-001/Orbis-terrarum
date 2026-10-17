@@ -1185,6 +1185,12 @@ Amazon broadleaved, the Smokies and Hokkaido mixed.
 
 ### The far view past the loaded regions (`worldgen/FarGround`)
 
+Its settings (`farViewFromData` for Distant Horizons, `voxyFarView` and `voxyFarViewChunks`) are in the video settings since
+17 Oct 2026 (Mod Menu's Performance tab before): an Orbis Terrarum page in Sodium's (`client/SodiumVideoOptions`, Sodium's
+config API through the `sodium:config_api_user` entry point, compiled against its API classes only, `libs/sodium-config-api`),
+or a Far view section at the foot of Minecraft's own without Sodium (`mixin/VideoSettingsFarViewMixin`, only for the far view
+mods installed). An option for a mod that is not installed is greyed out in Sodium's, with "Needs ... installed".
+
 Distant Horizons and Voxy paint columns nobody has generated with
 `worldgen/FarTerrain`, from the elevation, the climate (Köppen, observed snow and
 ice) and ESA WorldCover. Where no region is loaded, `FarGround` reads the maps
