@@ -21,6 +21,14 @@ public class TeleportCommands {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 
             dispatcher.register(Commands.literal("orbis")
+                    // The chat buttons of the map data offered while travelling (worldgen/MapDataTrip).
+                    .then(Commands.literal("mapdata")
+                            .requires(com.berg.orbis.worldgen.MapDataTrip::mayDecide)
+                            .then(Commands.argument("action", StringArgumentType.word())
+                                    .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(java.util.List.of("download", "notnow", "never"), b))
+                                    .then(Commands.argument("region", StringArgumentType.word())
+                                            .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.MapDataTrip.command(ctx.getSource(),
+                                                    StringArgumentType.getString(ctx, "action"), StringArgumentType.getString(ctx, "region")))))))
                     // The mod's performance and network settings, for a server's operators (no settings screen there).
                     .then(Commands.literal("settings")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))

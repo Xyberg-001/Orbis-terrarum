@@ -96,6 +96,10 @@ World window (**i**) with your position, the real sky and hard limit switches, D
 - Easiest: create and pre-generate the world in singleplayer, then upload it.
 - Aternos: **Export for Aternos** in the world map's World window (**i**) makes the upload and a how-to file.
 
+> **Travelling far:** where the map comes from the online servers, Orbis offers (in chat, to the host or operators)
+> to download the country's map file and keep the 100 km around you on your disk; once accepted, it does the same
+> further on by itself. Turn the offers off with `offerMapDownloads`.
+
 > **Pre-generating on a server:** it gets slower when the server is short of memory (4 GB is tight for big areas; give it 6–8 GB, more for cubic worlds). **Map data: Download** fetches the region's whole Geofabrik file onto the server's storage (tens of MB for a small region, several GB for a big country); the area cut out of it stays there for good, and the file itself is deleted afterwards unless `keepDownloadedMapFiles` is on. Check the server has the space, or use **Live**.
 
 ## Tested on

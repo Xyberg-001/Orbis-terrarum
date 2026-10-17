@@ -747,6 +747,8 @@ public class OrbisConfig {
      * file for it: downloaded in the background, only the world's area imported (MapDataJob).
      */
     public boolean offerMapDownloads = true;
+    /** Geofabrik regions the player said "Never" to when offered their map data while travelling (worldgen/MapDataTrip). */
+    public java.util.List<String> mapDataDeclined = new java.util.ArrayList<>();
     /** Keep the downloaded Geofabrik files after the area is imported (for more worlds in the same country). */
     public boolean keepDownloadedMapFiles = false;
     /**

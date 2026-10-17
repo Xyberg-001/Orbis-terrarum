@@ -1541,6 +1541,20 @@ button until then) does the same for the selection before it is pre-generated, f
 operators; Stop on its entry in the pre-generation list stops it (the part is continued
 next time, or started again when 12 h old).
 
+**While travelling** (`worldgen/MapDataTrip`, 18 Oct 2026): when a player has been for a minute (checked every 5 s)
+where no store usable at the world's scale covers the land (finer than 8 m per block, inside the hard limit), the region
+holding the place is looked up (`MapDataJob.planTrip`) and the singleplayer host, or a server's operators, get a chat
+message with **[Download]** **[Not now]** **[Never for ...]** (`/orbis mapdata download|notnow|never <region>`, for
+operators or the singleplayer host with cheats off too). Download keeps the 100 km square around the player at full
+detail and keeps the region file, so once a region is accepted its next squares start by themselves as the player goes
+on (a short import with no new download); progress shows above the hotbar of whoever accepted it, and a chat line when
+it is done. Not now lasts for the game session, Never is remembered (`mapDataDeclined`), an offer is not repeated within
+10 minutes, and `offerMapDownloads` turns these offers off with the one at Create. Not whole countries: Libya's 73 MB
+file imported whole made 3.25 GB in 7 minutes (the Sahara's huge polygons are written into every 0.05-degree cell they
+cover, 100 KB to 1 MB each over 8,000 cells), where a square took 15 s and 61 MB round Tripoli (486,538 ways, under
+512 MB of heap) and 1.2 MB in the desert. The point is nights like 17 Oct 2026, when two of three Overpass servers
+failed and every region queued behind overpass-api.de's single slot (50-190 s a region).
+
 ### Pre-generation bar (`PregenTask.showBar`)
 
 A vanilla boss bar for every player while a sweep runs (friends on vanilla

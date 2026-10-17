@@ -80,6 +80,35 @@ public final class MapDataJob {
         return new Plan(region, bytes, box.clone(), name, ExtractImporter.Profile.FULL);
     }
 
+    /** Half the side of the square kept around a traveller (100 km: hours on foot, half an hour or more by elytra). */
+    private static final double TRIP_KM = 50;
+
+    /**
+     * The map data offered while travelling (worldgen/MapDataTrip): the 100 km square around a place, at full detail, from
+     * the region file it lies in (memory and disk by area). Not the whole country: Libya's 73 MB file made 3.25 GB in 7
+     * minutes (the Sahara's huge polygons are kept in every 0.05-degree cell they cover, 100 KB to 1 MB each), where a
+     * square took 15 s and 61 MB round Tripoli (486,538 ways, under 512 MB of heap) and 1.2 MB in the desert (18 Oct
+     * 2026). Null when a store on disk covers the place, or no region holds it. Asks the network.
+     */
+    public static Plan planTrip(Path dataDir, double lat, double lon, double metersPerBlock) throws IOException, InterruptedException {
+        double d = 0.01;
+        double[] here = {lat - d, lon - d, lat + d, lon + d};
+        LocalExtractStore store = LocalExtractStore.get(dataDir.resolve("extracts"));
+        store.rescan();
+        for (LocalExtractStore.Extract e : store.extracts()) {
+            if (e.usableAt(metersPerBlock) && e.covers(here[0], here[1], here[2], here[3])) return null;
+        }
+        List<Geofabrik.Region> all = Geofabrik.regions(dataDir.resolve("extracts-src"));
+        Geofabrik.Region region = Geofabrik.smallestContaining(all, here);
+        if (region == null) return null;
+        long bytes = OrbisHttp.size(region.url(), Geofabrik.HEADERS);
+        if (bytes > MAX_BYTES) return null;
+        double dLat = TRIP_KM / 111.32, dLon = TRIP_KM / (111.32 * Math.max(0.05, Math.cos(Math.toRadians(lat))));
+        double[] box = {lat - dLat, lon - dLon, lat + dLat, lon + dLon};
+        String name = String.format(Locale.ROOT, "%s-area-%d_%d", region.id(), Math.round(lat * 100), Math.round(lon * 100));
+        return new Plan(region, bytes, box, name, ExtractImporter.Profile.FULL);
+    }
+
     /**
      * The area box {south, west, north, east} around a spawn: about 4,000 blocks each way, at least 8 km, at most 40 km (for a coarse
      * world it only finds the region, which is kept whole).
@@ -128,7 +157,7 @@ public final class MapDataJob {
                 }, () -> stop);
             }
             listener.progress(plan.profile() == ExtractImporter.Profile.MAP ? "Keeping the main features of " + place + "..."
-                    : "Keeping this world's area...", -1f);
+                    : plan.box() == null ? "Keeping all of " + place + "..." : "Keeping the area...", -1f);
             importing[0] = true;
             ExtractImporter.Summary s = ExtractImporter.importFile(pbf, dataDir.resolve("extracts"), plan.profile(),
                     plan.storeName(), plan.box(), msg -> listener.progress(msg, -1f));
