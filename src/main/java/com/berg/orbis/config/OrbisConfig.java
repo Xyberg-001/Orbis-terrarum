@@ -779,6 +779,12 @@ public class OrbisConfig {
     public int regionPrefetchRadius = 2;
     /** Block chunk generation until the region's OSM data has been fetched. If false, chunks whose data is not yet available are generated as terrain only. */
     public boolean waitForOsm = true;
+    /**
+     * A "Map around you" bar for each player while the map data around them is still coming in (worldgen/LiveStatus): how many
+     * of the regions kept ready around them are ready, what is being downloaded or prepared, yellow when their own region
+     * is slow, red while terrain downloads keep failing. Gone a few seconds after everything is there.
+     */
+    public boolean liveStatusBar = true;
 
     // ---- feature toggles ----------------------------------------------------
     public boolean generateBuildings = true;

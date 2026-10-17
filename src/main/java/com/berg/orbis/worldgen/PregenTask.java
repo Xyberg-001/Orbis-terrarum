@@ -1142,8 +1142,8 @@ public final class PregenTask {
         return queued > 0 ? "waiting for map data (" + queued + (queued == 1 ? " region)" : " regions)") : null;
     }
 
-    /** The data being downloaded right now, by kind: "map data (3), building heights (12)". */
-    private static String downloadsNow() {
+    /** The data being downloaded right now, by kind: "map data (3), building heights (12)" (also for LiveStatus's bar). */
+    static String downloadsNow() {
         java.util.Map<String, Integer> byKind = new java.util.LinkedHashMap<>();
         for (java.util.Map.Entry<String, Integer> e : com.berg.orbis.net.OrbisHttp.activeRequests().entrySet()) {
             String kind = dataKind(e.getKey());
@@ -1160,6 +1160,7 @@ public final class PregenTask {
     /** What a host's data is, for the bar; null for requests that are not generation (weather, time zone). */
     private static String dataKind(String host) {
         String h = host.toLowerCase(Locale.ROOT);
+        if (h.startsWith("map:")) return null; // the maps' own tiles (see OrbisHttp.begin)
         if (h.contains("met.no") || h.contains("open-meteo")) return null;
         if (h.contains("mapterhorn")) return "terrain";
         if (h.contains("opengeohub")) return "bare-earth terrain";

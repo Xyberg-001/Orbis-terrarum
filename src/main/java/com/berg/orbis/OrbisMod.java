@@ -568,6 +568,8 @@ public class OrbisMod implements ModInitializer {
             if (!positions.isEmpty()) m.regions().updatePlayers(positions);
         });
         ServerTickEvents.END_SERVER_TICK.register(com.berg.orbis.worldgen.PregenTask::tick);
+        ServerTickEvents.END_SERVER_TICK.register(com.berg.orbis.worldgen.LiveStatus::tick);
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(s -> com.berg.orbis.worldgen.LiveStatus.clear());
 
         System.out.println("[orbis] Origin " + config.originLat + ", " + config.originLon + " at 1 block = " + config.metersPerBlock
                 + " m; sea level Y=" + config.seaLevelY + "; world Y " + config.minY + ".." + config.maxY());

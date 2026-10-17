@@ -48,6 +48,7 @@ public class TeleportCommands {
                 {"prefetchSpawnAtStartup", "download the map around the spawn when the server starts"},
                 {"keepDownloadedMapFiles", "keep Geofabrik files after a map data download imported the area"},
                 {"regionPrefetchRadius", "map regions downloaded ahead of players, 0-6"},
+                {"liveStatusBar", "a 'Map around you' bar for each player while the map data around them comes in"},
                 {"displayFrameRange", "blocks within which shop display frames are sent to players (0 = vanilla's 160)"},
                 {"regionCacheSize", "map regions kept in memory, 8-256 (restart)"},
                 {"overpassConcurrentRequests", "parallel OpenStreetMap downloads, 1-8"},

@@ -633,6 +633,8 @@
   "orbisterrarum.opt.voxyFarView": "Voxy: fill the far view (prototype)",
   "orbisterrarum.opt.voxyFarView.desc": "With Voxy installed, in singleplayer: fills Voxy's far view around you with the world's saved chunks, and where nothing is generated yet (also past the world's border) with land painted from the world's data. The first fill of a world takes a while and works your processor hard; it is remembered, so later visits only add what is new. Switching this off stops the filling, but what Voxy already holds stays on screen: Voxy keeps it with the world. To hide it use Voxy's own switch; to clear it, delete the voxy folder in the world's folder.",
   "orbisterrarum.opt.farView.needs": "Needs %s installed.",
+  "orbisterrarum.opt.liveStatusBar": "\"Map around you\" bar",
+  "orbisterrarum.opt.liveStatusBar.desc": "While the map data around you is still coming in, a bar at the top of the screen says how much of the area around you is ready and what is being done: map data, terrain or building heights downloading, regions being prepared. Yellow when the place you stand has waited long; red while terrain downloads keep failing (is the internet down?). It goes a few seconds after everything is there, and never shows during a pre-generation, which has its own bar. On a server, everyone sees their own.",
   "orbisterrarum.opt.voxyFarViewChunks": "Voxy far view radius",
   "orbisterrarum.opt.voxyFarViewChunks.desc": "How far around you the Voxy far view is filled, in chunks (1,024 chunks is 16 km of blocks)."
 }

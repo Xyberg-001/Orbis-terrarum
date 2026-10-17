@@ -186,14 +186,19 @@ public final class OrbisHttp {
         return out;
     }
 
-    private static java.util.concurrent.atomic.AtomicInteger begin(String url) {
+    private static java.util.concurrent.atomic.AtomicInteger begin(String url, Map<String, String> headers) {
         String host;
         try {
             host = URI.create(url).getHost();
         } catch (IllegalArgumentException e) {
             host = null;
         }
-        java.util.concurrent.atomic.AtomicInteger n = ACTIVE.computeIfAbsent(host == null ? "?" : host, h -> new java.util.concurrent.atomic.AtomicInteger());
+        // The maps' own tiles (street, satellite, elevation: "...; area preview)", "...; street map)") are kept apart as
+        // "map:host", so the bars about generation do not show them as data being downloaded.
+        String agent = headers == null ? null : headers.get("User-Agent");
+        boolean mapTile = agent != null && (agent.endsWith("area preview)") || agent.endsWith(" map)"));
+        String key = (mapTile ? "map:" : "") + (host == null ? "?" : host);
+        java.util.concurrent.atomic.AtomicInteger n = ACTIVE.computeIfAbsent(key, h -> new java.util.concurrent.atomic.AtomicInteger());
         n.incrementAndGet();
         return n;
     }
@@ -206,7 +211,7 @@ public final class OrbisHttp {
     }
 
     public static Response get(String url, Map<String, String> headers, int timeoutSeconds) throws IOException, InterruptedException {
-        java.util.concurrent.atomic.AtomicInteger n = begin(url);
+        java.util.concurrent.atomic.AtomicInteger n = begin(url, headers);
         try {
             Response r = send("GET", url, headers, null, null, timeoutSeconds);
             if (r != null && r.body() != null) RECEIVED.addAndGet(r.body().length);
@@ -218,7 +223,7 @@ public final class OrbisHttp {
 
     public static Response post(String url, Map<String, String> headers, String contentType, byte[] body, int timeoutSeconds)
             throws IOException, InterruptedException {
-        java.util.concurrent.atomic.AtomicInteger n = begin(url);
+        java.util.concurrent.atomic.AtomicInteger n = begin(url, headers);
         try {
             return send("POST", url, headers, contentType, body, timeoutSeconds);
         } finally {
@@ -321,7 +326,7 @@ public final class OrbisHttp {
      */
     public static void download(String url, java.nio.file.Path target, Map<String, String> headers, DownloadProgress progress,
                                 java.util.function.BooleanSupplier cancelled) throws IOException, InterruptedException {
-        java.util.concurrent.atomic.AtomicInteger n = begin(url);
+        java.util.concurrent.atomic.AtomicInteger n = begin(url, headers);
         try {
             downloadInner(url, target, headers, progress, cancelled);
         } finally {

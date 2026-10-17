@@ -67,6 +67,7 @@ after a restart.
 | `regionPrefetchRadius` | 2 | How far ahead of players map data is downloaded (0–6; 2 is a 2.5 km square) | 1 on slow internet or small servers; 3 for players flying fast |
 | `overpassConcurrentRequests` | 4 | Map downloads at once (1–8) | 2 on slow or shared connections |
 | `osmMaxWaitMinutes` | 15 | How long a chunk waits for its map data before it generates without buildings | 30 on slow connections |
+| `liveStatusBar` | true | A "Map around you" bar for each player while the map data around them comes in | Off if players find it distracting |
 | `waitForOsm` | true | New chunks wait for their map data | Keep on; off only while the map services are down and land without buildings is fine |
 | `imageryZoom` | 18 | Detail of the aerial photos used for colours (14–20) | 17 on slow internet (a quarter of the downloads); 19 for sharper colours |
 | `fastPregen` | true | Pre-generation builds terrain ahead on several threads | Keep on: it is several times faster |

@@ -606,6 +606,7 @@ public final class YaclScreens {
                         .option(bool("parallelChunkCompression", true, () -> c.parallelChunkCompression, v -> c.parallelChunkCompression = v))
                         .option(bool("pregenPauseWorld", true, () -> c.pregenPauseWorld, v -> c.pregenPauseWorld = v))
                         .option(intSlider("regionPrefetchRadius", 2, 0, 6, 1, () -> c.regionPrefetchRadius, v -> c.regionPrefetchRadius = v, v -> Component.literal(v + " (" + (2 * v + 1) * 512 + " m)")))
+                        .option(bool("liveStatusBar", true, () -> c.liveStatusBar, v -> c.liveStatusBar = v))
                         .option(intSlider("regionCacheSize", 64, 8, 256, 8, () -> c.regionCacheSize, v -> c.regionCacheSize = v, v -> Component.literal(v + " (~" + (v * 6) + " MB)")))
                         .option(intSlider("displayFrameRange", 48, 0, 160, 8, () -> c.displayFrameRange, v -> c.displayFrameRange = v,
                                 v -> v == 0 ? Component.translatable("orbisterrarum.opt.displayFrameRange.vanilla") : Component.literal(v + " blocks")))

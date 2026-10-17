@@ -1556,6 +1556,26 @@ the sweep's own wait (building terrain ahead, writing to disk, unloading,
 freeing memory). Players saw "0.0 chunks/s" in chat for minutes while a fresh
 area downloaded (Oslo, 4 Oct 2026) and could not tell a working sweep from a
 stuck one.
+The maps' own tiles (street, satellite, elevation, in singleplayer on the same
+machine) are counted apart as `map:host` from their User-Agent and left out.
+
+### Map around you bar (`worldgen/LiveStatus`, 17 Oct 2026)
+
+The same kind of bar for live generation, one per player, so the work behind
+walking into new land is visible too (until then it was only in the log:
+regions downloading and rasterising, terrain tiles retried, flat ground after
+2 minutes without them). It counts the map regions kept ready around the player
+(`regionPrefetchRadius`; regions the hard limit leaves out are not counted, as
+they are never fetched) and names what is being done: the downloads by kind
+(`PregenTask.downloadsNow`), else regions being prepared, else waiting. Shown
+after 2 s of work (a region that comes at once shows nothing); "ready" for 3 s
+when every region is there, else it simply goes (a region given up on leaves
+the count short). Yellow when the player's own region has waited 20 s, red
+while terrain downloads keep failing (`RealWorldChunkGenerator.terrainWaiting`,
+`OsmRegionManager.terrainRetries`). Never during a pre-generation (its own bar),
+only in the overworld of an Orbis world. A vanilla boss bar, so players without
+the mod see theirs too. `liveStatusBar` (Mod Menu Performance, `/orbis settings`)
+turns it off.
 
 ### Generation pipeline (`worldgen/RealWorldChunkGenerator`)
 - OSM is streamed per 512 × 512 m region with a 32 m margin (so nothing
