@@ -451,7 +451,9 @@ public final class Interiors {
                 set(c[0], floorY + 1, c[1], Blocks.BARREL.defaultBlockState());
                 if (n % 2 == 0) frame(c[0], floorY + 2, c[1], wall.getOpposite(), Items.GLASS_BOTTLE);
                 int sx = c[0] - 2 * wall.getStepX(), sz = c[1] - 2 * wall.getStepZ();
-                if (n % 2 == 1 && free(sx, sz, floorY)) {
+                // Two cells in from the wall: past the window, free() would read beyond the chunks this pass may touch.
+                boolean inWindow = sx >= loX && sx <= hiX && sz >= loZ && sz <= hiZ;
+                if (n % 2 == 1 && inWindow && free(sx, sz, floorY)) {
                     set(sx, floorY + 1, sz, Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, wall.getOpposite())); // facing the bar
                 }
             }
