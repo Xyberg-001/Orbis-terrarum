@@ -59,8 +59,12 @@ public final class PregenTask {
      * Chunk requests outstanding at once. Generating a chunk is a chain of small steps handed between the
      * server thread and the worker pool, so one request rarely keeps a core busy; a sample of a sweep with 32
      * showed 3 of 11 workers in use. A few hundred keeps the pool fed; memory and the disk queue throttle it.
+     * 256 since 17 Oct 2026: Bergen 2 km at 1:1 on a test server (42,933 chunks, 6-core laptop) ran 79.4 and 85.2
+     * chunks/s against 73.0 and 78.2 at 128 in the runs just before (+9% both times); 512 ran 71.9. At 256 the
+     * sweep sat at its cap and now and then waited for the disk queue instead. The JVM flag
+     * -Dorbis.pregenInFlight=N sets it for tests.
      */
-    private static final int MAX_IN_FLIGHT = 128;
+    private static final int MAX_IN_FLIGHT = Integer.getInteger("orbis.pregenInFlight", 256);
     /**
      * The area is walked in square tiles of this many chunks a side, tile-rows in serpentine order, rather than
      * in rows of the full width. A finished chunk drags a ring of neighbours through the early generation

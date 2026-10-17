@@ -2957,9 +2957,24 @@ for the regions still downloading. Sweeps now queue the map regions of the
 two region rows ahead (not one), and the region cache holds five rows
 across (at most 480 regions, about 8 MB each). A sweep never slows down for the players: while it runs,
 nobody is expected to be playing.
-On a dedicated server, also set `pause-when-empty-seconds=-1` in
-`server.properties`: 26.2 pauses an empty server after 60 s, and a paused
-server neither ticks the sweep nor unloads and saves its chunks.
+A dedicated server pauses once it has been empty for `pause-when-empty-seconds` (60 by default), and a
+paused server neither ticks the sweep nor unloads and saves its chunks: an automatic pre-generation on a
+test server stopped at 440 chunks a minute after start (17 Oct 2026). Setting the property by hand is no
+longer needed: while an Orbis pre-generation runs or waits, `mixin/DedicatedServerPauseMixin` makes
+`pauseWhenEmptySeconds` 0, and the server pauses as usual a minute after it ends.
+
+**Performance pass, 17 Oct 2026** (a 26.3 dedicated server, Bergen 2 km at 1:1, 42,933 chunks, the map
+data cached, JFR recordings; i7-9750H laptop, 8 GB heap). G1 ran 73.0 and 78.2 chunks/s and ZGC 71.4: no
+difference in speed. The sweep allocates about 650 MB/s (383 GB in 10 min), a third of it Minecraft packing
+every section's palette as a chunk is saved (`PalettedContainer.pack` inside `SerializableChunkData.write`);
+G1 stopped all threads 376 times for 48 s in all (median 146 ms), ZGC for 22 ms in all but stalled
+allocating threads for 73 s. ZGC is still the better choice for playing (no 150 ms freezes). CPU use
+averaged 50-58%: the server thread had 2.5% of the samples, Minecraft's workers 53-57%, the terrain
+builders 25-31%, the map regions 10-12%. The sweep sat at its 128 requests in flight most of the time;
+256 ran 79.4 and 85.2 chunks/s against 73.0 and 78.2 at 128 just before (+9% both times), 512 ran 71.9,
+so the cap is 256 (`-Dorbis.pregenInFlight=N` for tests); at 256 the sweep sometimes waits for the disk
+queue. Left for later: the terrain fill looks each block up in the section's palette (4.3% of CPU) and
+recounts touched sections afterwards (4.6%); the CPU is not the limit, so neither was changed.
 
 ## Exploring a whole country
 

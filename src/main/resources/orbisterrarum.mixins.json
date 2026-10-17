@@ -3,6 +3,7 @@
   "minVersion": "0.8",
   "package": "com.berg.orbis.mixin",
   "compatibilityLevel": "JAVA_25",
+  "server": ["DedicatedServerPauseMixin"],
   "mixins": [
     "ServerPlayerMixin",
     "DimensionTypeMixin",
