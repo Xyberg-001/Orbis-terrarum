@@ -28,7 +28,7 @@ New areas need an internet connection while they generate; everything downloaded
 ## Create a world
 
 **Create New World → World Type: Orbis Terrarum → Customize**, open the **World generator map**, search a place or right-click
-where you want to spawn, and create the world. The other tabs (Features, Look & Climate, Data Sources, Advanced) have sensible defaults.
+where you want to spawn (**Set the spawn here**; **What's here** tells you about the place, gold pins are the landmarks to find), and create the world. The other tabs (Features, Look & Climate, Data Sources, Advanced) have sensible defaults.
 
 ## World map (B)
 

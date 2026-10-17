@@ -30,7 +30,9 @@ import java.util.function.Consumer;
  * with the tools on the left (hand, rectangle, ellipse, lasso; Shift adds, Alt cuts out), or type a place or a
  * radius in km at the top to add its outline the same way. The panel beside the map describes the selection: its
  * real area, size in blocks, crossing times, chunks, region files, disk size and generation time, and whether the
- * world generates it by itself when it is created. Right-click sets the spawn point.
+ * world generates it by itself when it is created. Right-click opens a menu: set the spawn point there, or What's
+ * here (the place, its climate, the national data there, the landmarks near it). Gold pins mark the landmarks the world
+ * would get as advancements.
  */
 public final class AreaPreviewScreen extends Screen {
     private static final int TOP_H = 26;
@@ -44,6 +46,16 @@ public final class AreaPreviewScreen extends Screen {
     private static boolean coverageOn = true;
     private Button coverageButton;
     private com.berg.orbis.client.map.CoverageOverlay coverage;
+    /** The landmarks the world would get, as gold pins (looked up when the centre or scale settles). */
+    private final LandmarkPreview landmarks = new LandmarkPreview();
+    /** The What's here card, and the right-click menu. */
+    private com.berg.orbis.client.map.PlaceCard card;
+    private String hereId;
+    private int hereSeq;
+    private double[] menuAt;
+    private final List<String> menuItems = new ArrayList<>();
+    private int menuX, menuY;
+    private com.berg.orbis.biome.BiomeClassifier climate;
 
     private final Screen parent;
     /** The world's centre (block 0, 0), which is also where players spawn: right-click or a search moves it. */
@@ -253,6 +265,8 @@ public final class AreaPreviewScreen extends Screen {
             statusUntil = System.currentTimeMillis() + 10000;
         }
         select.addWidgets(this::addRenderableWidget, 4, TOP_H + 4, mapRight(), height);
+        if (card == null) card = new com.berg.orbis.client.map.PlaceCard(font);
+        card.addWidgets(this::addRenderableWidget);
     }
 
     private Component limitLabel() {
@@ -408,7 +422,14 @@ public final class AreaPreviewScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent e, boolean doubleClick) {
+        if (!menuItems.isEmpty()) {
+            int i = menuItemAt(e.x(), e.y());
+            if (i >= 0) runMenu(menuItems.get(i));
+            menuItems.clear();
+            return true;
+        }
         if (super.mouseClicked(e, doubleClick)) return true;
+        if (card != null && card.click(e.x(), e.y())) return true;
         if (!onMap(e.x(), e.y())) return false;
         setFocused(null);
         if (e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
@@ -430,6 +451,175 @@ public final class AreaPreviewScreen extends Screen {
             return true;
         }
         return false;
+    }
+
+    // ------------------------------------------------------------------ menu, What's here, landmarks
+
+    /** Right-click: Set the spawn here, or What's here. */
+    private void openMenu(int x, int y) {
+        menuAt = latLonAt(x, y);
+        menuItems.clear();
+        menuItems.add("spawn");
+        menuItems.add("here");
+        int w = 0;
+        for (String s : menuItems) w = Math.max(w, font.width(menuLabel(s)));
+        menuX = Math.min(x, mapRight() - w - 12);
+        menuY = Math.min(y, height - menuItems.size() * 12 - 6);
+    }
+
+    private String menuLabel(String item) {
+        return Component.translatable("orbisterrarum.preview.menu." + item).getString();
+    }
+
+    private int menuItemAt(double x, double y) {
+        int w = 0;
+        for (String s : menuItems) w = Math.max(w, font.width(menuLabel(s)));
+        if (x < menuX || x > menuX + w + 10) return -1;
+        int i = (int) Math.floor((y - menuY - 2) / 12);
+        return i >= 0 && i < menuItems.size() ? i : -1;
+    }
+
+    private void runMenu(String item) {
+        double[] at = menuAt;
+        if (at == null) return;
+        switch (item) {
+            case "spawn" -> {
+                moveCentre(at);
+                spawnMessage();
+            }
+            case "here" -> showHere(at[0], at[1]);
+            default -> { }
+        }
+    }
+
+    private void drawMenu(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        int w = 0;
+        for (String s : menuItems) w = Math.max(w, font.width(menuLabel(s)));
+        g.fill(menuX - 1, menuY - 1, menuX + w + 11, menuY + menuItems.size() * 12 + 5, 0xFF000000);
+        g.fill(menuX, menuY, menuX + w + 10, menuY + menuItems.size() * 12 + 4, 0xF0202830);
+        int hover = menuItemAt(mouseX, mouseY);
+        for (int i = 0; i < menuItems.size(); i++) {
+            int y = menuY + 2 + i * 12;
+            if (i == hover) g.fill(menuX + 1, y - 1, menuX + w + 9, y + 11, 0xFF3B4A5A);
+            g.text(font, menuLabel(menuItems.get(i)), menuX + 5, y + 1, WHITE);
+        }
+    }
+
+    /**
+     * What's here, before the world exists: the place's name (looked up), where it lands in the world at this scale, its
+     * climate (from the climate pack, at the climate grid's height), the national data there, the landmarks near it, and
+     * whether it is in the selection; with a button to put the spawn there.
+     */
+    private void showHere(double lat, double lon) {
+        if (card == null) return;
+        hereId = String.valueOf(++hereSeq);
+        String id = hereId;
+        String title = Component.translatable("orbisterrarum.map.card.here").getString();
+        card.show(new double[]{lat, lon}, title, hereLines(lat, lon), List.of(spawnAction(lat, lon)));
+        Geocoder.reverse(lat, lon).whenComplete((name, error) -> minecraft.execute(() -> {
+            if (!id.equals(hereId) || card == null || !card.shown()) return;
+            String t = title;
+            List<String> lines = hereLines(lat, lon);
+            if (error == null && name != null && !name.isBlank()) {
+                String[] parts = name.split(",", 2);
+                t = parts[0].trim();
+                if (parts.length > 1) lines.add(0, parts[1].trim());
+            }
+            card.set(t, lines, List.of(spawnAction(lat, lon)));
+        }));
+    }
+
+    private com.berg.orbis.client.map.PlaceCard.Action spawnAction(double lat, double lon) {
+        return new com.berg.orbis.client.map.PlaceCard.Action(Component.translatable("orbisterrarum.preview.here.spawn"),
+                Component.translatable("orbisterrarum.preview.here.spawn.tip"), () -> {
+            moveCentre(new double[]{lat, lon});
+            spawnMessage();
+            if (card != null) card.hide();
+        });
+    }
+
+    private List<String> hereLines(double lat, double lon) {
+        List<String> out = new ArrayList<>();
+        out.add(String.format(Locale.ROOT, "%.5f, %.5f", lat, lon));
+        int[] b = mapper.toBlock(lat, lon);
+        out.add(tr("orbisterrarum.preview.here.block") + "\t" + String.format(Locale.ROOT, "%,d, %,d (1 block = %s m)", b[0], b[1], PreviewPlan.fmt(mpb)));
+        try {
+            com.berg.orbis.biome.ClimateMap map = com.berg.orbis.biome.ClimateMap.get();
+            double e = map.cellElevationM(lat, lon);
+            if (Double.isNaN(e)) e = 0;
+            if (climate == null) climate = new com.berg.orbis.biome.BiomeClassifier(com.berg.orbis.OrbisMod.config());
+            com.berg.orbis.biome.BiomeClassifier.Climate c = climate.classify(lat, lon, e);
+            out.add(tr("orbisterrarum.preview.here.climate") + "\t" + String.valueOf(c.zone()).toLowerCase(Locale.ROOT).replace('_', ' ')
+                    + String.format(Locale.ROOT, ", %.1f °C a year", c.meanTempC()) + (c.snowy() ? ", snowy" : ""));
+        } catch (RuntimeException ignored) {
+            // no climate pack: nothing to say
+        }
+        List<String> national = new ArrayList<>();
+        for (com.berg.orbis.config.DataSources.Source s : com.berg.orbis.config.DataSources.list(com.berg.orbis.OrbisMod.config())) {
+            if (s.kind() == com.berg.orbis.config.DataSources.Kind.NATIONAL && s.overlaps(lat - 0.005, lon - 0.005, lat + 0.005, lon + 0.005)) national.add(s.label());
+        }
+        out.add(tr("orbisterrarum.preview.here.national") + "\t" + (national.isEmpty() ? tr("orbisterrarum.preview.here.national.none") : String.join(", ", national)));
+        List<String> near = new ArrayList<>();
+        for (LandmarkPreview.Pin p : landmarks.pins()) {
+            double dx = (p.lon() - lon) * 111_320 * Math.cos(Math.toRadians(lat)), dz = (p.lat() - lat) * 111_320;
+            if (Math.hypot(dx, dz) <= 1_500) near.add(p.name());
+        }
+        if (!near.isEmpty()) out.add(tr("orbisterrarum.preview.here.landmarks") + "\t" + String.join(", ", near.subList(0, Math.min(4, near.size()))));
+        ChunkSelection sel = select == null ? null : select.selection();
+        if (sel != null && !sel.isEmpty()) {
+            boolean in = sel.contains(Math.floorDiv(b[0], 16), Math.floorDiv(b[1], 16));
+            out.add(tr("orbisterrarum.preview.here.selection") + "\t" + tr(in ? "orbisterrarum.preview.here.in" : "orbisterrarum.preview.here.out"));
+        }
+        return out;
+    }
+
+    private static String tr(String key) {
+        return Component.translatable(key).getString();
+    }
+
+    /** The landmarks the world would get, as small gold diamonds; the one under the cursor named. */
+    private void drawLandmarks(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        LandmarkPreview.Pin hover = null;
+        int hx = 0, hy = 0;
+        double best = 6;
+        for (LandmarkPreview.Pin p : landmarks.pins()) {
+            double[] s = view.gui(p.lat(), p.lon());
+            int x = (int) Math.round(s[0]), y = (int) Math.round(s[1]);
+            if (x < -4 || x > mapRight() + 4 || y < TOP_H - 4 || y > height + 4) continue;
+            diamond(g, x, y, 3, 0xFF000000);
+            diamond(g, x, y, 2, 0xFFFACC15);
+            double d = Math.hypot(mouseX - x, mouseY - y);
+            if (d < best) {
+                best = d;
+                hover = p;
+                hx = x;
+                hy = y;
+            }
+        }
+        if (hover != null && menuItems.isEmpty()) {
+            String name = hover.name();
+            int w = font.width(name);
+            int x = Math.max(2, Math.min(mapRight() - w - 8, hx - w / 2 - 3)), y = hy - 16;
+            g.fill(x, y, x + w + 6, y + 12, 0xD0000000);
+            g.text(font, name, x + 3, y + 2, 0xFFFACC15);
+        }
+    }
+
+    private static void diamond(GuiGraphicsExtractor g, int x, int y, int r, int colour) {
+        for (int dy = -r; dy <= r; dy++) {
+            int half = r - Math.abs(dy);
+            g.fill(x - half, y + dy, x + half + 1, y + dy + 1, colour);
+        }
+    }
+
+    /** The side panel's landmark line: how many the world would get here. */
+    private int landmarksLine(GuiGraphicsExtractor g, boolean draw, int y, int w) {
+        String value = landmarks.loading() ? tr("orbisterrarum.preview.landmarks.loading")
+                : landmarks.failed() ? tr("orbisterrarum.preview.landmarks.failed")
+                : landmarks.pins().isEmpty() ? tr("orbisterrarum.preview.landmarks.none")
+                : Component.translatable("orbisterrarum.preview.landmarks.count", landmarks.pins().size()).getString();
+        y = row(g, draw, w, y, "orbisterrarum.preview.landmarks", value);
+        return y + 4;
     }
 
     /** Right-click: players spawn here, and the world is centred on it (block 0, 0). */
@@ -481,7 +671,7 @@ public final class AreaPreviewScreen extends Screen {
         if (select.mouseReleased(e)) return true;
         if (rightDown && e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
             rightDown = false;
-            if (!rightMoved) setSpawn(rightX, rightY);
+            if (!rightMoved) openMenu((int) rightX, (int) rightY);
             return true;
         }
         if (dragging && (e.button() == InputConstants.MOUSE_BUTTON_LEFT || e.button() == InputConstants.MOUSE_BUTTON_MIDDLE)) {
@@ -541,6 +731,7 @@ public final class AreaPreviewScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         tiles.pump(minecraft);
+        landmarks.want(lat0, lon0, mpb);
         int gs = gs(), mw = mapW(), mh = mapH();
 
         g.enableScissor(0, TOP_H, mapRight(), height);
@@ -562,6 +753,8 @@ public final class AreaPreviewScreen extends Screen {
         g.enableScissor(0, TOP_H, mapRight(), height);
         drawBeyondReach(g);
         drawSpawn(g);
+        drawLandmarks(g, mouseX, mouseY);
+        if (card != null) card.draw(g, view, 0, mapRight(), TOP_H, height);
         g.disableScissor();
 
         g.fill(0, 0, mapRight(), TOP_H, TOP_BG);
@@ -577,6 +770,7 @@ public final class AreaPreviewScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         MapTiles.drawNightIcon(g, nightButton, layer);
         drawCoverageButton(g);
+        if (!menuItems.isEmpty()) drawMenu(g, mouseX, mouseY);
         select.drawIcons(g);
     }
 
@@ -876,6 +1070,7 @@ public final class AreaPreviewScreen extends Screen {
                 y += 10;
             }
             y += 6;
+            y = landmarksLine(g, draw, y, w);
             return help(g, draw, y, w) - y0;
         }
         if (sel != statsFor) {
@@ -934,6 +1129,7 @@ public final class AreaPreviewScreen extends Screen {
             }
         }
         y += 6;
+        y = landmarksLine(g, draw, y, w);
         return help(g, draw, y, w) - y0;
     }
 

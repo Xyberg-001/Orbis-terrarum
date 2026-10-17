@@ -2375,7 +2375,7 @@ outside the game).
 New worlds start at Mount Everest's summit (`PreviewChoices`, at game start and
 after each world is created) until a preset, a search or a right-click chooses
 another place; they spawn at their centre: the spawn chosen on the world generator map
-is block 0, 0. Right-click the map, type coordinates ("60.39, 5.32") into its
+is block 0, 0. Right-click the map (**Set the spawn here**), type coordinates ("60.39, 5.32") into its
 search, search a place without an outline (a summit, a building, an address:
 the map and the spawn go to its point, nothing is selected), or search a place
 outside the spawn's current area (the spawn goes to
@@ -2543,7 +2543,7 @@ done (`CubicSweeper.doneRow`), so its purple shrinks and its percentage moves as
 normal world. The world preview
 (`AreaPreviewScreen`) has the same tool through `client/map/MapView` (the
 preview's own map implements it; `MapCanvas` does on the world map), without
-Generate: right-drag pans there and a right-click still sets the spawn. Its
+Generate: right-drag pans there and a right-click opens the menu (spawn, What's here). Its
 shapes are stored under `preview`; the preview's scale buttons re-project their
 lat/lon to blocks.
 
@@ -2580,6 +2580,21 @@ row across each outline's edges, again only when the view moves (the whole world
 whole-world zoom a source smaller than a cell (New York's building register) does not show; zoomed in, the
 grid agrees with the services' own coverage test (Bergen 6, Oslo 6, Paris 4, Amsterdam 3, Zurich 2,
 Montreal 2, Tokyo 1, Sydney 1, New York 1).
+
+**What's here and landmark pins on the world generator map.** A right-click opens a menu (as on the world
+map): **Set the spawn here**, or **What's here**, the world map's card (`client/map/PlaceCard`, shared)
+filled before any world exists: the place's name (`Geocoder.reverse`, filled in when it answers), its
+coordinates, the block it lands on at the chosen scale, the climate (`BiomeClassifier` at the climate grid's
+height: zone, mean temperature, snowy), the national services there (`DataSources.list`, a box of
+±0.005°), the landmarks within 1.5 km, inside or outside the selection, and a **Spawn here** button.
+Gold diamonds mark the landmarks the world would get as advancements (`client/LandmarkPreview`): the same
+choice (`Landmarks.select`) over the same area (`Landmarks.searchBox`) for the centre and scale on screen,
+asked 700 ms after they stop changing, on a thread of its own. Its data is the local extract or the
+downloaded regions where those hold the area, else one Overpass query for the named places of the kinds
+`select` looks at (`OsmDataProvider.getQuery`, cached as `osm-cache/landmarks_<box>.json.gz`). The side
+panel says how many there are. Measured 17 Oct 2026: Mecca 27 pins, Bergen, Paris, Istanbul 1:2, Agra and
+New York 1:4 36 each (the cap); a first lookup took 13-57 s (three Overpass mirrors failing that day),
+a cached one under 0.2 s. With `landmarkAdvancements` off there are no pins.
 
 **Aternos export** (`export/AternosExport`, **Export for Aternos** in the World window: plain or
 Orbis server, one zip or split; the operator hosting the world). Saves the world, then on a background thread: every fully generated

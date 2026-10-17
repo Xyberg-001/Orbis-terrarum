@@ -144,6 +144,19 @@ public class OsmDataProvider {
         return parse(json);
     }
 
+    /** The answer to a query of its own (not a region's), cached on disk under {@code cacheName}. */
+    public OsmData getQuery(String cacheName, String query) throws IOException, InterruptedException {
+        Path cached = cacheDir.resolve(cacheName + ".json.gz");
+        String json;
+        if (Files.exists(cached)) {
+            json = readGzip(cached);
+        } else {
+            json = fetchWithRetries(0, 0, 0, 0, query);
+            writeGzip(cached, json);
+        }
+        return parse(json);
+    }
+
     public boolean isCached(double south, double west, double north, double east) {
         com.berg.orbis.osm.extract.LocalExtractStore store = extracts;
         if (store != null && store.covering(south, west, north, east, metersPerBlock) != null) return true;
@@ -165,12 +178,17 @@ public class OsmDataProvider {
     }
 
     private String fetchWithRetries(double south, double west, double north, double east) throws IOException, InterruptedException {
+        return fetchWithRetries(south, west, north, east, null);
+    }
+
+    /** As above with a query of its own ({@code query}), or the region's usual one when null. */
+    private String fetchWithRetries(double south, double west, double north, double east, String query) throws IOException, InterruptedException {
         IOException last = null;
         for (int attempt = 0; attempt <= retries; attempt++) {
             if (closed) throw new IOException("provider closed (world model replaced)");
             String endpoint = pickEndpoint();
             try {
-                String json = fetchOverpass(endpoint, south, west, north, east);
+                String json = query != null ? postQuery(endpoint, query) : fetchOverpass(endpoint, south, west, north, east);
                 passOverUntil.remove(endpoint);
                 return json;
             } catch (RateLimited e) {
@@ -243,7 +261,10 @@ public class OsmDataProvider {
                 + "nwr[\"place\"=\"square\"]" + bbox + ";"
                 + ");"
                 + "out geom;";
+        return postQuery(endpoint, query);
+    }
 
+    private String postQuery(String endpoint, String query) throws IOException, InterruptedException {
         Semaphore perEndpoint = endpointSlots.get(endpoint);
         slots.acquire();
         if (perEndpoint != null) perEndpoint.acquire();

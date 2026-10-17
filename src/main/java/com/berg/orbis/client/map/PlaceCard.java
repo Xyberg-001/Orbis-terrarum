@@ -13,31 +13,31 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * A small card on the world map, pinned to one place: a searched place, What's here, a landmark. A title, a few lines ("label\tvalue"
+ * A small card on a map (the world map, the world generator map), pinned to one place: a searched place, What's here, a landmark. A title, a few lines ("label\tvalue"
  * shows the label in grey) and up to three buttons; it shows only when asked for and goes with its x (or Esc), so the map stays clear.
  * It sits above its place, or below it near the top, and stays on screen when the place scrolls away.
  */
-final class PlaceCard {
+public final class PlaceCard {
     /** A button on the card. */
-    record Action(Component label, Component tip, Runnable run) {}
+    public record Action(Component label, Component tip, Runnable run) {}
 
     private static final int PAD = 5, MAX_W = 200, MIN_W = 120;
     private final Font font;
     private final Button[] buttons = new Button[3];
     private final List<Action> actions = new ArrayList<>();
 
-    double[] at;
+    public double[] at;
     private String title = "";
     private List<String> lines = List.of();
     /** The card's box and its close cross as last drawn (GUI), null while hidden. */
     private int[] box, close;
 
-    PlaceCard(Font font) {
+    public PlaceCard(Font font) {
         this.font = font;
     }
 
     /** Makes the buttons (again after a resize); the screen draws them over the card. */
-    void addWidgets(Consumer<Button> add) {
+    public void addWidgets(Consumer<Button> add) {
         for (int i = 0; i < buttons.length; i++) {
             int n = i;
             buttons[i] = Button.builder(Component.empty(), b -> {
@@ -48,12 +48,12 @@ final class PlaceCard {
         refreshButtons();
     }
 
-    void show(double[] at, String title, List<String> lines, List<Action> actions) {
+    public void show(double[] at, String title, List<String> lines, List<Action> actions) {
         this.at = at;
         set(title, lines, actions);
     }
 
-    void set(String title, List<String> lines, List<Action> actions) {
+    public void set(String title, List<String> lines, List<Action> actions) {
         this.title = title == null ? "" : title;
         this.lines = new ArrayList<>(lines);
         this.actions.clear();
@@ -61,14 +61,14 @@ final class PlaceCard {
         refreshButtons();
     }
 
-    void hide() {
+    public void hide() {
         at = null;
         box = close = null;
         actions.clear();
         refreshButtons();
     }
 
-    boolean shown() {
+    public boolean shown() {
         return at != null;
     }
 
@@ -87,7 +87,7 @@ final class PlaceCard {
     }
 
     /** True when a click lands on the card (its x closes it); the buttons have had their turn first. */
-    boolean click(double x, double y) {
+    public boolean click(double x, double y) {
         if (box == null) return false;
         if (close != null && x >= close[0] && x < close[2] && y >= close[1] && y < close[3]) {
             hide();
@@ -97,7 +97,7 @@ final class PlaceCard {
     }
 
     /** Draws the card above its place within {@code left..right} and {@code top..bottom} (GUI), and puts its buttons on it. */
-    void draw(GuiGraphicsExtractor g, MapView canvas, int left, int right, int top, int bottom) {
+    public void draw(GuiGraphicsExtractor g, MapView canvas, int left, int right, int top, int bottom) {
         box = close = null;
         if (at == null) return;
         int buttonsW = 0;
