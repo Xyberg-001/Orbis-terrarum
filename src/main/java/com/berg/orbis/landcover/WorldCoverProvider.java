@@ -40,7 +40,12 @@ public final class WorldCoverProvider {
             SNOW_ICE = 70, WATER = 80, WETLAND = 90, MANGROVES = 95, MOSS_LICHEN = 100;
 
     private static final int GRANULE_DEGREES = 3;
-    private static final int HEADER_BYTES = 512 * 1024;
+    /**
+     * The first read of a granule. ESA's files hold everything needed (the full-size image's tags and both tile tables)
+     * in their first 24 KB; tables beyond the read are fetched on their own (parseHeader). 512 KB until 17 Oct 2026:
+     * 21 times more than needed, up to 70 s at the 7-160 KB/s the server gave the user's connection that night.
+     */
+    private static final int HEADER_BYTES = 32 * 1024;
     private static final int MEMORY_TILES = 96;
     private static final Duration FAILURE_BACKOFF = Duration.ofMinutes(5);
 

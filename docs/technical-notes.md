@@ -1597,9 +1597,11 @@ headless server at 22.25 N, 10.30 E (JFR, `-Dorbis.profileRegions=true` for the 
 - **Land cover looked up block by block.** `WorldCoverProvider.classAt` formatted the 3-degree granule's name and
   looked it up for each of a region's 330,000 cells: 0.9-2.5 s a region; the last granule is kept now (0.13-0.3 s).
 
-What remains for a fresh area is a one-time wait while its data arrives: a WorldCover granule's header (3 degrees,
-about 90 s the first time), a soil-group tile (a quarter degree, 20-25 s) and the terrain tiles, after which regions
-build in about 2 s (median of 32). Two of the three Overpass servers (kumi.systems, private.coffee) failed that
+What remains for a fresh area is a one-time wait while its data arrives: a soil-group tile (a quarter degree, 7-25 s)
+and the terrain tiles (11-24 s), after which regions build in about 2 s (median of 32). A WorldCover granule's header
+took about 90 s the first time until the first read was cut from 512 to 32 KB (`HEADER_BYTES`; ESA's files hold the
+tags and both tile tables in their first 24 KB): 0.7-1.5 s for a new granule, the first regions of a fresh area
+20-30 s instead of 104-178 s, a test server's start 96 s instead of 179-306 s. Two of the three Overpass servers (kumi.systems, private.coffee) failed that
 night, which made map data take 50-190 s a region; that is outside Orbis.
 - OSM is streamed per 512 × 512 m region with a 32 m margin (so nothing
   breaks at region edges), fetched from Overpass, cached on disk (gzip) and
