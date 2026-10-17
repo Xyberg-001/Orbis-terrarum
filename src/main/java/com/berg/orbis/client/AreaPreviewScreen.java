@@ -783,6 +783,7 @@ public final class AreaPreviewScreen extends Screen {
         double left = cx * scale - mw / 2.0, top = cy * scale - mh / 2.0;
         int tx0 = (int) Math.floor(left / tpx), tx1 = (int) Math.floor((left + mw) / tpx);
         int ty0 = Math.max(0, (int) Math.floor(top / tpx)), ty1 = Math.min(n - 1, (int) Math.floor((top + mh) / tpx));
+        tiles.view(service, z, tx0, tx1, ty0, ty1);
         for (int ty = ty0; ty <= ty1; ty++) {
             for (int tx = tx0; tx <= tx1; tx++) {
                 int sx0 = (int) Math.round(tx * tpx - left), sx1 = (int) Math.round((tx + 1) * tpx - left);

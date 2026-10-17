@@ -160,6 +160,7 @@ public final class MapCanvas implements MapView {
         double l = cx * scale - mw / 2.0, t = cy * scale - mh / 2.0;
         int tx0 = (int) Math.floor(l / tpx), tx1 = (int) Math.floor((l + mw) / tpx);
         int ty0 = Math.max(0, (int) Math.floor(t / tpx)), ty1 = Math.min(n - 1, (int) Math.floor((t + mh) / tpx));
+        tiles.view(service, z, tx0, tx1, ty0, ty1);
         for (int ty = ty0; ty <= ty1; ty++) {
             for (int tx = tx0; tx <= tx1; tx++) {
                 int sx0 = (int) Math.round(tx * tpx - l), sx1 = (int) Math.round((tx + 1) * tpx - l);

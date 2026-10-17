@@ -2428,6 +2428,21 @@ need to press Done first.
   trimmed first): used as is for the day Esri's Cache-Control allows, then
   revalidated with the ETag (a "not modified" answer has no body), and shown
   from disk when offline.
+- **Ahead of need** (`MapTiles.view`, `MapTiles.warmUp`, 17 Oct 2026). A
+  first visit is mostly downloading: a screen of street map took 1.8-4.7 s
+  with an empty cache, 0.2-2 s of it drawing (the whole world the slowest),
+  and 0.07-0.3 s once drawn. Once a view has been still for 400 ms, two of
+  the six tile threads, when no tile on screen waits, download and draw
+  onto the disk the view one zoom out, one tile beyond each edge and one
+  zoom in over the middle half (Bergen at zoom 13: 6 + 20 + 36 tiles in
+  25 s); nothing is kept in memory, and a moved view drops what it had
+  queued. 15 s after the game starts, three low-priority threads draw the
+  whole world (zooms 1 and 2) and the world generator map's opening view
+  (30 km across the chosen spawn, the zooms a 400-1,200 pixel map shows it
+  at, plus 7 km around): 68 tiles, done 16 s later from an empty cache.
+  Shipping the world tiles in the jar was rejected (a few MB for what a
+  background thread draws once). A search already moves the map the moment
+  its answer arrives, so there was nothing to start sooner there.
 - **The chunks.** Drawn over the map in green, computed off the render
   thread per view (`client/PreviewRaster`): every screen pixel is mapped
   through the world's own projection to its block, so the chunks sit where
