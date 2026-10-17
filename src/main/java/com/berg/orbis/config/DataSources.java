@@ -208,6 +208,19 @@ public final class DataSources {
         return s == null || s.overlaps(south - m, west - m, north + m, east + m);
     }
 
+    /**
+     * What a source covers, as rings of lat, lon pairs, each with its box (south, west, north, east) first: its country's
+     * or state's outline, else its box as a rectangle.
+     */
+    public static List<double[]> outline(Source s) {
+        if (s.area() != null) {
+            List<double[]> rings = Outlines.load().get(s.area());
+            if (rings != null) return rings;
+        }
+        return List.of(new double[]{s.south(), s.west(), s.north(), s.east(),
+                s.south(), s.west(), s.north(), s.west(), s.north(), s.east(), s.south(), s.east()});
+    }
+
     /** The outline keys starting with a prefix ("US-": the states) that touch the box. */
     public static List<String> areasTouching(String prefix, double s, double w, double n, double e) {
         List<String> out = new ArrayList<>();

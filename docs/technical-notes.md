@@ -2569,6 +2569,18 @@ Kartverket requests. The tool is always
 on there, with a hand tool for panning; creating a world (the new-world settings saved) clears the
 preview selection after copying it into the world.
 
+**National data on the world generator map** (`client/map/CoverageOverlay`, the layers button under the
+night button; on by default for the game session): a teal shade over every country and state whose own
+services Orbis reads (`DataSources.list`, the national ones: lidar building heights, aerial photos, building
+and road registers, lake surveys, Norway's rock, snow and forest maps, Quebec's lakes), lighter for one,
+stronger for two and three or more, with a key under the button; the cursor box lists the sources under the
+cursor. The shapes are the same outlines that decide which services are asked (`orbis-coverage.json`, via
+`DataSources.outline`; a source without one, its box). Worked out on a 4-pixel grid of the screen, row by
+row across each outline's edges, again only when the view moves (the whole world in about 40 ms). At the
+whole-world zoom a source smaller than a cell (New York's building register) does not show; zoomed in, the
+grid agrees with the services' own coverage test (Bergen 6, Oslo 6, Paris 4, Amsterdam 3, Zurich 2,
+Montreal 2, Tokyo 1, Sydney 1, New York 1).
+
 **Aternos export** (`export/AternosExport`, **Export for Aternos** in the World window: plain or
 Orbis server, one zip or split; the operator hosting the world). Saves the world, then on a background thread: every fully generated
 overworld chunk (PregenMap.regionState == full; with the hard limit on, only

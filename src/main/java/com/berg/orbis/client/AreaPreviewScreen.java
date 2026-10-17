@@ -40,6 +40,10 @@ public final class AreaPreviewScreen extends Screen {
     private static final int WHITE = 0xFFFFFFFF, GREY = 0xFFA0A8B0, GREEN = 0xFF4ADE80, RED = 0xFFF87171, AMBER = 0xFFF59E0B;
     private static MapTiles.Layer layer = MapTiles.Layer.STREET;
     private Button nightButton;
+    /** Where Orbis has national data, shaded (on until turned off, for the rest of the game session). */
+    private static boolean coverageOn = true;
+    private Button coverageButton;
+    private com.berg.orbis.client.map.CoverageOverlay coverage;
 
     private final Screen parent;
     /** The world's centre (block 0, 0), which is also where players spawn: right-click or a search moves it. */
@@ -225,6 +229,10 @@ public final class AreaPreviewScreen extends Screen {
         }).bounds(px, height - 48, pw, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.layer.tip"))).build());
         // Night mode for the street map: on the map's right edge, under the credit line.
         nightButton = addRenderableWidget(MapTiles.nightButton(() -> layer, l -> layer = l, mapRight() - 24, TOP_H + 14));
+        // Coverage: under the night button (in its place when the map has none).
+        coverageButton = addRenderableWidget(Button.builder(Component.empty(), b -> coverageOn = !coverageOn)
+                .bounds(mapRight() - 24, TOP_H + 38, 20, 20)
+                .tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.coverage.tip"))).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose()).bounds(px, height - 24, pw, 20).build());
 
         if (!viewSet) {
@@ -542,6 +550,12 @@ public final class AreaPreviewScreen extends Screen {
         drawTiles(g, layer.service, mw, mh, true);
         if (layer.labels != null) drawTiles(g, layer.labels, mw, mh, false);
         g.pose().popMatrix();
+        // National data, over the map but under the selection and the markers.
+        if (coverageOn) {
+            if (coverage == null) coverage = new com.berg.orbis.client.map.CoverageOverlay();
+            long key = Double.doubleToLongBits(cx) * 31 + Double.doubleToLongBits(cy) * 17 + Double.doubleToLongBits(scale) * 7 + width * 131L + height;
+            coverage.draw(g, view::gui, 0, TOP_H, mapRight(), height, key);
+        }
         g.disableScissor();
         select.draw(g, font, mouseX, mouseY);
         if (onMap(mouseX, mouseY)) drawHoveredChunk(g, mouseX, mouseY);
@@ -562,6 +576,7 @@ public final class AreaPreviewScreen extends Screen {
         if (onMap(mouseX, mouseY)) drawCursorReadout(g, mouseX, mouseY);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         MapTiles.drawNightIcon(g, nightButton, layer);
+        drawCoverageButton(g);
         select.drawIcons(g);
     }
 
@@ -732,6 +747,13 @@ public final class AreaPreviewScreen extends Screen {
             double m = tiles.elevationAt(ll[0], ll[1], z);
             if (!Double.isNaN(m)) parts.add(String.format(Locale.ROOT, m < 0 ? "%,.0f m below sea level" : "%,.0f m above sea level", Math.abs(m)));
         }
+        if (coverageOn && coverage != null) {
+            List<String> here = coverage.namesAt(mouseX, mouseY);
+            if (!here.isEmpty()) {
+                parts.add(Component.translatable("orbisterrarum.preview.coverage.here", here.size()).getString());
+                parts.addAll(here);
+            }
+        }
         String state = sel == null || sel.isEmpty() ? null : Component.translatable(in ? "orbisterrarum.preview.in" : "orbisterrarum.preview.out").getString();
         if (state != null) parts.add(state);
         int left = select != null ? select.textLeft(0, height, 4 + MapSelectTool.STRIP_W + 6) : 4 + MapSelectTool.STRIP_W + 6;
@@ -766,6 +788,25 @@ public final class AreaPreviewScreen extends Screen {
                 x += font.width(part) + gap;
             }
             y += 10;
+        }
+    }
+
+    /**
+     * The coverage button's symbol, three stacked layers (teal when on, grey when off), and, when on, the key under it.
+     * It sits under the night button, or in its place on maps without one.
+     */
+    private void drawCoverageButton(GuiGraphicsExtractor g) {
+        if (coverageButton == null) return;
+        coverageButton.setY(nightButton != null && nightButton.visible ? TOP_H + 38 : TOP_H + 14);
+        int x = coverageButton.getX() + 4, y = coverageButton.getY() + 5;
+        int colour = coverageOn ? 0xFF2DD4BF : 0xFF8A949E;
+        for (int i = 0; i < 3; i++) {
+            int yy = y + i * 4, inset = i == 1 ? 0 : 1;
+            g.fill(x + inset, yy, x + 12 - inset, yy + 2, colour);
+        }
+        if (coverageOn && coverage != null) {
+            coverage.drawLegend(g, font, mapRight() - 4, coverageButton.getY() + 24,
+                    Component.translatable("orbisterrarum.preview.coverage.key").getString());
         }
     }
 
