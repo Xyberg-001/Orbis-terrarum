@@ -782,6 +782,12 @@ public class OrbisConfig {
     /** Block chunk generation until the region's OSM data has been fetched. If false, chunks whose data is not yet available are generated as terrain only. */
     public boolean waitForOsm = true;
     /**
+     * Where the land is sparse (the map answers round a region all small), a region's map data comes out of one Overpass
+     * answer for its 2 x 2 block of regions (osm/OsmDataProvider.getDataFromBlock): a quarter of the requests in deserts,
+     * mountains and the countryside. Cities are asked region by region as before.
+     */
+    public boolean combineSparseRegions = true;
+    /**
      * A "Map around you" bar for each player while the map data around them is still coming in (worldgen/LiveStatus): how many
      * of the regions kept ready around them are ready, what is being downloaded or prepared, yellow when their own region
      * is slow, red while terrain downloads keep failing. Gone a few seconds after everything is there.

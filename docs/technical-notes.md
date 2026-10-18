@@ -1611,6 +1611,16 @@ headless server at 22.25 N, 10.30 E (JFR, `-Dorbis.profileRegions=true` for the 
 - **Land cover looked up block by block.** `WorldCoverProvider.classAt` formatted the 3-degree granule's name and
   looked it up for each of a region's 330,000 cells: 0.9-2.5 s a region; the last granule is kept now (0.13-0.3 s).
 
+**Sparse land asks for 2 x 2 blocks** (`combineSparseRegions`, on; 18 Oct 2026). When the map data answers of the
+regions within two of a region all came back under 256 KB (Sahara regions are tens of KB, a city's several MB), its data
+comes out of one Overpass answer for its 2 x 2 block (`OsmDataProvider.getDataFromBlock`: asked once, the regions of a
+block asking at once share the request, kept as `block_<box>.json.gz`), and each region takes the nodes inside its own
+box and the ways and areas with a point inside it, which is what Overpass returns for that box: at Djanet (Algeria) the
+region asked on its own and cut from its block held the same 21 nodes, 36 ways and 46 areas in the same order, and the
+block took 38 s against 42 s for the region alone. With one working Overpass server taking one request at a time
+(50-190 s a region on 17 Oct 2026), four regions then wait in the queue once. The first regions of a new area are
+still asked one by one (nothing to judge by yet), cities always.
+
 What remains for a fresh area is a one-time wait while its data arrives: a soil-group tile (a quarter degree, 7-25 s)
 and the terrain tiles (11-24 s), after which regions build in about 2 s (median of 32). A WorldCover granule's header
 took about 90 s the first time until the first read was cut from 512 to 32 KB (`HEADER_BYTES`; ESA's files hold the

@@ -510,13 +510,19 @@ public final class OsmRegionManager {
             nvdbFuture = nvdbJob.result;
         }
 
+        // Sparse land (the answers of the regions round it all small): the region's data comes out of one answer for its
+        // 2 x 2 block (OsmDataProvider.getDataFromBlock), so four regions wait in the Overpass queue once.
+        double[] block = cfg.combineSparseRegions && sparseAround(rx, rz) && !provider.isCached(south, west, north, east) ? blockBox(rx, rz) : null;
+
         OsmData data = null;
         int attempt = 0;
         long start = System.currentTimeMillis();
         long deadline = start + cfg.osmMaxWaitMinutes * 60_000L;
         while (!shutdown) {
             try {
-                data = provider.getData(south, west, north, east);
+                data = block != null ? provider.getDataFromBlock(south, west, north, east, block) : provider.getData(south, west, north, east);
+                int bytes = OsmDataProvider.lastAnswerBytes();
+                if (bytes >= 0) answerBytes.put(key(rx, rz), block != null ? bytes / 4 : bytes);
                 break;
             } catch (IOException e) {
                 // A replaced model's region stopping, not a failure (the new model fetches it): the worker stops quietly.
@@ -572,6 +578,34 @@ public final class OsmRegionManager {
                     + (raster.hasCoastline ? ", coastline" : "") + " | " + stats());
         }
         return raster;
+    }
+
+    /** How big each region's map data answer was (characters; a block's shared by its four), for {@link #sparseAround}. */
+    private final ConcurrentHashMap<Long, Integer> answerBytes = new ConcurrentHashMap<>();
+    /** A region's answer below this is sparse land: Sahara regions are tens of KB, a city region several MB. */
+    private static final int SPARSE_BYTES = 256 * 1024;
+
+    /** Whether the regions within two of this one that have answered all answered small (and at least one has). */
+    private boolean sparseAround(int rx, int rz) {
+        boolean any = false;
+        for (int dz = -2; dz <= 2; dz++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                Integer b = answerBytes.get(key(rx + dx, rz + dz));
+                if (b == null) continue;
+                if (b > SPARSE_BYTES) return false;
+                any = true;
+            }
+        }
+        return any;
+    }
+
+    /** The box (south, west, north, east, margins included) of the 2 x 2 block of regions holding this one. */
+    private double[] blockBox(int rx, int rz) {
+        int bx = Math.floorDiv(rx, 2) * 2, bz = Math.floorDiv(rz, 2) * 2;
+        int minX = bx * size - cfg.regionMarginBlocks, maxX = (bx + 2) * size + cfg.regionMarginBlocks;
+        int minZ = bz * size - cfg.regionMarginBlocks, maxZ = (bz + 2) * size + cfg.regionMarginBlocks;
+        double[] sw = mapper.toLatLonExact(minX, maxZ), ne = mapper.toLatLonExact(maxX, minZ);
+        return new double[]{Math.min(sw[0], ne[0]), Math.min(sw[1], ne[1]), Math.max(sw[0], ne[0]), Math.max(sw[1], ne[1])};
     }
 
     private static long key(int rx, int rz) {

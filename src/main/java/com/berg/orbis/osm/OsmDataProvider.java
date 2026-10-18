@@ -107,6 +107,98 @@ public class OsmDataProvider {
         this.places = store;
     }
 
+    /** The size of the last answer read or fetched on this thread, in characters; -1 when it came from a local extract. */
+    private static final ThreadLocal<Integer> LAST_BYTES = ThreadLocal.withInitial(() -> -1);
+
+    /** For OsmRegionManager's rule for sparse land: how big the answer just read was. */
+    public static int lastAnswerBytes() {
+        return LAST_BYTES.get();
+    }
+
+    /** Blocks being fetched now, by file: the regions of one block share one request. */
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<String>> blocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * A region's data out of one answer for the block of regions around it ({@code block}: south, west, north, east): asked
+     * once for the block, kept on disk as {@code block_<box>.json.gz}, and each region takes the features that reach into
+     * its own box (the nodes inside it, the ways and areas with a point inside it: what Overpass returns for that box).
+     * Where the land is sparse a block's answer is as quick as a region's, and four regions then wait in the queue once
+     * instead of four times (one working Overpass server, one request at a time: 50-190 s a region, 17 Oct 2026). A
+     * region already on disk on its own, or covered by a local extract, is read as before.
+     */
+    public OsmData getDataFromBlock(double south, double west, double north, double east, double[] block)
+            throws IOException, InterruptedException {
+        com.berg.orbis.osm.extract.LocalExtractStore store = extracts;
+        if (store != null && store.covering(south, west, north, east, metersPerBlock) != null || Files.exists(cacheFile(south, west, north, east))) {
+            return getData(south, west, north, east);
+        }
+        Path file = cacheDir.resolve(String.format(Locale.ROOT, "block_%.5f_%.5f_%.5f_%.5f.json.gz", block[0], block[1], block[2], block[3]));
+        String json;
+        if (Files.exists(file)) {
+            json = readGzip(file);
+        } else {
+            java.util.concurrent.CompletableFuture<String> mine = new java.util.concurrent.CompletableFuture<>();
+            java.util.concurrent.CompletableFuture<String> other = blocks.putIfAbsent(file.toString(), mine);
+            if (other == null) {
+                try {
+                    json = fetchWithRetries(block[0], block[1], block[2], block[3]);
+                    writeGzip(file, json);
+                    mine.complete(json);
+                } catch (IOException | InterruptedException | RuntimeException e) {
+                    mine.completeExceptionally(e);
+                    throw e;
+                } finally {
+                    blocks.remove(file.toString(), mine);
+                }
+            } else {
+                try {
+                    json = other.get();
+                } catch (java.util.concurrent.ExecutionException e) {
+                    Throwable c = e.getCause();
+                    if (c instanceof IOException io) throw io;
+                    throw new IOException(c);
+                }
+            }
+        }
+        LAST_BYTES.set(json.length());
+        OsmData data = within(parse(json), south, west, north, east);
+        PlacesStore p = places;
+        if (p != null && !p.isEmpty()) {
+            try {
+                data = p.merge(data, south, west, north, east);
+            } catch (RuntimeException e) {
+                System.err.println("[orbis] Places merge failed: " + e);
+            }
+        }
+        return data;
+    }
+
+    /** The features of some data that reach into a box: nodes inside it, ways and areas with a point inside it. */
+    static OsmData within(OsmData d, double south, double west, double north, double east) {
+        List<OsmNode> nodes = new ArrayList<>();
+        for (OsmNode n : d.nodes()) if (inside(n.pos(), south, west, north, east)) nodes.add(n);
+        List<OsmWay> ways = new ArrayList<>();
+        for (OsmWay w : d.ways()) if (anyInside(w.points(), south, west, north, east)) ways.add(w);
+        List<OsmArea> areas = new ArrayList<>();
+        for (OsmArea a : d.areas()) {
+            boolean in = false;
+            for (List<LatLon> ring : a.outers()) if (in = anyInside(ring, south, west, north, east)) break;
+            if (!in) for (List<LatLon> ring : a.inners()) if (in = anyInside(ring, south, west, north, east)) break;
+            if (in) areas.add(a);
+        }
+        return new OsmData(nodes, ways, areas);
+    }
+
+    private static boolean anyInside(List<LatLon> pts, double south, double west, double north, double east) {
+        for (LatLon p : pts) if (inside(p, south, west, north, east)) return true;
+        return false;
+    }
+
+    private static boolean inside(LatLon p, double south, double west, double north, double east) {
+        return p.lat() >= south && p.lat() <= north && p.lon() >= west && p.lon() <= east;
+    }
+
     /** Returns cached data if present, otherwise downloads it. Never returns null; throws on network failure. */
     public OsmData getData(double south, double west, double north, double east) throws IOException, InterruptedException {
         OsmData data = baseData(south, west, north, east);
@@ -130,6 +222,7 @@ public class OsmDataProvider {
                     extractAnnounced = true;
                     System.out.println("[orbis] Map data comes from the local extract " + ex.describe());
                 }
+                LAST_BYTES.set(-1);
                 return store.load(ex, south, west, north, east);
             }
         }
@@ -141,6 +234,7 @@ public class OsmDataProvider {
             json = fetchWithRetries(south, west, north, east);
             writeGzip(cached, json);
         }
+        LAST_BYTES.set(json.length());
         return parse(json);
     }
 
