@@ -199,7 +199,7 @@ public class DemTileProvider implements TileSource {
         try {
             float[][] tile = f.join();
             TileCorrection c = correction;
-            if (c != null && zoom == correctionZoom) tile = c.correct(zoom, x, y, tile);
+            if (c != null && zoom == correctionZoom) tile = corrected(c, key, zoom, x, y, tile);
             remember(key, tile);
             recentFailures.remove(key);
             return tile;
@@ -210,6 +210,35 @@ public class DemTileProvider implements TileSource {
             throw e;
         } finally {
             loading.remove(key, f);
+        }
+    }
+
+    /** Corrections being worked out now, by tile: the threads waiting for one tile share one correction. */
+    private final ConcurrentHashMap<String, CompletableFuture<float[][]>> correcting = new ConcurrentHashMap<>();
+
+    /**
+     * The tile corrected once, however many threads were waiting for it: each of them worked the whole correction out again
+     * (neighbouring regions ask for the same tiles at once), on the calling thread so the download threads are never held
+     * by the bare-earth reads a correction can wait for.
+     */
+    private float[][] corrected(TileCorrection c, String key, int zoom, int x, int y, float[][] raw) {
+        synchronized (memoryCache) {
+            float[][] done = memoryCache.get(key);
+            if (done != null) return done; // corrected by another thread meanwhile
+        }
+        CompletableFuture<float[][]> mine = new CompletableFuture<>();
+        CompletableFuture<float[][]> other = correcting.putIfAbsent(key, mine);
+        if (other != null) return other.join();
+        try {
+            float[][] t = c.correct(zoom, x, y, raw);
+            remember(key, t);
+            mine.complete(t);
+            return t;
+        } catch (RuntimeException e) {
+            mine.completeExceptionally(e);
+            throw e;
+        } finally {
+            correcting.remove(key, mine);
         }
     }
 
