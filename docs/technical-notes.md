@@ -3050,6 +3050,15 @@ builders 25-31%, the map regions 10-12%. The sweep sat at its 128 requests in fl
 so the cap is 256 (`-Dorbis.pregenInFlight=N` for tests); at 256 the sweep sometimes waits for the disk
 queue. Left for later: the terrain fill looks each block up in the section's palette (4.3% of CPU) and
 recounts touched sections afterwards (4.6%); the CPU is not the limit, so neither was changed.
+**One-block sections saved without re-encoding** (`worldgen/SectionPacking`, `mixin/PalettedContainerPackMixin`, 18 Oct
+2026): Minecraft's `PalettedContainer.pack` builds a new palette, a 4,096-entry array and new storage for every section
+it saves, and 86% of an Orbis world's sections hold one block (82% air; Bergen, 122 sections a chunk). Such a section is
+now seen from its storage (at most 256 longs compared, nothing allocated) and given what `pack` returns for it: the one
+entry, no storage, the bits Minecraft's strategy gives a palette of one; anything else, or a surprise, goes to Minecraft's
+packing. Bergen 1 km at 1:1 (12,255 chunks, same seed): allocation 114 to 70 GB (packing 36% to 7% of it), G1 pauses 107
+to 95 (12.0 to 10.5 s); speed within the noise (86.9 and 81.2 chunks/s), as the sweep is not held up by the collector.
+All 106,952 one-block sections of a region file were the same as those Minecraft saved.
+
 Lithium 0.26.2 (same day, same area, 256 in flight): loads without a Mixin conflict or error, but does
 not speed up pre-generation: 81.8 and 72.3 chunks/s against 87.8 and 81.9 without it in the runs just
 before or after (plain runs at 256 ranged 74.9-87.8). Its gains are in ticking (mobs, hoppers, redstone),
