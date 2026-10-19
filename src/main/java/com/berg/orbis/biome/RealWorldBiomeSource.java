@@ -98,8 +98,13 @@ public class RealWorldBiomeSource extends BiomeSourceBridge {
         KEYS.put(Pick.BADLANDS, Biomes.BADLANDS);
         KEYS.put(Pick.WINDSWEPT_FOREST, Biomes.WINDSWEPT_FOREST);
         KEYS.put(Pick.WINDSWEPT_SAVANNA, Biomes.WINDSWEPT_SAVANNA);
-        KEYS.put(Pick.DAPPLED_FOREST, ResourceKey.create(net.minecraft.core.registries.Registries.BIOME,
-                Identifier.withDefaultNamespace("dappled_forest")));
+        // 26.3's dappled forest only where the version has it: asked for while a world loads, a biome the version lacks
+        // is left behind as an empty reference, and the registry refuses to freeze ("Unbound values ... dappled_forest"):
+        // no Orbis world opened on 26.2 from 1.1.0 until 19 Oct 2026. Without it the forest stands in (pick()).
+        if (net.minecraft.SharedConstants.class.getResource("/data/minecraft/worldgen/biome/dappled_forest.json") != null) {
+            KEYS.put(Pick.DAPPLED_FOREST, ResourceKey.create(net.minecraft.core.registries.Registries.BIOME,
+                    Identifier.withDefaultNamespace("dappled_forest")));
+        }
     }
 
     private final HolderGetter<Biome> biomes;

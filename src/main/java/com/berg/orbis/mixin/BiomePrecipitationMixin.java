@@ -18,7 +18,7 @@ public abstract class BiomePrecipitationMixin {
 
     @Inject(method = "getPrecipitationAt", at = @At("HEAD"), cancellable = true)
     private void orbisterrarum$realPrecipitation(BlockPos pos, int seaLevel, CallbackInfoReturnable<Biome.Precipitation> cir) {
-        Boolean rain = RealPrecipitation.rainAt(pos.getY());
+        Boolean rain = RealPrecipitation.rainAt(pos.getX(), pos.getY(), pos.getZ());
         if (rain == null || !((Biome) (Object) this).hasPrecipitation()) return;
         cir.setReturnValue(rain ? Biome.Precipitation.RAIN : Biome.Precipitation.SNOW);
     }

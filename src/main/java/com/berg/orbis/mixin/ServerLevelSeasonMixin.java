@@ -43,7 +43,7 @@ public abstract class ServerLevelSeasonMixin {
         BlockState snow = level.getBlockState(top);
         // a snow layer goes when it rains there now (the real temperature, while real weather runs), ice by the biome as it froze
         if (!model.cfg().realSnow && snow.is(Blocks.SNOW) && biome.getPrecipitationAt(top, level.getSeaLevel()) != Biome.Precipitation.SNOW
-                && (warm || com.berg.orbis.sky.RealPrecipitation.rainAt(top.getY()) == Boolean.TRUE)) {
+                && (warm || com.berg.orbis.sky.RealPrecipitation.rainAt(top.getX(), top.getY(), top.getZ()) == Boolean.TRUE)) {
             int layers = snow.getValue(SnowLayerBlock.LAYERS);
             level.setBlockAndUpdate(top, layers > 1 ? snow.setValue(SnowLayerBlock.LAYERS, layers - 1) : Blocks.AIR.defaultBlockState());
             return;

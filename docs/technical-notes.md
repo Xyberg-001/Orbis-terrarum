@@ -1480,6 +1480,15 @@ server, so players need nothing:
   Fixed with it: `orbisterrarum.mixins.json` had two "client" lists, the
   first (`VideoSettingsFarViewMixin`, the far view options in vanilla video
   settings, since 17 Oct) lost to the second.
+- **26.2 worlds would not open from 1.1.0 to 19 Oct 2026**: the biome source
+  named 26.3's `dappled_forest` (a string key, so 26.2 compiled); asked for
+  while a world loads, a biome the version lacks is left as an unbound
+  reference and the registry refuses to freeze ("Unbound values in registry
+  ... worldgen/biome: [minecraft:dappled_forest]", "Errors in the currently
+  selected data pack(s)"). Now added only when the version's jar has
+  `data/minecraft/worldgen/biome/dappled_forest.json`; the forest stands in.
+  Found by the self test on the 26.2 instance (its last world load was 29 Sep,
+  a 1.1.0 dev build); the released 2.0.0 for 26.2 has it.
 - **Each player's own weather** (players with Orbis, real weather on, from
   19 Oct 2026, `client/LocalWeather`, `LevelLocalWeatherMixin`): Minecraft has
   one weather per world, set from the players' mean place. Every 2 minutes
@@ -1494,7 +1503,12 @@ server, so players need nothing:
   temperature (`RealPrecipitation` keeps server and client readings apart).
   Gameplay (crops, fire, the server's lightning) keeps the world's weather.
   No report for 10 minutes, or real weather off (on=false is sent): the
-  world's weather again. Checked in game 19 Oct 2026 (self test, Bergen,
+  world's weather again. Every player's area (with Orbis or not) also gives the
+  server's rain or snow near them: `RealPrecipitation.setAreas` keeps one
+  reading per 5 km cell, and a place takes the nearest within 30 km, the
+  players' mean beyond (a probe: -5 °C by one player snows, +8 °C 200 km away
+  rains, 1.5 °C between them leaves it to the biome), so snow builds up by the
+  temperature where it falls. Checked in game 19 Oct 2026 (self test, Bergen,
   26.3 + Sodium): the server's local report arrived (clear, MET radar
   0.0 mm/h); set to thunder at 8 °C the game reported rain 1.00, thunder 1.00
   and rain falling, at -6 °C snow falling, clear back to 0.00, the world's

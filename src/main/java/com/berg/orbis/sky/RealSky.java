@@ -170,16 +170,17 @@ public final class RealSky {
     // ------------------------------------------------------------------ weather
 
     /**
-     * Each player's own weather (players with Orbis in the overworld), for their game to draw instead of the world's one
-     * weather (client/LocalWeather): players grouped by 0.05 degree (about 5 km) so neighbours share one question; each
-     * group's report and the temperature's height where its first player stands, sent on the server's thread.
+     * Each player's own weather, for their game to draw instead of the world's one weather (client/LocalWeather, players
+     * with Orbis) and for rain or snow on the server near them (every player: RealPrecipitation's areas, so snow builds
+     * up by the temperature where it falls): players grouped by 0.05 degree (about 5 km) so neighbours share one
+     * question; each group's report and the temperature's height where its first player stands, sent on the server's
+     * thread.
      */
     private static void requestLocalWeather(MinecraftServer server, WorldModel m) {
         java.util.Map<Long, java.util.List<java.util.UUID>> groups = new java.util.LinkedHashMap<>();
         java.util.Map<Long, double[]> where = new java.util.HashMap<>();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (p.level() != server.overworld()) continue;
-            if (!net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(p, com.berg.orbis.net.LocalWeatherPayload.TYPE)) continue;
             double[] ll = m.mapper().toLatLonExact(p.getX(), p.getZ());
             long key = (long) Math.floor(ll[0] * 20) << 32 ^ ((long) Math.floor(ll[1] * 20) & 0xffffffffL);
             groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(p.getUUID());
@@ -187,7 +188,9 @@ public final class RealSky {
         }
         if (groups.isEmpty()) return;
         int askedIn = run;
+        double reachBlocks = 30_000 / Math.max(1e-6, m.cfg().metersPerBlock);
         NET.execute(() -> {
+            java.util.List<double[]> readings = new java.util.ArrayList<>();
             for (var g : groups.entrySet()) {
                 double[] at = where.get(g.getKey());
                 try {
@@ -206,17 +209,21 @@ public final class RealSky {
                     }
                     var payload = new com.berg.orbis.net.LocalWeatherPayload(true, r.sky() != MetWeather.Sky.CLEAR, r.sky() == MetWeather.Sky.THUNDER,
                             Double.isNaN(refY) ? Double.NaN : r.temperatureC(), Double.isNaN(refY) ? 0 : refY, mpb, r.symbol());
+                    if (!Double.isNaN(refY)) readings.add(new double[]{bx, bz, r.temperatureC(), refY, mpb});
                     server.execute(() -> {
                         if (askedIn != run) return; // another world opened meanwhile
                         for (java.util.UUID id : g.getValue()) {
                             ServerPlayer p = server.getPlayerList().getPlayer(id);
-                            if (p != null) net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, payload);
+                            if (p != null && net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(p, com.berg.orbis.net.LocalWeatherPayload.TYPE)) {
+                                net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, payload);
+                            }
                         }
                     });
                 } catch (Exception e) {
                     // that place's weather not had: its players keep the world's until the next round
                 }
             }
+            if (askedIn == run) RealPrecipitation.setAreas(readings, reachBlocks);
         });
     }
 

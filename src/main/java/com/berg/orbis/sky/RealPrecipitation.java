@@ -12,7 +12,9 @@ package com.berg.orbis.sky;
  * Only the server's own thread and the client's render thread ask it: world generation, on its worker threads, never
  * sees it, so a chunk comes out the same whatever the weather was when it was made. The server and the client keep
  * their own readings (in a singleplayer or LAN game both live in one game): the client's is its player's own place
- * ({@link com.berg.orbis.client.LocalWeather}), the server's the players' mean.
+ * ({@link com.berg.orbis.client.LocalWeather}); the server's are each player's area (the readings RealSky gets for
+ * every player's 5 km cell), a place taking the nearest within 30 km, and the players' mean beyond them, so snow
+ * builds up by the temperature where it falls, not halfway between players far apart.
  */
 public final class RealPrecipitation {
     /** Rain from this temperature (C), snow at or below SNOW_C, the biome's own choice between them. */
@@ -25,6 +27,13 @@ public final class RealPrecipitation {
     }
 
     private static volatile State state, clientState;
+
+    /** A player area's reading: its block position and the reading there. */
+    private record Area(int x, int z, State s) {
+    }
+
+    private static volatile java.util.List<Area> areas = java.util.List.of();
+    private static volatile double reachSq = 0;
     private static volatile Thread serverThread, clientThread;
 
     private RealPrecipitation() {
@@ -55,6 +64,21 @@ public final class RealPrecipitation {
 
     public static void clear() {
         state = null;
+        areas = java.util.List.of();
+    }
+
+    /**
+     * The players' areas' readings (the server's), each {block x, block z, temperature, its block height, metres per
+     * block}; a place takes the nearest within {@code reachBlocks}. An empty list leaves only the mean.
+     */
+    public static void setAreas(java.util.List<double[]> readings, double reachBlocks) {
+        java.util.List<Area> list = new java.util.ArrayList<>();
+        for (double[] r : readings) {
+            State s = make(r[2], r[3], r[4]);
+            if (s != null) list.add(new Area((int) r[0], (int) r[1], s));
+        }
+        reachSq = reachBlocks * reachBlocks;
+        areas = java.util.List.copyOf(list);
     }
 
     public static void clearClient() {
@@ -68,15 +92,37 @@ public final class RealPrecipitation {
         return new double[]{s.tempC, s.refY, s.coolPerBlock / 0.0065};
     }
 
-    /** At block height y: TRUE rain, FALSE snow, null the biome's own choice (no reading, too near freezing, or another thread). */
-    public static Boolean rainAt(int y) {
+    /** At a block: TRUE rain, FALSE snow, null the biome's own choice (no reading, too near freezing, or another thread). */
+    public static Boolean rainAt(int x, int y, int z) {
         Thread t = Thread.currentThread();
-        State s = t == serverThread ? state : t == clientThread ? clientState : null;
+        State s = t == serverThread ? serverAt(x, z) : t == clientThread ? clientState : null;
         if (s == null) return null;
         if (System.currentTimeMillis() - s.at > STALE_MS) return null;
         double c = s.tempC - s.coolPerBlock * (y - s.refY);
         if (c >= RAIN_C) return Boolean.TRUE;
         if (c <= SNOW_C) return Boolean.FALSE;
         return null;
+    }
+
+    /** The server's reading for a place: the nearest player area's within reach, else the mean. */
+    private static State serverAt(int x, int z) {
+        java.util.List<Area> list = areas;
+        State best = null;
+        double bestSq = reachSq;
+        long now = System.currentTimeMillis();
+        for (Area a : list) {
+            double dx = a.x - x, dz = a.z - z, d = dx * dx + dz * dz;
+            if (d <= bestSq && now - a.s.at <= STALE_MS) {
+                bestSq = d;
+                best = a.s;
+            }
+        }
+        return best != null ? best : state;
+    }
+
+    /** The temperature the server takes at a block (for the self test's report); NaN without a reading. */
+    public static double serverTempAt(int x, int y, int z) {
+        State s = serverAt(x, z);
+        return s == null ? Double.NaN : s.tempC - s.coolPerBlock * (y - s.refY);
     }
 }

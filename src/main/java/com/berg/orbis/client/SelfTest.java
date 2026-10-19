@@ -86,7 +86,9 @@ public final class SelfTest {
                 }
                 case 5 -> { // the player's own weather, as the server sends it (or a minute gone)
                     if (!LocalWeather.active() && now - stepAt < 60_000) return;
-                    next(now, "local weather from the server: " + (LocalWeather.active() ? LocalWeather.why() : "NONE after 60 s") + "; " + weather(mc));
+                    BlockPos at = mc.player.blockPosition();
+                    next(now, "local weather from the server: " + (LocalWeather.active() ? LocalWeather.why() : "NONE after 60 s") + "; " + weather(mc)
+                            + String.format(java.util.Locale.ROOT, "; the server's temperature at the player %.1f C", com.berg.orbis.sky.RealPrecipitation.serverTempAt(at.getX(), at.getY(), at.getZ())));
                 }
                 case 6 -> {
                     if (now - stepAt < 2_000) return;
