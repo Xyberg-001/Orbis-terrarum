@@ -25,6 +25,10 @@ import java.util.zip.GZIPOutputStream;
  * left out: the Mont Blanc tunnel has none) and Finland's Digiroad links marked as tunnels (silta_alik -11). Each road line with a
  * height at every point, as lat, lon, metres. Both services answer with whole features, so every region a tunnel crosses gets the
  * same lines. Kept per region box; a failure is not kept (asked again after 10 minutes).
+ *
+ * Switzerland's come with the mod: swissTLM3D's road pieces marked as tunnels (swisstopo's 3D landscape model, free geodata),
+ * packed once by tools/swisstlm_tunnels.py into orbis-ch-tunnels.txt.gz, as its web API gives flat lines without a tunnel flag
+ * and the 3D lines are only in the 3.4 GB national download.
  */
 public final class TunnelSurveys {
     private static final String BDTOPO = "https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature"
@@ -45,8 +49,8 @@ public final class TunnelSurveys {
     public List<NvdbRoads.Bore> get(double south, double west, double north, double east) {
         boolean fr = com.berg.orbis.config.DataSources.covers("fr-bdtopo-roads", south, west, north, east);
         boolean fi = com.berg.orbis.config.DataSources.covers("fi-digiroad-width", south, west, north, east);
-        if (!fr && !fi) return List.of();
-        List<NvdbRoads.Bore> out = new ArrayList<>();
+        List<NvdbRoads.Bore> out = new ArrayList<>(swiss(south, west, north, east));
+        if (!fr && !fi) return out;
         if (fr) {
             List<NvdbRoads.Bore> got = cached("fr", south, west, north, east);
             if (got == null) return null;
@@ -58,6 +62,66 @@ public final class TunnelSurveys {
             out.addAll(got);
         }
         return out;
+    }
+
+    /** Switzerland's tunnel pieces, by whole degree of latitude and longitude (each in every degree its box touches). */
+    private static volatile Map<Long, List<NvdbRoads.Bore>> swissTunnels;
+
+    /** The Swiss tunnel pieces whose box touches this one (none outside Switzerland). */
+    static List<NvdbRoads.Bore> swiss(double south, double west, double north, double east) {
+        if (north < 45.7 || south > 47.9 || east < 5.8 || west > 10.6) return List.of();
+        Map<Long, List<NvdbRoads.Bore>> all = swissTunnels();
+        java.util.Set<NvdbRoads.Bore> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (int la = (int) Math.floor(south); la <= (int) Math.floor(north); la++) {
+            for (int lo = (int) Math.floor(west); lo <= (int) Math.floor(east); lo++) {
+                List<NvdbRoads.Bore> here = all.get(((long) la << 32) ^ (lo & 0xffffffffL));
+                if (here == null) continue;
+                for (NvdbRoads.Bore b : here) {
+                    boolean touches = false;
+                    double s = 90, w = 180, n = -90, e = -180;
+                    for (double[] p : b.latLonZ()) {
+                        s = Math.min(s, p[0]);
+                        n = Math.max(n, p[0]);
+                        w = Math.min(w, p[1]);
+                        e = Math.max(e, p[1]);
+                    }
+                    touches = s <= north && n >= south && w <= east && e >= west;
+                    if (touches) out.add(b);
+                }
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
+    private static Map<Long, List<NvdbRoads.Bore>> swissTunnels() {
+        Map<Long, List<NvdbRoads.Bore>> m = swissTunnels;
+        if (m != null) return m;
+        synchronized (TunnelSurveys.class) {
+            if (swissTunnels != null) return swissTunnels;
+            Map<Long, List<NvdbRoads.Bore>> built = new java.util.HashMap<>();
+            try (InputStream in = TunnelSurveys.class.getResourceAsStream("/orbis-ch-tunnels.txt.gz")) {
+                if (in != null) {
+                    java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(new GZIPInputStream(in), StandardCharsets.UTF_8));
+                    for (String line; (line = r.readLine()) != null; ) {
+                        if (line.startsWith("#") || line.isBlank()) continue;
+                        List<double[]> pts = new ArrayList<>();
+                        for (String p : line.split(";")) {
+                            String[] f = p.split(",");
+                            pts.add(new double[]{Double.parseDouble(f[0]), Double.parseDouble(f[1]), Double.parseDouble(f[2])});
+                        }
+                        if (pts.size() < 2) continue;
+                        NvdbRoads.Bore b = new NvdbRoads.Bore(pts);
+                        java.util.Set<Long> cells = new java.util.HashSet<>();
+                        for (double[] p : pts) cells.add(((long) Math.floor(p[0]) << 32) ^ ((int) Math.floor(p[1]) & 0xffffffffL));
+                        for (long c : cells) built.computeIfAbsent(c, k -> new ArrayList<>()).add(b);
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                System.err.println("[orbis] Swiss tunnel heights unreadable (" + e + "); Swiss tunnels run straight between their portals");
+            }
+            swissTunnels = built;
+            return built;
+        }
     }
 
     private List<NvdbRoads.Bore> cached(String source, double south, double west, double north, double east) {

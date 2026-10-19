@@ -38,7 +38,7 @@ public final class DataSources {
         for (OrbisConfig.BuildingSource b : c.buildingSources) if (b != null && s.id().equals(b.name)) return Topic.BUILDINGS;
         for (OrbisConfig.ImagerySource i : c.imagerySources) if (i != null && s.id().equals(i.name)) return Topic.PHOTOS;
         for (OrbisConfig.RoadSource r : c.roadSources) if (r != null && s.id().equals(r.name)) return Topic.ROADS;
-        if ("nvdb-roads".equals(s.id())) return Topic.ROADS;
+        if ("nvdb-roads".equals(s.id()) || "ch-swisstlm3d-tunnels".equals(s.id())) return Topic.ROADS;
         return Topic.NATURE;
     }
 
@@ -178,6 +178,7 @@ public final class DataSources {
         l.add(national("senorge", "Snow depth today (seNorge)", "Norway", no, "NO", List.of("snow-cache/senorge")));
         l.add(national("nibio-sr16", "Forest types: spruce, pine, broadleaf (NIBIO SR16)", "Norway", no, "NO", List.of("forest-type-cache/sr16")));
         l.add(national("nvdb-roads", "Road widths and lanes (NVDB)", "Norway", no, "NO", List.of("nvdb-cache")));
+        l.add(national("ch-swisstlm3d-tunnels", "Tunnel heights (swissTLM3D)", "Switzerland", new double[]{45.8, 5.9, 47.9, 10.6}, "CH", List.of()));
         // ---- lidar building heights (each where it covers; Kartverket's with its switch in the Advanced tab)
         for (OrbisConfig.ElevationSource es : c.surfaceModelSources) addLidar(l, es, "dsm-cache");
         // ---- building databases (heights and floors)

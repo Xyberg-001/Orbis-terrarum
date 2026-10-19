@@ -745,8 +745,15 @@ Kartverket's surface model (building heights) stays.
   NVDB in Norway, BD TOPO in France (road sections under ground, those IGN
   has heights for: the Mont Blanc tunnel has none), Digiroad in Finland
   (links marked silta_alik -11); France and Finland via `osm/TunnelSurveys`,
-  cached in tunnel-survey-cache/. Switzerland's swissTLM3D has 3D tunnels
-  but only as a nationwide download (its web API gives flat lines).
+  cached in tunnel-survey-cache/. Switzerland's come with the mod (19 Oct
+  2026): swissTLM3D's web API gives flat lines without a tunnel flag, so
+  `tools/swisstlm_tunnels.py` reads its road layer (TLM_STRASSE) straight out
+  of the national 3.4 GB Shapefile zip with range requests (about 490 MB
+  streamed, 6 minutes), keeps the 1,739 pieces marked KUNSTBAUTE = Tunnel
+  (motorways, roads, paths) with their heights, LV95 to WGS84 by swisstopo's
+  formulas, thinned to 1 m, as `orbis-ch-tunnels.txt.gz` (110 KB); the
+  Gotthard road tunnel comes out 16.5 km from 1,145 m (Airolo) and 1,080 m
+  (Göschenen) to 1,175 m inside, as published.
   NVDB's tunnel bores (object type 67, Tunnelløp, fetched per region beside
   the road widths and cached as `*_tunnels.json.gz` in nvdb-cache/) carry a
   height every few metres; each tunnel way takes the line nearest most of
