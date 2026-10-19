@@ -441,6 +441,8 @@ public class OrbisMod implements ModInitializer {
                 .register(com.berg.orbis.net.RealTemperaturePayload.TYPE, com.berg.orbis.net.RealTemperaturePayload.CODEC);
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
                 .register(com.berg.orbis.net.SeasonInfoPayload.TYPE, com.berg.orbis.net.SeasonInfoPayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
+                .register(com.berg.orbis.net.LocalWeatherPayload.TYPE, com.berg.orbis.net.LocalWeatherPayload.CODEC);
         com.berg.orbis.map.BlockMapService.register();
         com.berg.orbis.compat.dh.DhCompat.init(); // optional: only acts when Distant Horizons is installed
         com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Worlds is installed (26.3)

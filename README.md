@@ -10,7 +10,7 @@ coastlines, rivers, every building, roads, bridges, railways and forests. Minecr
 - **Roads, rails, bridges and tunnels** at their real width, with markings, sidewalks, street lamps and street name signs.
 - **Real climate:** deserts, rainforests, oceanic coasts and frozen interiors where they really are, from measured climate data.
 - **Nature:** water, forests of the real kind (conifer or broadleaf), fields and parks; real rock under the ground, real soil (peat, podzol, clay, sand) as deep as it really is, glaciers with thick ice, rivers at their measured width, and real lake beds.
-- **Real sky:** real daylight and moon, real weather (radar and airport reports where they exist), seasons, and today's snow and ice as satellites see them.
+- **Real sky:** real daylight and moon, real weather (radar, satellite lightning and airport reports; each player sees their own with Orbis installed), seasons, and today's snow and ice as satellites see them.
 - **Any scale:** 1:1 down to 1:32 for a whole country.
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.
 - **World map (B):** street, satellite and elevation map of your world, with search and teleport.

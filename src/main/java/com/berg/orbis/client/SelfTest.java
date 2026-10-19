@@ -15,8 +15,10 @@ import java.nio.file.Path;
  * the config folder as the game starts (it is deleted at once, so it runs one time), the game, once in a world, waits
  * for local seasons, logs the season and the grass and leaf colours at the player and at places 2, 20 and 200 km
  * away (with the colour the season pack alone gives), takes a screenshot, takes another with local seasons switched
- * off, opens Minecraft's own video settings (the far view options' mixin), and quits. Every line starts
- * "[orbis] Self test".
+ * off; checks the player's own weather (what the server sends, then rain with thunder and clear of its own, with the
+ * rain and thunder levels the game reports, screenshots, and rain or snow by the temperature); opens Minecraft's own
+ * video settings (the far view options' mixin), and quits. Every line starts "[orbis] Self test". {@code selftest.txt}
+ * does the same.
  */
 public final class SelfTest {
     private static boolean on;
@@ -32,7 +34,7 @@ public final class SelfTest {
     public static void init(Path configDir) {
         Path trigger = configDir.resolve("selftest-seasons.txt");
         try {
-            if (Files.deleteIfExists(trigger)) {
+            if (Files.deleteIfExists(configDir.resolve("selftest.txt")) | Files.deleteIfExists(trigger)) {
                 on = true;
                 log("on: will check local season colours once a world is open, then quit");
             }
@@ -82,24 +84,60 @@ public final class SelfTest {
                     LocalSeasons.recolour();
                     next(now, "screenshot with the season pack alone taken; local seasons back on");
                 }
-                case 5 -> {
-                    if (now - stepAt < 5_000) return;
+                case 5 -> { // the player's own weather, as the server sends it (or a minute gone)
+                    if (!LocalWeather.active() && now - stepAt < 60_000) return;
+                    next(now, "local weather from the server: " + (LocalWeather.active() ? LocalWeather.why() : "NONE after 60 s") + "; " + weather(mc));
+                }
+                case 6 -> {
+                    if (now - stepAt < 2_000) return;
+                    LocalWeather.debugSet(true, true, 8, mc.player.getY());
+                    next(now, "local weather set to rain with thunder at 8 C");
+                }
+                case 7 -> {
+                    if (now - stepAt < 8_000) return;
+                    Screenshot.grab(mc, true);
+                    next(now, "after 8 s: " + weather(mc) + "; screenshot taken");
+                }
+                case 8 -> {
+                    if (now - stepAt < 2_000) return;
+                    LocalWeather.debugSet(true, false, -6, mc.player.getY());
+                    next(now, "local weather set to snow weather at -6 C");
+                }
+                case 9 -> {
+                    if (now - stepAt < 8_000) return;
+                    Screenshot.grab(mc, true);
+                    next(now, "after 8 s: " + weather(mc) + "; screenshot taken");
+                }
+                case 10 -> {
+                    if (now - stepAt < 2_000) return;
+                    LocalWeather.debugSet(false, false, 8, mc.player.getY());
+                    next(now, "local weather set to clear");
+                }
+                case 11 -> {
+                    if (now - stepAt < 8_000) return;
+                    Screenshot.grab(mc, true);
+                    LocalWeather.reset(); // the server's next report brings the real one back
+                    com.berg.orbis.sky.RealPrecipitation.clearClient();
+                    next(now, "after 8 s: " + weather(mc) + "; screenshot taken; local weather handed back");
+                }
+                case 12 -> {
+                    if (now - stepAt < 3_000) return;
                     mc.setScreenAndShow(new net.minecraft.client.gui.screens.options.VideoSettingsScreen(null, mc, mc.options));
                     next(now, "Minecraft's video settings opened (the far view mixin loaded with it)");
                 }
-                case 6 -> {
+                case 13 -> {
                     if (now - stepAt < 3_000) return;
                     Screenshot.grab(mc, true);
                     mc.setScreenAndShow(null);
                     next(now, "screenshot of the video settings taken");
                 }
-                case 7 -> {
+                case 14 -> {
                     if (now - stepAt < 3_000) return;
                     if (pauseOnLostFocus != null) mc.options.pauseOnLostFocus = pauseOnLostFocus;
                     restoreClock(mc);
                     next(now, "options and clock put back");
                 }
-                case 8 -> {
+                case 15 -> {
                     if (now - stepAt < 2_000) return;
                     on = false;
                     log("done: quitting");
@@ -167,6 +205,15 @@ public final class SelfTest {
             server.clockManager().setTotalTicks(clock.get(), back);
             log("clock put back to " + back);
         });
+    }
+
+    /** What the game shows of the weather now, and what would fall at the player. */
+    private static String weather(Minecraft mc) {
+        BlockPos at = mc.player.blockPosition();
+        Biome biome = mc.level.getBiome(at).value();
+        return String.format(java.util.Locale.ROOT, "rain level %.2f, thunder level %.2f, raining %b, falling at the player: %s (world weather raining %b)",
+                mc.level.getRainLevel(1f), mc.level.getThunderLevel(1f), mc.level.isRaining(), biome.getPrecipitationAt(at, mc.level.getSeaLevel()),
+                mc.getSingleplayerServer() != null && mc.getSingleplayerServer().overworld().isRaining());
     }
 
     private static void next(long now, String what) {

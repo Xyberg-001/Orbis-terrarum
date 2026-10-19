@@ -110,7 +110,10 @@ public final class RealSky {
         long t = ticks++;
         if (t % CLOCK_EVERY == 0) daylight(server, overworld, m, daylight);
         if (weather) {
-            if (t % WEATHER_EVERY == 0 && !fetching) requestWeather(server, m);
+            if (t % WEATHER_EVERY == 0 && !fetching) {
+                requestWeather(server, m);
+                requestLocalWeather(server, m);
+            }
             MetWeather.Report r = pending;
             if (r != null) {
                 pending = null;
@@ -120,6 +123,11 @@ public final class RealSky {
             if (applied != null) {
                 RealPrecipitation.clear(); // the biomes decide rain or snow again
                 sendTemperature(server, null);
+                for (ServerPlayer p : server.getPlayerList().getPlayers()) { // and each player's own weather ends
+                    if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(p, com.berg.orbis.net.LocalWeatherPayload.TYPE)) {
+                        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, new com.berg.orbis.net.LocalWeatherPayload(false, false, false, Double.NaN, 0, 1, ""));
+                    }
+                }
             }
             applied = null;
         }
@@ -160,6 +168,57 @@ public final class RealSky {
     }
 
     // ------------------------------------------------------------------ weather
+
+    /**
+     * Each player's own weather (players with Orbis in the overworld), for their game to draw instead of the world's one
+     * weather (client/LocalWeather): players grouped by 0.05 degree (about 5 km) so neighbours share one question; each
+     * group's report and the temperature's height where its first player stands, sent on the server's thread.
+     */
+    private static void requestLocalWeather(MinecraftServer server, WorldModel m) {
+        java.util.Map<Long, java.util.List<java.util.UUID>> groups = new java.util.LinkedHashMap<>();
+        java.util.Map<Long, double[]> where = new java.util.HashMap<>();
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (p.level() != server.overworld()) continue;
+            if (!net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(p, com.berg.orbis.net.LocalWeatherPayload.TYPE)) continue;
+            double[] ll = m.mapper().toLatLonExact(p.getX(), p.getZ());
+            long key = (long) Math.floor(ll[0] * 20) << 32 ^ ((long) Math.floor(ll[1] * 20) & 0xffffffffL);
+            groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(p.getUUID());
+            where.putIfAbsent(key, new double[]{ll[0], ll[1], Math.floor(p.getX()), Math.floor(p.getZ())});
+        }
+        if (groups.isEmpty()) return;
+        int askedIn = run;
+        NET.execute(() -> {
+            for (var g : groups.entrySet()) {
+                double[] at = where.get(g.getKey());
+                try {
+                    MetWeather.Report r = LIVE.now(at[0], at[1]);
+                    int bx = (int) at[2], bz = (int) at[3];
+                    double refY = Double.NaN, mpb = 1;
+                    try {
+                        double e = m.elevation(bx, bz);
+                        double y0 = m.vertical().toY(e, bx, bz), y1 = m.vertical().toY(e + 100, bx, bz);
+                        if (!Double.isNaN(y0) && y1 - y0 > 1e-6) {
+                            refY = y0;
+                            mpb = 100 / (y1 - y0);
+                        }
+                    } catch (RuntimeException ignored) {
+                        // no height yet: rain or snow stays the biome's for them this time
+                    }
+                    var payload = new com.berg.orbis.net.LocalWeatherPayload(true, r.sky() != MetWeather.Sky.CLEAR, r.sky() == MetWeather.Sky.THUNDER,
+                            Double.isNaN(refY) ? Double.NaN : r.temperatureC(), Double.isNaN(refY) ? 0 : refY, mpb, r.symbol());
+                    server.execute(() -> {
+                        if (askedIn != run) return; // another world opened meanwhile
+                        for (java.util.UUID id : g.getValue()) {
+                            ServerPlayer p = server.getPlayerList().getPlayer(id);
+                            if (p != null) net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, payload);
+                        }
+                    });
+                } catch (Exception e) {
+                    // that place's weather not had: its players keep the world's until the next round
+                }
+            }
+        });
+    }
 
     private static void requestWeather(MinecraftServer server, WorldModel m) {
         double x = 0, z = 0;

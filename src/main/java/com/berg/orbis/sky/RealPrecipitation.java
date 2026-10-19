@@ -10,7 +10,9 @@ package com.berg.orbis.sky;
  * the sea).
  *
  * Only the server's own thread and the client's render thread ask it: world generation, on its worker threads, never
- * sees it, so a chunk comes out the same whatever the weather was when it was made.
+ * sees it, so a chunk comes out the same whatever the weather was when it was made. The server and the client keep
+ * their own readings (in a singleplayer or LAN game both live in one game): the client's is its player's own place
+ * ({@link com.berg.orbis.client.LocalWeather}), the server's the players' mean.
  */
 public final class RealPrecipitation {
     /** Rain from this temperature (C), snow at or below SNOW_C, the biome's own choice between them. */
@@ -22,7 +24,7 @@ public final class RealPrecipitation {
     private record State(double tempC, double refY, double coolPerBlock, long at) {
     }
 
-    private static volatile State state;
+    private static volatile State state, clientState;
     private static volatile Thread serverThread, clientThread;
 
     private RealPrecipitation() {
@@ -36,17 +38,27 @@ public final class RealPrecipitation {
         clientThread = t;
     }
 
-    /** A new reading: the temperature at block height {@code refY}, and the real metres one block of height stands for. */
+    /** A new reading (the server's): the temperature at block height {@code refY}, and the real metres one block of height stands for. */
     public static void set(double tempC, double refY, double metresPerBlock) {
-        if (Double.isNaN(tempC) || Double.isNaN(refY) || !(metresPerBlock > 0)) {
-            clear();
-            return;
-        }
-        state = new State(tempC, refY, 0.0065 * metresPerBlock, System.currentTimeMillis());
+        state = make(tempC, refY, metresPerBlock);
+    }
+
+    /** A new reading for the client's own drawing (what falls where its player is). */
+    public static void setClient(double tempC, double refY, double metresPerBlock) {
+        clientState = make(tempC, refY, metresPerBlock);
+    }
+
+    private static State make(double tempC, double refY, double metresPerBlock) {
+        if (Double.isNaN(tempC) || Double.isNaN(refY) || !(metresPerBlock > 0)) return null;
+        return new State(tempC, refY, 0.0065 * metresPerBlock, System.currentTimeMillis());
     }
 
     public static void clear() {
         state = null;
+    }
+
+    public static void clearClient() {
+        clientState = null;
     }
 
     /** The reading for sending to clients: {tempC, refY, metres per block}, or null without one. */
@@ -58,10 +70,9 @@ public final class RealPrecipitation {
 
     /** At block height y: TRUE rain, FALSE snow, null the biome's own choice (no reading, too near freezing, or another thread). */
     public static Boolean rainAt(int y) {
-        State s = state;
-        if (s == null) return null;
         Thread t = Thread.currentThread();
-        if (t != serverThread && t != clientThread) return null;
+        State s = t == serverThread ? state : t == clientThread ? clientState : null;
+        if (s == null) return null;
         if (System.currentTimeMillis() - s.at > STALE_MS) return null;
         double c = s.tempC - s.coolPerBlock * (y - s.refY);
         if (c >= RAIN_C) return Boolean.TRUE;

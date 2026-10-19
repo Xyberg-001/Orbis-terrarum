@@ -42,6 +42,7 @@
     "client.WorldOpenFlowsMixin",
     "client.BiomeGrassColourMixin",
     "client.BiomeColorsFoliageMixin",
+    "client.LevelLocalWeatherMixin",
     "VideoSettingsFarViewMixin"
   ],
   "injectors": {

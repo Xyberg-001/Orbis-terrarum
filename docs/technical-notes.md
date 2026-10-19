@@ -1480,6 +1480,26 @@ server, so players need nothing:
   Fixed with it: `orbisterrarum.mixins.json` had two "client" lists, the
   first (`VideoSettingsFarViewMixin`, the far view options in vanilla video
   settings, since 17 Oct) lost to the second.
+- **Each player's own weather** (players with Orbis, real weather on, from
+  19 Oct 2026, `client/LocalWeather`, `LevelLocalWeatherMixin`): Minecraft has
+  one weather per world, set from the players' mean place. Every 2 minutes
+  the server also asks LiveWeather for each 0.05° cell holding players with
+  Orbis and sends them `orbisterrarum:local_weather` (rain, thunder, the
+  temperature with its block height and metres per block, the sources); their
+  client's `Level.getRainLevel` / `getThunderLevel` (ClientLevel only, so a
+  singleplayer game's server keeps the world's) ease to it at vanilla's 0.01 a
+  tick, so rain or snow falls, the sky darkens, fog and sounds follow where
+  the player really is; thunder the world lacks rolls far off every 15-60 s
+  (LIGHTNING_BOLT_THUNDER, played locally); rain or snow by the player's own
+  temperature (`RealPrecipitation` keeps server and client readings apart).
+  Gameplay (crops, fire, the server's lightning) keeps the world's weather.
+  No report for 10 minutes, or real weather off (on=false is sent): the
+  world's weather again. Checked in game 19 Oct 2026 (self test, Bergen,
+  26.3 + Sodium): the server's local report arrived (clear, MET radar
+  0.0 mm/h); set to thunder at 8 °C the game reported rain 1.00, thunder 1.00
+  and rain falling, at -6 °C snow falling, clear back to 0.00, the world's
+  weather clear throughout; screenshots show the storm, the snow and the
+  clear sky.
 - **Rain or snow by the real temperature** (with real weather, from 19 Oct
   2026, `sky/RealPrecipitation`, `BiomePrecipitationMixin`): the season pack
   cools a whole month's biomes, so taiga could snow on a +6 °C day of a cold
