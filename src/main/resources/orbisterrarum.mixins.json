@@ -4,7 +4,6 @@
   "package": "com.berg.orbis.mixin",
   "compatibilityLevel": "JAVA_25",
   "server": ["DedicatedServerPauseMixin"],
-  "client": ["VideoSettingsFarViewMixin"],
   "mixins": [
     "ServerPlayerMixin",
     "DimensionTypeMixin",
@@ -40,7 +39,10 @@
     "client.CreateWorldScreenInvoker",
     "client.CreateWorldScreenMixin",
     "client.MinecraftPauseMixin",
-    "client.WorldOpenFlowsMixin"
+    "client.WorldOpenFlowsMixin",
+    "client.BiomeGrassColourMixin",
+    "client.BiomeColorsFoliageMixin",
+    "VideoSettingsFarViewMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -112,6 +112,16 @@ public final class Seasons {
         return look.cooling() == 0 ? look : new Look(look.name(), look.grass(), look.grassBy(), look.foliage(), look.foliageBy(), 0.0);
     }
 
+    /**
+     * A grass or leaf colour in a climate's month (0 January): the vanilla colour moved towards the month's as the season
+     * pack moves it (for {@link com.berg.orbis.client.LocalSeasons}, which colours each place by its own season).
+     */
+    public static int colourIn(ClimateNormals.Months climate, int month, int vanilla, boolean foliage) {
+        Look look = lookFor(climate, month);
+        if (look == null) return vanilla;
+        return foliage ? blend(vanilla, look.foliage(), look.foliageBy()) : blend(vanilla, look.grass(), look.grassBy());
+    }
+
     /** The name of a look (for probes and the log): "summer" or "no seasons" for vanilla colours. */
     static String name(ClimateNormals.Months climate, int m) {
         Look look = lookFor(climate, m);

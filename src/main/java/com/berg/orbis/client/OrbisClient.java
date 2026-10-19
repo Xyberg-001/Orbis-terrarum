@@ -33,6 +33,7 @@ public class OrbisClient implements ClientModInitializer {
         com.berg.orbis.compat.voxy.VoxyCompat.init(); // optional: only acts when Voxy is installed
         MapTiles.warmUp(); // the map's first screens drawn onto the disk in the background
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            if (mc.level != null && mc.level.getGameTime() % 1200 == 0) LocalSeasons.tick();
             while (MAP_KEY.consumeClick()) {
                 if (mc.gui.screen() == null && mc.player != null) mc.setScreenAndShow(new com.berg.orbis.client.map.WorldMapScreen(worldInfo));
             }
@@ -41,6 +42,10 @@ public class OrbisClient implements ClientModInitializer {
                 (payload, context) -> worldInfo = payload);
         // Rain or snow by the real temperature: the render thread draws what falls by it
         com.berg.orbis.sky.RealPrecipitation.clientThread(Thread.currentThread());
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.SeasonInfoPayload.TYPE,
+                (payload, context) -> LocalSeasons.setInfo(payload));
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> LocalSeasons.chunkLoaded(chunk));
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> LocalSeasons.chunkUnloaded(chunk));
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.RealTemperaturePayload.TYPE,
                 (payload, context) -> com.berg.orbis.sky.RealPrecipitation.set(payload.tempC(), payload.refY(), payload.metresPerBlock()));
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.AllowedAreaPayload.TYPE,
@@ -94,6 +99,7 @@ public class OrbisClient implements ClientModInitializer {
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
             worldInfo = null;
             com.berg.orbis.sky.RealPrecipitation.clear();
+            LocalSeasons.reset();
             allowedArea = null;
             pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
             pregenTasks = java.util.List.of();

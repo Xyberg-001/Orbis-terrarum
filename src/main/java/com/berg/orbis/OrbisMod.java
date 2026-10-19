@@ -439,6 +439,8 @@ public class OrbisMod implements ModInitializer {
                 .register(com.berg.orbis.net.AllowedAreaPayload.TYPE, com.berg.orbis.net.AllowedAreaPayload.CODEC);
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
                 .register(com.berg.orbis.net.RealTemperaturePayload.TYPE, com.berg.orbis.net.RealTemperaturePayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
+                .register(com.berg.orbis.net.SeasonInfoPayload.TYPE, com.berg.orbis.net.SeasonInfoPayload.CODEC);
         com.berg.orbis.map.BlockMapService.register();
         com.berg.orbis.compat.dh.DhCompat.init(); // optional: only acts when Distant Horizons is installed
         com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Worlds is installed (26.3)
@@ -452,6 +454,12 @@ public class OrbisMod implements ModInitializer {
                             com.berg.orbis.map.BlockMapService.worldId(server)));
             com.berg.orbis.worldgen.HardLimit.sendTo(handler.getPlayer());
             com.berg.orbis.sky.RealSky.sendTemperature(server, handler.getPlayer());
+            // each place's own season on the grass and leaves (their game colours them)
+            if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(handler.getPlayer(), com.berg.orbis.net.SeasonInfoPayload.TYPE)) {
+                net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.getPlayer(), new com.berg.orbis.net.SeasonInfoPayload(
+                        c.realSeasons && config.realSeasons, c.seaLevelY, c.verticalMetersPerBlock(), c.reliefKneeMeters,
+                        m.vertical().mode() == com.berg.orbis.dem.VerticalMapping.Mode.RELATIVE));
+            }
         });
         RealWorldBiomeSource.register();
         TeleportCommands.register();

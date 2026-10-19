@@ -1432,6 +1432,36 @@ server, so players need nothing:
   passed (If-Modified-Since, identifying User-Agent, 4 decimals, as its terms
   ask). The coming hour's symbol gives clear, rain (rain, sleet, snow,
   showers) or thunder, set like /weather with a 30-minute hold.
+- **Each place's own season** (players with Orbis, from 19 Oct 2026,
+  `client/LocalSeasons`): the pack gives the whole world its origin's season
+  and changes at the next opening; with `orbisterrarum:season_info` from the
+  server (seasons on; sea level, vertical metres per block, relief knee,
+  relative mode) the client colours each block's grass and leaves by its own
+  place's season, today. Hooks: `Biome.getGrassColor(DD)` (the grass
+  resolver is the method reference) and `BiomeColors.lambda$static$0` (the
+  foliage resolver, the first lambda in 26.2 and 26.3), so Sodium's own
+  blending gets them too. A place's year comes from the climate pack (Köppen
+  class, sea-level annual and coldest-quarter means, annual precipitation, per
+  32-block cell): a cosine through the coldest quarter's mean (three months
+  average 0.911 of the swing; coldest mid-January north, mid-July south), at
+  the block's height (chunk MOTION_BLOCKING height maps kept as chunks load;
+  (Y - sea level) x metres per block, and above 80% of the relief knee in a
+  relative world at least the climate cell's mean height, as whole regions are
+  lowered there), 6.5 °C/km; dry months by Köppen (Cs/Ds: the four warmest;
+  Cw/Dw/Aw: the five coldest; Am: the four coldest; B: none), 5 mm each, the
+  rest shared with a peak opposite the dry season (evenly, Los Angeles' 380
+  mm made no month wet). `Seasons.colourIn` applies the pack's rules to the
+  vanilla colour (MapColours' table), so the pack's own shift is replaced;
+  swamp and dark forest grass stays the game's; mid-months are pure and the
+  neighbour month blends in day by day; a new day recolours
+  (`clearTintCaches`, `levelExtractor.allChanged`). The climate pack (25 MB)
+  is read off the render thread on joining. Synthesised years checked: Oslo
+  winter Nov-Mar, London and Tokyo mild winters, Rome dry Jun-Sep, Los Angeles
+  May-Sep, Darwin May-Sep, Mumbai Dec-Mar, Zermatt's village winter Nov-Mar and
+  3,000 m winter Sep-May, Singapore and Cairo none. Plain clients keep the pack.
+  Fixed with it: `orbisterrarum.mixins.json` had two "client" lists, the
+  first (`VideoSettingsFarViewMixin`, the far view options in vanilla video
+  settings, since 17 Oct) lost to the second.
 - **Rain or snow by the real temperature** (with real weather, from 19 Oct
   2026, `sky/RealPrecipitation`, `BiomePrecipitationMixin`): the season pack
   cools a whole month's biomes, so taiga could snow on a +6 °C day of a cold
