@@ -106,13 +106,28 @@ public final class LocalSeasons {
         }
     }
 
-    private static boolean active() {
+    /** Switched off for a comparison (the self test): the season pack's colours show. */
+    static volatile boolean suspended;
+
+    static boolean active() {
         SeasonInfoPayload p = info;
-        return p != null && p.on() && climateReady && OrbisClient.worldInfo != null;
+        return !suspended && p != null && p.on() && climateReady && OrbisClient.worldInfo != null;
+    }
+
+    /** What a place's season is today and why (the self test's report). */
+    static String describe(int bx, int bz) {
+        double[] c = climateAt(bx, bz);
+        if (c == null) return "no climate";
+        double h = heightM(bx, bz, c[4]);
+        ClimateNormals.Months m = months(c, h);
+        int month = day.getMonthValue() - 1;
+        double[] ll = mapper() == null ? new double[]{Double.NaN, Double.NaN} : mapper().toLatLonExact(bx, bz);
+        return String.format(java.util.Locale.ROOT, "%.3f,%.3f Koppen %s, height %.0f m, this month %.1f C %.0f mm: %s", ll[0], ll[1], koppen((int) c[3]), h,
+                m.temperatureC()[month], m.precipitationMm()[month], com.berg.orbis.sky.Seasons.lookName(m, month));
     }
 
     /** Every chunk drawn again with fresh colours. */
-    private static void recolour() {
+    static void recolour() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
         mc.level.clearTintCaches();

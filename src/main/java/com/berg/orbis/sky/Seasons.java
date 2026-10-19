@@ -122,6 +122,11 @@ public final class Seasons {
         return foliage ? blend(vanilla, look.foliage(), look.foliageBy()) : blend(vanilla, look.grass(), look.grassBy());
     }
 
+    /** The look's name in a climate's month ("summer" or "no seasons" for vanilla colours), for reports. */
+    public static String lookName(ClimateNormals.Months climate, int month) {
+        return name(climate, month);
+    }
+
     /** The name of a look (for probes and the log): "summer" or "no seasons" for vanilla colours. */
     static String name(ClimateNormals.Months climate, int m) {
         Look look = lookFor(climate, m);
@@ -258,12 +263,31 @@ public final class Seasons {
         return worldPlace(levelDir, "lon");
     }
 
+    /** The file a world's server writes with the world's own origin, for openings before its settings are loaded. */
+    public static final String ORIGIN_FILE = "orbis-origin.json";
+
+    /**
+     * The world's place: its spawn file (worlds since spawn markers), else the origin its server recorded; NaN when
+     * neither is there yet. Never the installation's origin: a world made elsewhere got that place's season before
+     * it loaded (a Bergen world Everest's winter, with the installation set to Everest, 19 Oct 2026).
+     */
     private static double worldPlace(Path levelDir, String field) {
+        for (String file : new String[]{"orbis-spawn.json", ORIGIN_FILE}) {
+            try {
+                JsonObject o = JsonParser.parseString(Files.readString(levelDir.resolve(file), StandardCharsets.UTF_8)).getAsJsonObject();
+                return o.get(field).getAsDouble();
+            } catch (IOException | RuntimeException e) {
+                // the next
+            }
+        }
+        return Double.NaN;
+    }
+
+    /** Records the world's own origin in its folder (at server start), for the season before its next opening. */
+    public static void rememberOrigin(Path levelDir, double lat, double lon) {
         try {
-            JsonObject spawn = JsonParser.parseString(Files.readString(levelDir.resolve("orbis-spawn.json"), StandardCharsets.UTF_8)).getAsJsonObject();
-            return spawn.get(field).getAsDouble();
-        } catch (IOException | RuntimeException e) {
-            return Double.NaN;
+            Files.writeString(levelDir.resolve(ORIGIN_FILE), String.format(Locale.ROOT, "{\"lat\":%.7f,\"lon\":%.7f}", lat, lon), StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
         }
     }
 

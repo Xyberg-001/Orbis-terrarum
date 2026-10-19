@@ -32,8 +32,10 @@ public class OrbisClient implements ClientModInitializer {
                 new net.minecraft.client.KeyMapping("key.orbisterrarum.map", com.mojang.blaze3d.platform.InputConstants.KEY_B, category)); // B by default (N until 5 Oct 2026)
         com.berg.orbis.compat.voxy.VoxyCompat.init(); // optional: only acts when Voxy is installed
         MapTiles.warmUp(); // the map's first screens drawn onto the disk in the background
+        SelfTest.init(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("orbisterrarum"));
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             if (mc.level != null && mc.level.getGameTime() % 1200 == 0) LocalSeasons.tick();
+            SelfTest.tick(mc);
             while (MAP_KEY.consumeClick()) {
                 if (mc.gui.screen() == null && mc.player != null) mc.setScreenAndShow(new com.berg.orbis.client.map.WorldMapScreen(worldInfo));
             }

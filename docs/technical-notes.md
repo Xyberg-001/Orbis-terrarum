@@ -1459,6 +1459,24 @@ server, so players need nothing:
   winter Nov-Mar, London and Tokyo mild winters, Rome dry Jun-Sep, Los Angeles
   May-Sep, Darwin May-Sep, Mumbai Dec-Mar, Zermatt's village winter Nov-Mar and
   3,000 m winter Sep-May, Singapore and Cairo none. Plain clients keep the pack.
+  Checked in the game 19 Oct 2026 (26.3, Sodium, Bergen 1:2) with the self
+  test (`client/SelfTest`: `selftest-seasons.txt` in the config folder runs it
+  once; it answers Minecraft's experimental-settings warning once (pressing on
+  every tick reopened the world and the second opening took the first's
+  session lock: "Lock is no longer valid"), sets a singleplayer world's clock
+  to noon and back, logs the colours at the player and 2, 20 and 200 km away,
+  takes screenshots with local seasons on and off, opens the vanilla video
+  settings and quits; launch with `prismlauncher --launch 26.3 --world
+  "<folder>"`, quoted, or Prism cuts the name at a space): local seasons on
+  5 s after joining; the player's hill late autumn (grass #949a66 against the
+  pack's autumn #a3a860), Hardangervidda at 1,037 m winter; switched off,
+  some 14,000 foreground pixels changed, the hillside brighter and yellower
+  under the pack alone; Sodium @Overwrites getGrassColor and getFoliageColor,
+  and the RETURN injections apply on top. Also found: before a world opens the
+  client fell back to the installation's origin when the world had no spawn
+  file (a Bergen world got Everest's winter); worlds now record
+  `orbis-origin.json` at server start and the client never uses the
+  installation's origin for a world.
   Fixed with it: `orbisterrarum.mixins.json` had two "client" lists, the
   first (`VideoSettingsFarViewMixin`, the far view options in vanilla video
   settings, since 17 Oct) lost to the second.

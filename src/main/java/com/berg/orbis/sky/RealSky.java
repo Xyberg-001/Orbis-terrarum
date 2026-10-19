@@ -82,6 +82,7 @@ public final class RealSky {
                 java.nio.file.Path packs = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.DATAPACK_DIR);
                 boolean seasons = m.cfg().realSeasons; // the world's own setting decides
                 Seasons.rememberWorldChoice(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT), m.cfg().realSeasons);
+                Seasons.rememberOrigin(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT), m.cfg().originLat, m.cfg().originLon);
                 java.nio.file.Path data = com.berg.orbis.OrbisMod.dataDir();
                 if (Seasons.update(packs, data, m.cfg().originLat, m.cfg().originLon, seasons)) {
                     System.out.println("[orbis] Season now " + Seasons.seasonName(data, m.cfg().originLat, m.cfg().originLon)

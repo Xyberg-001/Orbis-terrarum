@@ -28,10 +28,8 @@ public abstract class WorldOpenFlowsMixin {
             com.berg.orbis.worldgen.StructureDensity.refresh(packs); // a world opened by another Minecraft version
             if (!Files.isDirectory(packs.resolve(WorldHeight.PACK_NAME))) return;
             double lat = Seasons.worldLatitude(level), lon = Seasons.worldLongitude(level);
-            if (Double.isNaN(lat) || Double.isNaN(lon)) {
-                lat = OrbisMod.config().originLat;
-                lon = OrbisMod.config().originLon;
-            }
+            // Not known yet (a world from before the origin file): its server sets the pack when it starts
+            if (Double.isNaN(lat) || Double.isNaN(lon)) return;
             Seasons.update(packs, OrbisMod.dataDir(), lat, lon, Seasons.worldWantsSeasons(level)); // the world's own setting decides
         } catch (RuntimeException e) {
             System.err.println("[orbis] Season pack not updated: " + e);
