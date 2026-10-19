@@ -12,7 +12,8 @@ import java.util.Map;
 
 /**
  * The weather now, as measured where it can be: rain radar (MET Norway's nowcast in Norway, Sweden, Finland and Denmark;
- * DWD in Germany; EUMETNET OPERA's composite for the rest of Europe; NOAA's MRMS in the United States; Environment Canada
+ * DWD in Germany; GeoSphere Austria's INCA nowcast in Austria and round it (north Italy, which OPERA lacks, among it);
+ * EUMETNET OPERA's composite for the rest of Europe; NOAA's MRMS in the United States; Environment Canada
  * in Canada: the precipitation rate of the last few minutes; lightning from DWD, the US lightning network and, over Europe
  * and Africa, the Meteosat Third Generation Lightning Imager),
  * the nearest airport's weather report (METAR from NOAA's Aviation Weather Center, worldwide: rain, snow, drizzle,
@@ -25,6 +26,8 @@ public final class LiveWeather {
             + "&SRS=EPSG:4326&BBOX=%.4f,%.4f,%.4f,%.4f&WIDTH=3&HEIGHT=3&X=1&Y=1&INFO_FORMAT=application/json";
     private static final String ECCC = "https://geo.weather.gc.ca/geomet?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo&LAYERS=%s&QUERY_LAYERS=%s"
             + "&CRS=EPSG:4326&BBOX=%.4f,%.4f,%.4f,%.4f&WIDTH=3&HEIGHT=3&I=1&J=1&INFO_FORMAT=application/json";
+    /** GeoSphere Austria's INCA nowcast at a point: the first quarter hour's precipitation (the analysis of now). */
+    private static final String INCA = "https://dataset.api.hub.geosphere.at/v1/timeseries/forecast/nowcast-v1-15min-1km?parameters=rr&lat_lon=%.4f,%.4f&output_format=geojson";
     private static final String METAR = "https://aviationweather.gov/api/data/metar?bbox=%.3f,%.3f,%.3f,%.3f&format=json";
     private static final String USER_AGENT = "OrbisTerrarum/1.1 (Minecraft mod; https://modrinth.com/mod/orbis-terrarum)";
     /** Precipitation below this rate (mm/h) is dry: radar's faint echoes. */
@@ -101,8 +104,11 @@ public final class LiveWeather {
         Radar r = Radar.NONE;
         try {
             if (lat > 54 && lat < 72 && lon > 4 && lon < 32 && !noNowcast.contains(cell)) r = nowcast(lat, lon, cell);
+            boolean austria = lat > 46.37 && lat < 49.02 && lon > 9.53 && lon < 17.16;
+            if (Double.isNaN(r.rateMmH) && austria) r = inca(lat, lon); // the Alps' own analysis before radars far off (DWD's reach Innsbruck)
             if (Double.isNaN(r.rateMmH) && lat > 47 && lat < 55.1 && lon > 5.8 && lon < 15.1) r = dwd(lat, lon);
             if (Double.isNaN(r.rateMmH) && OperaRadar.covers(lat, lon)) r = new Radar(opera.rateMmH(lat, lon), false, "OPERA radar");
+            if (Double.isNaN(r.rateMmH) && !austria && lat > 45.51 && lat < 49.47 && lon > 8.11 && lon < 17.73) r = inca(lat, lon);
             if (Double.isNaN(r.rateMmH) && MrmsRadar.covers(lat, lon)) r = new Radar(mrms.rateMmH(lat, lon), false, "US radar");
             if (Double.isNaN(r.rateMmH) && lat > 41.5 && lat < 70 && lon > -141 && lon < -52) r = eccc(lat, lon);
         } catch (Exception e) {
@@ -148,6 +154,22 @@ public final class LiveWeather {
         if (Double.isNaN(rate)) return Radar.NONE;
         double flashes = featureValue(String.format(Locale.ROOT, DWD, "dwd:Blitzdichte", "dwd:Blitzdichte", lon - 0.01, lat - 0.01, lon + 0.01, lat + 0.01), "GRAY_INDEX");
         return new Radar(Math.max(0, rate), !Double.isNaN(flashes) && flashes > 0, "DWD radar");
+    }
+
+    /**
+     * GeoSphere Austria's nowcast (INCA: radar, stations and the model merged on 1 km, every 15 minutes; CC BY 4.0): the
+     * precipitation of its first quarter hour, as a rate. Its box reaches beyond Austria into Bavaria, Switzerland,
+     * Slovenia and north Italy.
+     */
+    private Radar inca(double lat, double lon) throws Exception {
+        OrbisHttp.Response resp = OrbisHttp.get(String.format(Locale.ROOT, INCA, lat, lon), Map.of("User-Agent", USER_AGENT), 30);
+        if (resp.status() != 200) return Radar.NONE;
+        JsonArray features = JsonParser.parseString(resp.text()).getAsJsonObject().getAsJsonArray("features");
+        if (features == null || features.isEmpty()) return Radar.NONE;
+        JsonArray rr = features.get(0).getAsJsonObject().getAsJsonObject("properties").getAsJsonObject("parameters")
+                .getAsJsonObject("rr").getAsJsonArray("data");
+        if (rr == null || rr.isEmpty() || rr.get(0).isJsonNull()) return Radar.NONE;
+        return new Radar(Math.max(0, rr.get(0).getAsDouble() * 4), false, "Austrian nowcast");
     }
 
     private Radar eccc(double lat, double lon) throws Exception {

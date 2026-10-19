@@ -1414,8 +1414,18 @@ server, so players need nothing:
   only). GOES GLM satellite lightning (the Americas) is NetCDF-4/HDF5, too much
   to read without a library. MTG lightning checked 19 Oct 2026: a storm in the
   Gulf of Lion (thunder with OPERA's 2.2 mm/h), none at Paris, Nice, Yaoundé
-  or Nairobi. Austria (GeoSphere INCA) and Italy (Protezione Civile) have
-  open radar of their own, not used yet.
+  or Nairobi. Austria from 19 Oct 2026: GeoSphere's INCA nowcast
+  (`nowcast-v1-15min-1km`, CC BY 4.0; radar, stations and model merged on
+  1 km every 15 minutes; data hub timeseries API, point JSON, no key), the
+  first quarter hour's `rr` (mm) x 4 as the rate; asked first inside Austria
+  (before DWD, whose radars reach Innsbruck over the mountains) and after
+  OPERA in the rest of its box (45.5-49.5 N, 8.1-17.7 E: Bolzano, Trentino and
+  Slovenia); checked dry at Vienna, Innsbruck and Bolzano. Italy's own radar
+  (Protezione Civile, radar-api.protezionecivile.it) answers "Access Denied"
+  from outside Italy and its open archive (IT-DPC-SRI) is a Zarr datacube with
+  no live feed: Italy keeps its airports and MTG lightning. NWS station
+  observations add nothing to the METARs of the same airports; EUMETSAT's
+  cloud mask has no Minecraft weather to drive (clear, rain, thunder only).
 - **Weather** (`realWeather`, `MetWeather`): MET Norway's locationforecast
   (worldwide) for the players' mean position (the origin when nobody is on),
   asked every 2 minutes but only fetched when the last answer's Expires has
@@ -1441,10 +1451,17 @@ server, so players need nothing:
   switched on with a reload once the server is idle, so such a world shows
   the season from its next opening. The month's look follows the place's
   own climate from 19 Oct 2026 (`sky/ClimateNormals`): the mean temperature and
-  precipitation of each month over 2021-2025 from Open-Meteo's archive (ERA5
-  at the place's height; one question per place, about 130 of Open-Meteo's
-  fair-use calls, asked in the background, kept in `climate-normals/` by tenth
-  of a degree; ten years at a dozen places in a row got HTTP 429). Below 0 °C
+  precipitation of each month from TerraClimate's 1991-2020 normals (CC0,
+  1/24°: OPeNDAP ASCII point reads of `tmax`, `tmin` and `ppt` from
+  `TERRACLIMATE_ALL/climatology/TerraClimate_19912020_<v>.nc` on
+  thredds.northwestknowledge.net, row (89.979 - lat) x 24, column (lon +
+  179.979) x 24, Int16/Int32 x 0.1 (temperatures - 73), 6-22 s each; the mean
+  of the mean highs and lows), or where it has no cell (at sea) or fails,
+  over 2021-2025 from Open-Meteo's archive (ERA5 at the place's height, about
+  130 of Open-Meteo's fair-use calls; ten years at a dozen places in a row got
+  HTTP 429); one question per place, asked in the background, kept in
+  `climate-normals/` by tenth of a degree. TerraClimate gave Rome 8.2 °C in
+  January and 18 mm in August, Oslo -1.2 and 17.8, Darwin 0 mm in July. Below 0 °C
   winter (cooling 0.3), below 3 °C winter (0.2); a dry season (grass 55% to
   straw #C8B560, leaves 20% dusty) in a month of at least 10 °C with less
   rain in mm than twice its temperature in °C (Walter-Lieth) where some month
@@ -1513,6 +1530,28 @@ server, so players need nothing:
   big-endian 16-bit mm, 46 MB, memory-mapped), bilinear over cells with data
   (-9999 is water); glaciers' 32,767 mm cap is taken as 4 m. Checked 19 Oct
   2026: 4 cm near Boulder, 0 in Denver, Yosemite Valley and Mt Washington.
+  In Austria SNOWGRID's (GeoSphere, CC BY 4.0; the snow model on INCA's
+  observed weather, 1 km, about two days late): the data hub's grid API as
+  GeoJSON points in tiles of 0.2° (some 400 cells; cells outside Austria are
+  null), the day from the dataset's `end_time`, kept per day in
+  `snow-cache/snowgrid/`, the nearest cell through 0.01° buckets; 15 cm by the
+  Großglockner on 17 Oct 2026, 0 in Vienna. South of 1° N, where IMS stops,
+  NOAA/NESDIS GMASI (public domain): the 4 km "Autosnow" daily map
+  (`binary/multisensor/global/<y>/gl_4km_snow_ice_map_<yyyyddd>.Z` on
+  www.star.nesdis.noaa.gov, about 365 kB, posted about 05:15 UTC the next day;
+  the 2 km product is NetCDF-4/HDF5), a 9,000 x 4,500 byte grid from 90 N
+  180 W in 0.04° cells (0 water, 1 land, 2 snow, 3 ice), packed by Unix
+  compress: `sky/UnixCompress` (LZW with ncompress's skip to the end of a
+  group of eight codes at each width change or clear, groups counted from
+  the end of the 3-byte header) gives gzip's bytes exactly in 0.2 s. The south
+  is kept as runs of water, snow and ice per row (`gmasi-<day>.bin.gz`). Its
+  snow gives the 5 cm floor and its ice freezes the sea, but bare land is not
+  told (a 4 km cell seen bare can hold a snowy peak; the model's depth stands).
+  Checked: snow on Aconcagua, the Patagonian ice fields and Antarctica, ice in
+  the Weddell Sea, bare Sydney and Kilimanjaro. Copernicus' global snow cover
+  needs a CDSE login per user; NASA GIBS' 500 m snow cover has cloud and night
+  gaps and OpenLandMap's snow probability is a 2000-2012 climatology, so both
+  were left: IMS, GMASI and the national depths answer every day.
   Checked on 16 Oct 2026:
   IMS snow on Greenland, Norilsk, Jotunheimen and Monte Rosa, ice at the Pole,
   bare Oslo, Bergen and Delhi, open Baikal and Hudson Bay; seNorge 22.7 cm at

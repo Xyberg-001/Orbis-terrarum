@@ -46,21 +46,27 @@ public final class ObservedSnow {
     private static final Map<Path, ObservedSnow> SHARED = new java.util.HashMap<>();
 
     private final Path cacheDir;
+    /** South of the equator, where IMS stops. */
+    private final GmasiSnow south;
     private volatile Grid grid;
     private volatile long checkedAt;
     private volatile CompletableFuture<Void> loading;
 
     private ObservedSnow(Path cacheDir) {
         this.cacheDir = cacheDir;
+        this.south = new GmasiSnow(cacheDir);
     }
 
     public static synchronized ObservedSnow shared(Path cacheDir) {
         return SHARED.computeIfAbsent(cacheDir, ObservedSnow::new);
     }
 
-    /** What a place is today (WATER, LAND, ICE, SNOW), or UNKNOWN (south of the equator, or not loaded yet; this starts the load). */
+    /**
+     * What a place is today (WATER, LAND, ICE, SNOW), or UNKNOWN (not loaded yet; this starts the load). South of 1 N
+     * from GMASI's 4 km map, as IMS stops at the equator.
+     */
     public int classAt(double lat, double lon) {
-        if (lat < 1) return UNKNOWN;
+        if (lat < 1) return south.classAt(lat, lon);
         Grid g = grid;
         if (g == null || System.currentTimeMillis() - checkedAt > CHECK_MS) refresh();
         g = grid;

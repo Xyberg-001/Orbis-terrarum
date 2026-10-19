@@ -15,14 +15,18 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * A place's climate month by month: the mean temperature and the precipitation of each month over the five years
- * 2021-2025, from Open-Meteo's weather archive (ERA5 reanalysis brought down to the place's height, CC BY 4.0). One
- * question per place (about 70 kB; Open-Meteo counts it as some 130 of the 10,000 calls a day it allows), asked in the background and kept in {@code climate-normals/} of the data folder
+ * A place's climate month by month: the mean temperature and the precipitation of each month, from TerraClimate's
+ * 1991-2020 normals (University of Idaho, 4 km, CC0: three OPeNDAP point reads of tmax, tmin and precipitation, some
+ * ten seconds each) or, where TerraClimate has no cell (at sea, or its server down), over the five years 2021-2025
+ * from Open-Meteo's weather archive (ERA5 reanalysis brought down to the place's height, CC BY 4.0; about 70 kB,
+ * counted as some 130 of the 10,000 calls a day Open-Meteo allows). One question per place, asked in the background and kept in {@code climate-normals/} of the data folder
  * by tenths of a degree, so the seasons can be worked out before a world opens without waiting on the network.
  */
 public final class ClimateNormals {
     private static final String URL = "https://archive-api.open-meteo.com/v1/archive?latitude=%.4f&longitude=%.4f"
             + "&start_date=2021-01-01&end_date=2025-12-31&daily=temperature_2m_mean,precipitation_sum&timezone=GMT";
+    private static final String TERRA = "http://thredds.northwestknowledge.net:8080/thredds/dodsC/TERRACLIMATE_ALL/climatology/"
+            + "TerraClimate_19912020_%s.nc.ascii?%s%%5B0:1:11%%5D%%5B%d%%5D%%5B%d%%5D";
     private static final Map<String, String> HEADERS = Map.of("User-Agent", "OrbisTerrarum/1.1 (Minecraft mod; https://modrinth.com/mod/orbis-terrarum)");
     /** Places being asked for now, so one is asked once at a time. */
     private static final Set<String> ASKING = ConcurrentHashMap.newKeySet();
@@ -59,11 +63,22 @@ public final class ClimateNormals {
         if (Files.exists(f) || (failed != null && System.currentTimeMillis() - failed < RETRY_MS) || !ASKING.add(key)) return;
         Thread t = new Thread(() -> {
             try {
-                Months m = fetch(Math.round(lat * 10) / 10.0, Math.round(lon * 10) / 10.0);
+                double la = Math.round(lat * 10) / 10.0, lo = Math.round(lon * 10) / 10.0;
+                Months m = null;
+                String source = "TerraClimate 1991-2020 normals";
+                try {
+                    m = terraClimate(la, lo);
+                } catch (Exception e) {
+                    System.err.println("[orbis] TerraClimate normals not had (" + e.getMessage() + "): Open-Meteo's archive instead");
+                }
+                if (m == null) {
+                    m = fetch(la, lo);
+                    source = "Open-Meteo archive (ERA5), 2021-2025";
+                }
                 JsonObject o = new JsonObject();
                 o.add("temperatureC", array(m.temperatureC()));
                 o.add("precipitationMm", array(m.precipitationMm()));
-                o.addProperty("source", "Open-Meteo archive (ERA5), 2021-2025");
+                o.addProperty("source", source);
                 Files.createDirectories(f.getParent());
                 Path tmp = f.resolveSibling(key + ".part");
                 Files.writeString(tmp, o.toString(), StandardCharsets.UTF_8);
@@ -78,6 +93,39 @@ public final class ClimateNormals {
         }, "Orbis climate normals");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** TerraClimate's 1991-2020 months at the place's 4 km cell (the mean of the mean highs and lows); null at sea. */
+    static Months terraClimate(double lat, double lon) throws Exception {
+        int row = (int) Math.round((89.97916666666667 - lat) * 24), col = (int) Math.round((lon + 179.97916666666666) * 24);
+        row = Math.max(0, Math.min(4319, row));
+        col = Math.floorMod(col, 8640);
+        double[] hi = terraVariable("tmax", row, col), lo = terraVariable("tmin", row, col), p = terraVariable("ppt", row, col);
+        if (hi == null || lo == null || p == null) return null;
+        double[] t = new double[12], pr = new double[12];
+        for (int m = 0; m < 12; m++) {
+            t[m] = Math.round((hi[m] + lo[m]) / 2 * 10) / 10.0;
+            pr[m] = Math.round(p[m]);
+        }
+        return new Months(t, pr);
+    }
+
+    /** One variable's twelve months at a cell, scaled (value x 0.1, temperatures less 73); null where it has none. */
+    private static double[] terraVariable(String name, int row, int col) throws Exception {
+        OrbisHttp.Response r = OrbisHttp.get(String.format(Locale.ROOT, TERRA, name, name, row, col), HEADERS, 90);
+        if (r.status() != 200) throw new java.io.IOException("TerraClimate answered " + r.status());
+        double[] v = new double[12];
+        int n = 0;
+        // the data lines read "[month][0], value"
+        for (String line : r.text().split("\n")) {
+            line = line.trim();
+            if (!line.startsWith("[") || !line.contains("], ") || n >= 12) continue;
+            long raw = Long.parseLong(line.substring(line.lastIndexOf(", ") + 2).trim());
+            if (raw == -32768 || raw == Integer.MIN_VALUE) return null;
+            v[n++] = raw * 0.1 + (name.equals("ppt") ? 0 : -73.0);
+        }
+        if (n != 12) throw new java.io.IOException("TerraClimate gave " + n + " months of " + name);
+        return v;
     }
 
     static Months fetch(double lat, double lon) throws Exception {

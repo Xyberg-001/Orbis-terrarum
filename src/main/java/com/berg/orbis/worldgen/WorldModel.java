@@ -215,6 +215,13 @@ public final class WorldModel {
         this.seNorge = seNorge;
     }
 
+    /** Austria's 1 km snow depth (SNOWGRID); null without. */
+    private volatile com.berg.orbis.sky.AustriaSnow austria;
+
+    public void setAustriaSnow(com.berg.orbis.sky.AustriaSnow austria) {
+        this.austria = austria;
+    }
+
     /** The lower 48 states' 1 km snow depth (SNODAS); null without. */
     private volatile com.berg.orbis.sky.Snodas snodas;
 
@@ -223,7 +230,7 @@ public final class WorldModel {
     }
 
     /**
-     * Today's snow depth. In Norway seNorge's 1 km depth, in the lower 48 states SNODAS's. Elsewhere the modelled depth checked against what the satellites
+     * Today's snow depth. In Norway seNorge's 1 km depth, in Austria SNOWGRID's, in the lower 48 states SNODAS's. Elsewhere the modelled depth checked against what the satellites
      * and analysts see in the place's 1 km cell: snow seen where the model has none gets a thin cover; a cell seen bare
      * keeps only the model's deep mountain snow (its line raised by about 30 cm of depth), since a peak can hold snow in
      * a cell that is mostly bare.
@@ -232,6 +239,11 @@ public final class WorldModel {
         com.berg.orbis.sky.SeNorge norway = seNorge;
         if (norway != null && com.berg.orbis.sky.SeNorge.covers(lat, lon)) {
             double d = norway.depthM(lat, lon, waitMs);
+            if (!Double.isNaN(d)) return d;
+        }
+        com.berg.orbis.sky.AustriaSnow at = austria;
+        if (at != null && com.berg.orbis.sky.AustriaSnow.covers(lat, lon)) {
+            double d = at.depthM(lat, lon, waitMs);
             if (!Double.isNaN(d)) return d;
         }
         com.berg.orbis.sky.Snodas us = snodas;

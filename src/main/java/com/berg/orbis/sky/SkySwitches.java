@@ -129,6 +129,7 @@ public final class SkySwitches {
                     model.setObservedSnow(ObservedSnow.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("observed")));
                     model.setSeNorge(SeNorge.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("senorge")));
                     model.setSnodas(Snodas.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("snodas")));
+                    model.setAustriaSnow(AustriaSnow.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("snowgrid")));
                 }
                 msg.append(on ? " New ground gets today's snow; snow already there settles and melts as the real snow does."
                         : " Snow already lying stays; no real snow is added.");

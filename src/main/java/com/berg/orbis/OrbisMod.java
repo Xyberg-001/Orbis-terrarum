@@ -826,6 +826,7 @@ public class OrbisMod implements ModInitializer {
             model.setObservedSnow(com.berg.orbis.sky.ObservedSnow.shared(data.resolve("snow-cache").resolve("observed")));
             model.setSeNorge(com.berg.orbis.sky.SeNorge.shared(data.resolve("snow-cache").resolve("senorge")));
             model.setSnodas(com.berg.orbis.sky.Snodas.shared(data.resolve("snow-cache").resolve("snodas")));
+            model.setAustriaSnow(com.berg.orbis.sky.AustriaSnow.shared(data.resolve("snow-cache").resolve("snowgrid")));
         }
         model.setCoarseSampler(new BicubicElevationSampler(tiles, Math.min(cfg.demZoom, 11)));
         model.setTerrainTiles(tiles, cfg.demZoom);
