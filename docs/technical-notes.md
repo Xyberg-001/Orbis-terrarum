@@ -1432,6 +1432,26 @@ server, so players need nothing:
   passed (If-Modified-Since, identifying User-Agent, 4 decimals, as its terms
   ask). The coming hour's symbol gives clear, rain (rain, sleet, snow,
   showers) or thunder, set like /weather with a 30-minute hold.
+- **Rain or snow by the real temperature** (with real weather, from 19 Oct
+  2026, `sky/RealPrecipitation`, `BiomePrecipitationMixin`): the season pack
+  cools a whole month's biomes, so taiga could snow on a +6 °C day of a cold
+  month. Each applied report's temperature is taken as the air at the ground
+  of the players' mean position (block height from `VerticalMapping.toY`, and
+  the real metres one block of height is there, from toY at +100 m), cooling
+  6.5 °C/km up the world: from 2 °C `Biome.getPrecipitationAt` answers rain,
+  at 0 °C and below snow (a biome without precipitation stays dry), between
+  them the biome's own choice. `shouldSnow` asks getPrecipitationAt, so snow
+  settles by it too; `shouldFreeze` (water freezing) is left to the biome, so
+  a frosty night does not ice the sea. Only the server thread (recorded at
+  SERVER_STARTED) and the client's render thread get the answer: world
+  generation's workers never do, so chunks stay the same whatever the weather.
+  Clients with Orbis get `orbisterrarum:real_temperature` with each applied
+  report and on joining (NaN clears it); plain clients see the biome's choice
+  while the server's snow follows the real one. A reading over 20 minutes old
+  is dropped. The season thaw takes snow layers off where it rains now. Checked:
+  5 °C at Y 64 (a block a metre) rains to Y 500, leaves Y 600-700 to the biome,
+  snows from Y 900; a generation thread gets no answer; the mixin applies on a
+  26.3 server (Bergen, 8 °C).
 - **Seasons** (`realSeasons`, `Seasons`): a data pack `orbis_season` in the
   world overrides every overworld biome (the version's own biome JSON, read
   from the jar) with grass and foliage colours blended from the biome's own

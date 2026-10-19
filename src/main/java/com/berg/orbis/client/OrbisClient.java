@@ -39,6 +39,10 @@ public class OrbisClient implements ClientModInitializer {
         });
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.WorldInfoPayload.TYPE,
                 (payload, context) -> worldInfo = payload);
+        // Rain or snow by the real temperature: the render thread draws what falls by it
+        com.berg.orbis.sky.RealPrecipitation.clientThread(Thread.currentThread());
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.RealTemperaturePayload.TYPE,
+                (payload, context) -> com.berg.orbis.sky.RealPrecipitation.set(payload.tempC(), payload.refY(), payload.metresPerBlock()));
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.AllowedAreaPayload.TYPE,
                 (payload, context) -> allowedArea = payload);
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PregenStatusPayload.TYPE,
@@ -89,6 +93,7 @@ public class OrbisClient implements ClientModInitializer {
         });
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
             worldInfo = null;
+            com.berg.orbis.sky.RealPrecipitation.clear();
             allowedArea = null;
             pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
             pregenTasks = java.util.List.of();

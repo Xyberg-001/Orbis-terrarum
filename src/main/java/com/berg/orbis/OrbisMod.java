@@ -437,6 +437,8 @@ public class OrbisMod implements ModInitializer {
                 .register(com.berg.orbis.net.WorldInfoPayload.TYPE, com.berg.orbis.net.WorldInfoPayload.CODEC);
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
                 .register(com.berg.orbis.net.AllowedAreaPayload.TYPE, com.berg.orbis.net.AllowedAreaPayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
+                .register(com.berg.orbis.net.RealTemperaturePayload.TYPE, com.berg.orbis.net.RealTemperaturePayload.CODEC);
         com.berg.orbis.map.BlockMapService.register();
         com.berg.orbis.compat.dh.DhCompat.init(); // optional: only acts when Distant Horizons is installed
         com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Worlds is installed (26.3)
@@ -449,6 +451,7 @@ public class OrbisMod implements ModInitializer {
                     new com.berg.orbis.net.WorldInfoPayload(c.originLat, c.originLon, c.metersPerBlock, c.projection,
                             com.berg.orbis.map.BlockMapService.worldId(server)));
             com.berg.orbis.worldgen.HardLimit.sendTo(handler.getPlayer());
+            com.berg.orbis.sky.RealSky.sendTemperature(server, handler.getPlayer());
         });
         RealWorldBiomeSource.register();
         TeleportCommands.register();

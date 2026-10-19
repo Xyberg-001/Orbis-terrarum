@@ -23,6 +23,7 @@
     "IOWorkerAccessor",
     "PoiManagerMixin",
     "ServerLevelSeasonMixin",
+    "BiomePrecipitationMixin",
     "VillagerClockMixin",
     "ServerLevelWritesMixin",
     "ServerChunkCacheTicketsMixin",
