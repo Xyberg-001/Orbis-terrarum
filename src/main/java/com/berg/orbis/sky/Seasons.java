@@ -47,7 +47,7 @@ public final class Seasons {
 
     private static final int WINTER_GRASS = 0x8C8A5E, WINTER_LEAVES = 0x8A7148;
     /** Bumped whenever {@link #MONTHS} changes. */
-    private static final String LOOKS_VERSION = "-3";
+    private static final String LOOKS_VERSION = "-4";
     private static final Look[] MONTHS = {
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // January
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // February
@@ -105,9 +105,11 @@ public final class Seasons {
         if (tm >= 10 && p[m] < 2 * tm && wettest >= WET_MM) return DRY_SEASON;
         if (coldMonth && tm < 12) return MILD_WINTER;
         if (tm >= 16 || coldMonth) return null;
+        // From 3 C a month's precipitation is mostly rain: its colours without the table's cooling, which made taiga snow
+        // in a Moscow October at 8 C (the latitude table cools early spring and late autumn by 0.15-0.2).
         boolean rising = Math.floorMod(m - coldest, 12) <= Math.floorMod(warmest - coldest, 12);
-        if (rising) return tm < 7 ? MONTHS[2] : tm < 12 ? MONTHS[3] : MONTHS[4];
-        return tm < 7 ? MONTHS[10] : tm < 12 ? MONTHS[9] : MONTHS[8];
+        Look look = rising ? (tm < 7 ? MONTHS[2] : tm < 12 ? MONTHS[3] : MONTHS[4]) : (tm < 7 ? MONTHS[10] : tm < 12 ? MONTHS[9] : MONTHS[8]);
+        return look.cooling() == 0 ? look : new Look(look.name(), look.grass(), look.grassBy(), look.foliage(), look.foliageBy(), 0.0);
     }
 
     /** The name of a look (for probes and the log): "summer" or "no seasons" for vanilla colours. */

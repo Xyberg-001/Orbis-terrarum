@@ -17,7 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * A place's climate month by month: the mean temperature and the precipitation of each month, from TerraClimate's
  * 1991-2020 normals (University of Idaho, 4 km, CC0: three OPeNDAP point reads of tmax, tmin and precipitation, some
- * ten seconds each) or, where TerraClimate has no cell (at sea, or its server down), over the five years 2021-2025
+ * ten seconds each; brought from its cell's mean height to the place's own at 6.5 C a kilometre, as a 4 km cell in
+ * the Alps holds peaks and valleys alike: Zermatt's cell is at 2,054 m, the village at 1,608) or, where TerraClimate has no cell (at sea, or its server down), over the five years 2021-2025
  * from Open-Meteo's weather archive (ERA5 reanalysis brought down to the place's height, CC BY 4.0; about 70 kB,
  * counted as some 130 of the 10,000 calls a day Open-Meteo allows). One question per place, asked in the background and kept in {@code climate-normals/} of the data folder
  * by tenths of a degree, so the seasons can be worked out before a world opens without waiting on the network.
@@ -27,6 +28,8 @@ public final class ClimateNormals {
             + "&start_date=2021-01-01&end_date=2025-12-31&daily=temperature_2m_mean,precipitation_sum&timezone=GMT";
     private static final String TERRA = "http://thredds.northwestknowledge.net:8080/thredds/dodsC/TERRACLIMATE_ALL/climatology/"
             + "TerraClimate_19912020_%s.nc.ascii?%s%%5B0:1:11%%5D%%5B%d%%5D%%5B%d%%5D";
+    private static final String TERRA_HEIGHT = "http://thredds.northwestknowledge.net:8080/thredds/dodsC/TERRACLIMATE_ALL/layers/terraclim_dem.nc.ascii?elevation%%5B%d%%5D%%5B%d%%5D";
+    private static final String PLACE_HEIGHT = "https://api.open-meteo.com/v1/elevation?latitude=%.4f&longitude=%.4f";
     private static final Map<String, String> HEADERS = Map.of("User-Agent", "OrbisTerrarum/1.1 (Minecraft mod; https://modrinth.com/mod/orbis-terrarum)");
     /** Places being asked for now, so one is asked once at a time. */
     private static final Set<String> ASKING = ConcurrentHashMap.newKeySet();
@@ -102,12 +105,35 @@ public final class ClimateNormals {
         col = Math.floorMod(col, 8640);
         double[] hi = terraVariable("tmax", row, col), lo = terraVariable("tmin", row, col), p = terraVariable("ppt", row, col);
         if (hi == null || lo == null || p == null) return null;
+        double shift = heightShiftC(lat, lon, row, col);
         double[] t = new double[12], pr = new double[12];
         for (int m = 0; m < 12; m++) {
-            t[m] = Math.round((hi[m] + lo[m]) / 2 * 10) / 10.0;
+            t[m] = Math.round(((hi[m] + lo[m]) / 2 + shift) * 10) / 10.0;
             pr[m] = Math.round(p[m]);
         }
         return new Months(t, pr);
+    }
+
+    /**
+     * How much warmer the place is than its TerraClimate cell's mean height (6.5 C a kilometre lower); 0 when either
+     * height cannot be had (the place's from Open-Meteo's 90 m terrain, one light question).
+     */
+    private static double heightShiftC(double lat, double lon, int row, int col) {
+        try {
+            OrbisHttp.Response cell = OrbisHttp.get(String.format(Locale.ROOT, TERRA_HEIGHT, row, col), HEADERS, 90);
+            OrbisHttp.Response place = OrbisHttp.get(String.format(Locale.ROOT, PLACE_HEIGHT, lat, lon), HEADERS, 30);
+            if (cell.status() != 200 || place.status() != 200) return 0;
+            double cellM = Double.NaN;
+            for (String line : cell.text().split("\n")) {
+                line = line.trim();
+                if (line.startsWith("[0], ")) cellM = Double.parseDouble(line.substring(5).trim()) * 0.1;
+            }
+            double placeM = JsonParser.parseString(place.text()).getAsJsonObject().getAsJsonArray("elevation").get(0).getAsDouble();
+            if (Double.isNaN(cellM) || cellM < -500 || Double.isNaN(placeM)) return 0;
+            return 0.0065 * (cellM - placeM);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     /** One variable's twelve months at a cell, scaled (value x 0.1, temperatures less 73); null where it has none. */

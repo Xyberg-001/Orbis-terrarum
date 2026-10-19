@@ -260,14 +260,16 @@ public final class WorldModel {
     }
 
     /** Whether water at a place is frozen today as seen: 1 ice, 0 open, -1 not known (a small lake in bare land: the climate decides). */
-    private int observedIce(double lat, double lon) {
+    private int observedIce(double lat, double lon, double snowDepthM) {
         com.berg.orbis.sky.ObservedSnow obs = observed;
         if (obs == null) return -1;
         return switch (obs.classAt(lat, lon)) {
             case com.berg.orbis.sky.ObservedSnow.ICE -> 1;
             case com.berg.orbis.sky.ObservedSnow.WATER -> 0;
-            // A lake too small for the 1 km cells, in land under snow: frozen too.
-            case com.berg.orbis.sky.ObservedSnow.SNOW -> 1;
+            // A lake too small for the 1 km cells, in land under snow: frozen too, once the snow lies 10 cm deep there.
+            // The first snow of autumn is no frozen lake (IMS saw snow round Yellowstone Lake on 18 Oct 2026, SNODAS
+            // 0 cm), and the national depths win over the satellites for the snow itself.
+            case com.berg.orbis.sky.ObservedSnow.SNOW -> !Double.isNaN(snowDepthM) && snowDepthM >= 0.10 ? 1 : -1;
             default -> -1;
         };
     }
@@ -285,7 +287,8 @@ public final class WorldModel {
         if (s == null || !cfg.realSnow) return c;
         double[] ll = mapper.toLatLon(x, z);
         double snowElevation = Double.isNaN(elevationMeters) ? 0.0 : snowElevationM(x, blockY(elevationMeters, x, z), z, true);
-        return c.withSnowDepth(observedDepth(ll[0], ll[1], s.depthM(ll[0], ll[1], snowElevation), 20_000)).withIceNow(observedIce(ll[0], ll[1]));
+        double depth = observedDepth(ll[0], ll[1], s.depthM(ll[0], ll[1], snowElevation), 20_000);
+        return c.withSnowDepth(depth).withIceNow(observedIce(ll[0], ll[1], depth));
     }
 
     /**

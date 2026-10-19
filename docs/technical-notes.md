@@ -1456,7 +1456,12 @@ server, so players need nothing:
   `TERRACLIMATE_ALL/climatology/TerraClimate_19912020_<v>.nc` on
   thredds.northwestknowledge.net, row (89.979 - lat) x 24, column (lon +
   179.979) x 24, Int16/Int32 x 0.1 (temperatures - 73), 6-22 s each; the mean
-  of the mean highs and lows), or where it has no cell (at sea) or fails,
+  of the mean highs and lows, brought from the cell's mean height
+  (`layers/terraclim_dem.nc`, x 0.1) to the place's (Open-Meteo's elevation
+  API, 90 m terrain) at 6.5 °C/km: Zermatt's cell is at 2,054 m, the village
+  at 1,608, and uncorrected it came out 2.1 °C a year with eleven cooled
+  months; corrected 5.0 °C, against the climate pack's 3.5 at the same height,
+  1981-2010), or where it has no cell (at sea) or fails,
   over 2021-2025 from Open-Meteo's archive (ERA5 at the place's height, about
   130 of Open-Meteo's fair-use calls; ten years at a dozen places in a row got
   HTTP 429); one question per place, asked in the background, kept in
@@ -1469,7 +1474,9 @@ server, so players need nothing:
   below 12 °C; summer (vanilla) from 16 °C and in the coldest months above 12;
   between them early spring / spring / late spring (below 7, 12, 16 °C) on the
   way from the coldest month to the warmest, late autumn / autumn / early
-  autumn on the way back. On the 2016-2025 climates: Oslo winter Nov-Mar,
+  autumn on the way back, all without cooling (from 3 °C a month's
+  precipitation is mostly rain; the latitude table's 0.15 made taiga snow in a
+  Moscow October at 8 °C). On the 2016-2025 climates: Oslo winter Nov-Mar,
   autumn colour Sep-Oct; London a mild winter Dec-Feb; Rome, Los Angeles and
   Denver dry summers; Darwin dry May-Sep, Mumbai Nov-May; Singapore and Cairo
   none. Until the climate is kept, the latitude decides: the south six months
@@ -1516,7 +1523,14 @@ server, so players need nothing:
   none; one seen bare loses 30 cm of the model's depth (a peak in a mostly bare
   cell keeps its deep snow). Water is frozen when its cell is ice, open when
   open water, and frozen in a cell of snowy land (a lake too small for the
-  cells); otherwise the year-round climate rule. In Norway seNorge's snow depth
+  cells) once the column's snow is 10 cm deep (from 19 Oct 2026: IMS saw the
+  first snow round Yellowstone Lake on 18 Oct with SNODAS at 0 cm); otherwise
+  the year-round climate rule. Cross-checked 19 Oct 2026 (`ConflictProbe`):
+  seNorge, SNOWGRID and SNODAS agree with IMS at 85-100% of sampled places,
+  the rest thin early snow of 2-11 cm (the national depth wins); the radars
+  agree where their boxes overlap (MET, DWD, INCA, OPERA, all dry that day);
+  swissTLM3D tunnel ends lie a median 1.3 m below Mapterhorn's ground (the
+  hillside over the portal; no datum step). In Norway seNorge's snow depth
   (MET Norway / NVE, NLOD, 1 km, the day's model run on observed weather)
   replaces both: THREDDS OPeNDAP ASCII in 32 x 32 km tiles of the UTM 33 grid
   (`x = (E + 74500) / 1000`, `y = (N - 6450500) / 1000`, cell centres; the
