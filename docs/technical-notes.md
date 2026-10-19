@@ -1134,10 +1134,26 @@ distance is worked out on a lattice fixed in world coordinates about 32 m
 apart, over the region plus 4 km (the inventory's outlines filled even-odd per
 row, then an 8-neighbour chamfer distance), and blended to each column, so
 neighbouring regions agree. Packed ice, blue ice deeper than 40 m, then rock.
-The inventory has no thickness anyone may use (Millan 2022 states no licence,
-Farinotti 2019 is non-commercial), hence the model. Jostedalsbreen comes out
-around 200 m, Konkordiaplatz on the Aletsch 130 m (really 900 m), Vatnajökull
-300 m.
+No gridded thickness may be used (Millan 2022 states no licence, Farinotti 2019
+is non-commercial), hence the model; but where the ice was measured, the
+measurement leads (19 Oct 2026). GlaThiDa 3.1.0 (the World Glacier Monitoring
+Service's Glacier Thickness Database, CC BY 4.0, doi:10.5904/wgms-glathida-2020-10;
+radar and borehole surveys, 3.85 million readings) is packed by
+`tools/glathida_pack.py` into `orbis-glathida.tsv.gz` (52 KB in the jar): per
+survey not flagged as doubtful, the place of its deepest reading and the greatest
+thickness it measured (its stated maximum or deepest reading, whichever is
+larger); 3,463 of 5,141 surveys. A glacier takes the deepest of the surveys whose
+point lies inside its outline (a survey can only miss the deepest ice, never add
+to it: the Grosser Aletsch's 2011 radar found 436 m, its 1958 survey 890 m), at
+most 1,500 m, and its ice grows from the edge in the same square-root shape to
+reach that at its widest interior, worked out once from its own outline (a grid of
+at most 250,000 cells, chamfer distance) so every region agrees. Before and after,
+the thickest ice: Grosser Aletsch 187 to 890 m (widest interior 1.6 km from the
+edge), Khumbu 150 to 440 m, Pasterze 150 to 311 m, Rhône 174 to 256 m, Columbia
+(Alaska) 283 to 900 m. Unsurveyed glaciers keep the model (Austerdalsbreen, an
+outlet of Jostedalsbreen, has no survey of its own). The underground band starts
+100 m under the lowest ground near a column, so on deep glaciers its caves and
+buried structures can lie in the ice, as before but more often.
 
 ### Forest types (`landcover/ForestTypes`, `TileTiff`)
 New worlds from 2.0.1 (world setting `forestTypes`, config v20; servers keep

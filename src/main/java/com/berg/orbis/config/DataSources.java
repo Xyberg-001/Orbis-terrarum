@@ -157,7 +157,7 @@ public final class DataSources {
         l.add(world("macrostrat", "Rock types (Macrostrat)", List.of("geology-macrostrat-cache"), null));
         l.add(world("soilgrids", "Soil types (SoilGrids)", List.of("soil-cache"), null));
         l.add(world("soil-depth", "Soil depth to bedrock (SoilGrids 2017)", List.of("soil-depth-cache"), null));
-        l.add(world("rgi-glaciers", "Glacier outlines (RGI 7)", List.of("glacier-cache"), null));
+        l.add(world("rgi-glaciers", "Glacier outlines (RGI 7), measured thickness (GlaThiDa)", List.of("glacier-cache"), null));
         l.add(world("forest-types", "Forest types (CLC+, Copernicus)", List.of("forest-type-cache"), null));
         l.add(world("overture-buildings", "Buildings OSM lacks (Overture)", List.of("overture-cache"), null));
         l.add(world("ims-snow", "Snow and ice seen today (NOAA IMS)", List.of("snow-cache/observed"), null));

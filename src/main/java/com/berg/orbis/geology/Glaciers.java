@@ -33,6 +33,14 @@ import java.util.zip.GZIPOutputStream;
  * small cirque glacier, 190 m for one of 100 km²). Glaciers that touch (the outlets of an ice cap) count as one body, so
  * the ice stays thick under the divides between them. Outlines come by tiles of a quarter degree, kept on disk; a failure
  * is not kept (asked again after 10 minutes).
+ *
+ * Where the ice was measured (GlaThiDa, the World Glacier Monitoring Service's database of radar and borehole surveys,
+ * CC BY 4.0; 3,463 surveys of some 3,000 glaciers, shipped in the jar as orbis-glathida.tsv.gz by tools/glathida_pack.py),
+ * the glacier's thickest point takes the deepest thickness any survey of it measured, and the ice grows towards it from
+ * the edge in the same square-root shape, reaching it at the glacier's own widest interior (worked out once from its
+ * outline, so every region agrees). A survey belongs to the glacier whose outline holds its deepest reading. Nye's sheet
+ * cannot pass about 300 m within 4 km of an edge and the area rule caps a 100 km² glacier near 380 m, so a valley glacier
+ * like the Grosser Aletsch (890 m measured, 1958) came out a third as deep.
  */
 public final class Glaciers {
     public static final String ATTRIBUTION = "Randolph Glacier Inventory 7.0 (RGI Consortium 2023, GLIMS, CC BY 4.0) glacier outlines";
@@ -48,6 +56,9 @@ public final class Glaciers {
     /** 2 τ / (ρ g) for a yield stress of 100 kPa: the Nye profile's thickness squared per metre from the edge. */
     private static final double NYE = 2 * 100_000 / (917 * 9.81);
     private static final double MAX_ICE_M = 600;
+    /** The deepest measured ice taken (GlaThiDa holds up to 1,050 m on Alaska's Columbia Glacier). */
+    private static final double MAX_SURVEYED_ICE_M = 1500;
+    public static final String SURVEY_ATTRIBUTION = "GlaThiDa 3.1.0 (WGMS, CC BY 4.0, doi:10.5904/wgms-glathida-2020-10) measured glacier thickness";
 
     /** The inventory's 19 regions, each with the boxes it covers (south, west, north, east; generous). */
     private static final Object[][] REGIONS = {
@@ -87,6 +98,142 @@ public final class Glaciers {
 
     public Glaciers(Path cacheDir) {
         this.cacheDir = cacheDir;
+    }
+
+    // ------------------------------------------------------------------ measured thickness (GlaThiDa)
+
+    /** The surveys, {lat, lon, greatest thickness in metres}, by whole degree of latitude and longitude. */
+    private static volatile Map<Long, List<double[]>> surveys;
+    private final Map<String, Double> measuredCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, Double> reachCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static Map<Long, List<double[]>> surveys() {
+        Map<Long, List<double[]>> s = surveys;
+        if (s != null) return s;
+        synchronized (Glaciers.class) {
+            if (surveys != null) return surveys;
+            Map<Long, List<double[]>> m = new java.util.HashMap<>();
+            try (var in = Glaciers.class.getResourceAsStream("/orbis-glathida.tsv.gz")) {
+                if (in != null) {
+                    java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(new java.util.zip.GZIPInputStream(in),
+                            java.nio.charset.StandardCharsets.UTF_8));
+                    for (String line; (line = r.readLine()) != null; ) {
+                        if (line.startsWith("#") || line.isBlank()) continue;
+                        String[] f = line.split("\t");
+                        double lat = Double.parseDouble(f[0]), lon = Double.parseDouble(f[1]), max = Double.parseDouble(f[2]);
+                        m.computeIfAbsent(cell(lat, lon), k -> new ArrayList<>()).add(new double[]{lat, lon, max});
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                System.err.println("[orbis] Glacier thickness surveys unreadable (" + e + "); every glacier's thickness is estimated");
+            }
+            surveys = m;
+            return m;
+        }
+    }
+
+    private static long cell(double lat, double lon) {
+        return ((long) Math.floor(lat) << 32) ^ (Math.floorMod((int) Math.floor(lon), 360) & 0xffffffffL);
+    }
+
+    /** The deepest thickness a survey measured on this glacier (its reading inside the outline), or 0 when none was. */
+    double measuredMax(Glacier g) {
+        return measuredCache.computeIfAbsent(g.id, k -> {
+            Map<Long, List<double[]>> all = surveys();
+            double best = 0;
+            for (int la = (int) Math.floor(g.south); la <= (int) Math.floor(g.north); la++) {
+                for (int lo = (int) Math.floor(g.west); lo <= (int) Math.floor(g.east); lo++) {
+                    List<double[]> here = all.get(cell(la, lo));
+                    if (here == null) continue;
+                    for (double[] p : here) {
+                        if (p[0] < g.south || p[0] > g.north || p[1] < g.west || p[1] > g.east || p[2] <= best) continue;
+                        if (inside(g.rings, p[0], p[1])) best = p[2];
+                    }
+                }
+            }
+            return best;
+        });
+    }
+
+    /** Whether a place lies inside the rings (lat/lon pairs; holes count as outside: even-odd). */
+    private static boolean inside(List<float[]> rings, double lat, double lon) {
+        boolean in = false;
+        for (float[] ring : rings) {
+            int m = ring.length / 2;
+            for (int i = 0, j = m - 1; i < m; j = i++) {
+                double ai = ring[2 * i], oi = ring[2 * i + 1], aj = ring[2 * j], oj = ring[2 * j + 1];
+                if ((ai > lat) != (aj > lat) && lon < (oj - oi) * (lat - ai) / (aj - ai) + oi) in = !in;
+            }
+        }
+        return in;
+    }
+
+    /**
+     * How far the glacier's widest interior lies from its own edge, in metres: its outline on a grid of its own (fine
+     * enough for a cirque glacier, at most about 250,000 cells), the distance in from the edge, the greatest of it. From
+     * the outline alone, never a region's window, so every region shapes the ice the same way.
+     */
+    double innerReachM(Glacier g) {
+        return reachCache.computeIfAbsent(g.id, k -> {
+            double lat0 = (g.south + g.north) / 2, kx = 111_320 * Math.cos(Math.toRadians(lat0)), ky = 111_320;
+            double w = (g.east - g.west) * kx, h = (g.north - g.south) * ky;
+            double step = Math.max(10, Math.sqrt(w * h / 250_000));
+            int nx = (int) Math.ceil(w / step) + 3, ny = (int) Math.ceil(h / step) + 3;
+            boolean[] in = new boolean[nx * ny];
+            double[] xs = new double[64];
+            for (int j = 0; j < ny; j++) {
+                double y = (j - 1 + 0.5) * step, lat = g.south + y / ky;
+                int n = 0;
+                for (float[] ring : g.rings) {
+                    int m = ring.length / 2;
+                    for (int a = 0, b = m - 1; a < m; b = a++) {
+                        double la = ring[2 * a], lb = ring[2 * b];
+                        if ((la > lat) != (lb > lat)) {
+                            double lon = ring[2 * a + 1] + (lat - la) * (ring[2 * b + 1] - ring[2 * a + 1]) / (lb - la);
+                            if (n == xs.length) xs = Arrays.copyOf(xs, n * 2);
+                            xs[n++] = (lon - g.west) * kx / step + 1;
+                        }
+                    }
+                }
+                Arrays.sort(xs, 0, n);
+                for (int q = 0; q + 1 < n; q += 2) {
+                    for (int i = Math.max(0, (int) Math.ceil(xs[q] - 0.5)); i <= Math.min(nx - 1, (int) Math.floor(xs[q + 1] - 0.5)); i++) in[j * nx + i] = true;
+                }
+            }
+            double inf = Double.MAX_VALUE / 4, diag = Math.sqrt(2), best = 0;
+            double[] d = new double[nx * ny];
+            for (int c = 0; c < d.length; c++) d[c] = in[c] ? inf : 0;
+            for (int j = 0; j < ny; j++) {
+                for (int i = 0; i < nx; i++) {
+                    int c = j * nx + i;
+                    if (d[c] == 0) continue;
+                    double v = d[c];
+                    if (i > 0) v = Math.min(v, d[c - 1] + 1);
+                    if (j > 0) {
+                        v = Math.min(v, d[c - nx] + 1);
+                        if (i > 0) v = Math.min(v, d[c - nx - 1] + diag);
+                        if (i < nx - 1) v = Math.min(v, d[c - nx + 1] + diag);
+                    }
+                    d[c] = v;
+                }
+            }
+            for (int j = ny - 1; j >= 0; j--) {
+                for (int i = nx - 1; i >= 0; i--) {
+                    int c = j * nx + i;
+                    if (d[c] == 0) continue;
+                    double v = d[c];
+                    if (i < nx - 1) v = Math.min(v, d[c + 1] + 1);
+                    if (j < ny - 1) {
+                        v = Math.min(v, d[c + nx] + 1);
+                        if (i < nx - 1) v = Math.min(v, d[c + nx + 1] + diag);
+                        if (i > 0) v = Math.min(v, d[c + nx - 1] + diag);
+                    }
+                    d[c] = v;
+                    best = Math.max(best, v);
+                }
+            }
+            return best * step;
+        });
     }
 
     /** Whether the inventory may have glaciers in the box (a cheap test on its regions). */
@@ -142,13 +289,19 @@ public final class Glaciers {
         List<Glacier> found = glaciers(south, west, north, east);
         if (found == null || found.isEmpty()) return null;
 
-        // Rings in block coordinates, with each glacier's greatest thickness.
+        // Rings in block coordinates, with each glacier's greatest thickness; a surveyed glacier's measured one, and how far
+        // in from its edge it is reached.
         List<double[][]> polyRings = new ArrayList<>(); // per ring: {xs, zs, {zmin, zmax}}
         List<Integer> ringOwner = new ArrayList<>();
-        double[] maxIce = new double[found.size()];
+        double[] maxIce = new double[found.size()], measured = new double[found.size()], reach = new double[found.size()];
         for (int g = 0; g < found.size(); g++) {
             Glacier gl = found.get(g);
             maxIce[g] = Math.min(MAX_ICE_M, 2 * 34 * Math.pow(Math.max(0.01, gl.areaKm2), 0.375));
+            double surveyed = measuredMax(gl);
+            if (surveyed > 0) {
+                measured[g] = Math.min(MAX_SURVEYED_ICE_M, surveyed);
+                reach[g] = Math.max(1, Math.min(MAX_EDGE_M, innerReachM(gl)));
+            }
             for (float[] ring : gl.rings) {
                 int m = ring.length / 2;
                 double[] xs = new double[m], zs = new double[m];
@@ -241,7 +394,8 @@ public final class Glaciers {
         for (int k = 0; k < ice.length; k++) {
             if (owner[k] < 0) continue;
             double metres = Math.min(MAX_EDGE_M, d[k] * step * mpb);
-            ice[k] = Math.min(maxIce[owner[k]], Math.sqrt(NYE * metres));
+            int o = owner[k];
+            ice[k] = measured[o] > 0 ? measured[o] * Math.sqrt(Math.min(1, metres / reach[o])) : Math.min(maxIce[o], Math.sqrt(NYE * metres));
         }
 
         // Each accepted cell: the lattice's thickness, bilinear, in blocks (at least one inside a glacier).
