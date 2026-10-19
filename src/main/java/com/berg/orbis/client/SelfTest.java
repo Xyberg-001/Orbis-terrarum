@@ -22,6 +22,10 @@ import java.nio.file.Path;
  */
 public final class SelfTest {
     private static boolean on;
+    /** "explore" in the trigger file: also new land (spectator, teleports) and Orbis' own screens. For a copy of a world only. */
+    private static boolean explore;
+    private static int exploreLeg;
+    private static double[] home;
     private static int step;
     private static long stepAt;
     private static Boolean pauseOnLostFocus;
@@ -34,8 +38,12 @@ public final class SelfTest {
     public static void init(Path configDir) {
         Path trigger = configDir.resolve("selftest-seasons.txt");
         try {
-            if (Files.deleteIfExists(configDir.resolve("selftest.txt")) | Files.deleteIfExists(trigger)) {
+            Path full = configDir.resolve("selftest.txt");
+            String words = Files.exists(full) ? Files.readString(full) : "";
+            if (Files.deleteIfExists(full) | Files.deleteIfExists(trigger)) {
                 on = true;
+                explore = words.contains("explore");
+                if (explore) log("explore: new land and Orbis' screens too (meant for a copy of a world: it teleports and makes chunks)");
                 log("on: will check local season colours once a world is open, then quit");
             }
         } catch (Exception ignored) {
@@ -121,6 +129,71 @@ public final class SelfTest {
                     LocalWeather.reset(); // the server's next report brings the real one back
                     com.berg.orbis.sky.RealPrecipitation.clearClient();
                     next(now, "after 8 s: " + weather(mc) + "; screenshot taken; local weather handed back");
+                    if (explore) step = 20; // new land first, then the video settings (12)
+                }
+                case 20 -> { // spectator, so teleports into land not made yet are safe
+                    if (now - stepAt < 2_000) return;
+                    home = new double[]{mc.player.getX(), mc.player.getY(), mc.player.getZ()};
+                    command(mc, "gamemode spectator @a");
+                    next(now, "spectator for the teleports (for land past a world's selection, put off in its orbis-pregen/hard-limit.txt first)");
+                }
+                case 21 -> { // three trips about 3 km out (at 1:1; scaled by the world), each 90 s for the land to be made
+                    if (now - stepAt < (exploreLeg == 0 ? 2_000 : 90_000)) return;
+                    if (exploreLeg > 0) {
+                        Screenshot.grab(mc, true);
+                        log(String.format(java.util.Locale.ROOT, "trip %d: at %s, %d chunks loaded, %s; screenshot taken", exploreLeg, mc.player.blockPosition().toShortString(),
+                                mc.level.getChunkSource().getLoadedChunksCount(), ground(mc)));
+                    }
+                    double mpb = OrbisClient.worldInfo == null ? 1 : OrbisClient.worldInfo.metersPerBlock();
+                    double d = 3_000 / mpb;
+                    double[][] legs = {{d, 0}, {0, d}, {-d, -d}};
+                    if (exploreLeg < legs.length) {
+                        double x = home[0] + legs[exploreLeg][0], z = home[2] + legs[exploreLeg][1];
+                        command(mc, String.format(java.util.Locale.ROOT, "tp @a %.1f %.1f %.1f 270 40", x, home[1] + 120, z)); // facing west, 40 degrees down
+                        log(String.format(java.util.Locale.ROOT, "trip %d: teleported to %.0f, %.0f", exploreLeg + 1, x, z));
+                        exploreLeg++;
+                        stepAt = now;
+                        return;
+                    }
+                    command(mc, String.format(java.util.Locale.ROOT, "tp @a %.1f %.1f %.1f", home[0], home[1], home[2]));
+                    next(now, "back home");
+                }
+                case 22 -> { // Orbis' world map
+                    if (now - stepAt < 5_000) return;
+                    mc.setScreenAndShow(new com.berg.orbis.client.map.WorldMapScreen(OrbisClient.worldInfo));
+                    next(now, "world map opened");
+                }
+                case 23 -> {
+                    if (now - stepAt < 12_000) return;
+                    Screenshot.grab(mc, true);
+                    mc.setScreenAndShow(null);
+                    next(now, "screenshot of the world map taken");
+                }
+                case 24 -> { // the area preview of world creation, on the world's place
+                    if (now - stepAt < 3_000) return;
+                    var w = OrbisClient.worldInfo;
+                    mc.setScreenAndShow(new AreaPreviewScreen(null, w.originLat(), w.originLon(), w.metersPerBlock(), w.projection(), s -> {
+                    }, c -> {
+                    }, () -> true, b -> {
+                    }, () -> false, b -> {
+                    }));
+                    next(now, "the area preview opened");
+                }
+                case 25 -> {
+                    if (now - stepAt < 12_000) return;
+                    Screenshot.grab(mc, true);
+                    mc.setScreenAndShow(DataSourcesScreen.manage(null, com.berg.orbis.OrbisMod.config(), OrbisClient.worldInfo.originLat(),
+                            OrbisClient.worldInfo.originLon()));
+                    next(now, "screenshot of the area preview taken; data sources opened");
+                }
+                case 26 -> {
+                    if (now - stepAt < 5_000) return;
+                    Screenshot.grab(mc, true);
+                    mc.setScreenAndShow(null);
+                    command(mc, "gamemode creative @a");
+                    step = 12;
+                    stepAt = now;
+                    log("screenshot of the data sources taken; back to the video settings check");
                 }
                 case 12 -> {
                     if (now - stepAt < 3_000) return;
@@ -207,6 +280,32 @@ public final class SelfTest {
             server.clockManager().setTotalTicks(clock.get(), back);
             log("clock put back to " + back);
         });
+    }
+
+    /** The land under the player as the client has it, and as the server has it. */
+    private static String ground(Minecraft mc) {
+        BlockPos p = mc.player.blockPosition();
+        var chunk = mc.level.getChunk(p.getX() >> 4, p.getZ() >> 4);
+        int nonEmpty = 0;
+        for (var section : chunk.getSections()) if (!section.hasOnlyAir()) nonEmpty++;
+        int top = mc.level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, p.getX(), p.getZ());
+        String block = mc.level.getBlockState(new BlockPos(p.getX(), top - 1, p.getZ())).toString();
+        String server = "";
+        var srv = mc.getSingleplayerServer();
+        if (srv != null) {
+            var lvl = srv.overworld();
+            var sc = lvl.getChunkSource().getChunkNow(p.getX() >> 4, p.getZ() >> 4);
+            server = sc == null ? "; server: chunk not loaded"
+                    : "; server: top Y " + sc.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, p.getX() & 15, p.getZ() & 15);
+        }
+        return "client: top Y " + top + " (" + block + "), " + nonEmpty + " non-empty sections in the player's chunk" + server;
+    }
+
+    /** A command run by the singleplayer server, as the server. */
+    private static void command(Minecraft mc, String cmd) {
+        var server = mc.getSingleplayerServer();
+        if (server == null) return;
+        server.execute(() -> server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), cmd));
     }
 
     /** What the game shows of the weather now, and what would fall at the player. */

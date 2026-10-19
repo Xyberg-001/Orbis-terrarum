@@ -1489,6 +1489,22 @@ server, so players need nothing:
   `data/minecraft/worldgen/biome/dappled_forest.json`; the forest stands in.
   Found by the self test on the 26.2 instance (its last world load was 29 Sep,
   a 1.1.0 dev build); the released 2.0.0 for 26.2 has it.
+- **The first weather question** goes out on the world's first tick, before
+  the ground under the players is loaded: without its height the temperature
+  had no block height to stand for, and rain or snow stayed the biomes' until
+  the next question two minutes later (seen on 26.3, 19 Oct 2026: the server's
+  temperature at the player NaN a minute in). Without a height the question
+  is asked again ten seconds later (10.8 °C a minute in after the fix).
+- **Self test, explore mode** (`selftest.txt` containing "explore", for a
+  copy of a world only): after the colours and the weather it switches to
+  spectator, makes three trips about 3 km out (90 s each, facing 40° down),
+  logging the ground the client has under the player, then opens the world
+  map, the area preview and the data sources. 26.2 and 26.3 copies of the
+  Bergen worlds (made with robocopy, Voxy's cache left out): fresh land drawn
+  within the render distance (8 chunks), every screen opened, logcheck clean.
+  A world with "Only generate the selection" needs `orbis-pregen/hard-limit.txt`
+  set to off for land past its selection (the /orbis hardlimit command went
+  with the commands the world map replaced).
 - **Each player's own weather** (players with Orbis, real weather on, from
   19 Oct 2026, `client/LocalWeather`, `LevelLocalWeatherMixin`): Minecraft has
   one weather per world, set from the players' mean place. Every 2 minutes

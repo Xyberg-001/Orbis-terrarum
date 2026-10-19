@@ -49,6 +49,11 @@ public final class RealSky {
     });
 
     private static long ticks;
+    /**
+     * A tick to ask again before the usual two minutes: the first question goes out on the world's first tick, before
+     * the ground under the players is loaded, and without its height rain or snow stayed the biomes' for two minutes.
+     */
+    private static volatile long retryAt = -1;
     private static boolean clockTaken;
     private static volatile boolean fetching;
     private static volatile MetWeather.Report pending;
@@ -68,6 +73,7 @@ public final class RealSky {
             RealPrecipitation.serverThread(Thread.currentThread()); // this event runs on the server's thread
             RealPrecipitation.clear();
             ticks = 0;
+            retryAt = -1;
             clockTaken = false;
             applied = null;
             pending = null;
@@ -110,7 +116,7 @@ public final class RealSky {
         long t = ticks++;
         if (t % CLOCK_EVERY == 0) daylight(server, overworld, m, daylight);
         if (weather) {
-            if (t % WEATHER_EVERY == 0 && !fetching) {
+            if ((t % WEATHER_EVERY == 0 || t == retryAt) && !fetching) {
                 requestWeather(server, m);
                 requestLocalWeather(server, m);
             }
@@ -254,6 +260,7 @@ public final class RealSky {
                 }
                 // the last world's weather was applied to the next one when it came after that one opened
                 if (askedIn == run) {
+                    if (ref == null) retryAt = ticks + 200; // the ground not loaded yet: again in ten seconds
                     pendingRef = ref;
                     pending = report;
                 }

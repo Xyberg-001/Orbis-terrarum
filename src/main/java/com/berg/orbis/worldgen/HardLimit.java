@@ -40,8 +40,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * inside the allowed area later (the area grew, or the limit was switched off) its saved copy is ignored the next
  * time it loads (ChunkMapMixin), so it generates properly.
  * <p>
- * On or off is the world's setting ("Only generate the selection"), overridden by {@code /orbis hardlimit on|off}
- * (kept in {@code hard-limit.txt}).
+ * On or off is the world's setting ("Only generate the selection"), overridden by the world map's hard-limit button
+ * (operators; kept in {@code orbis-pregen/hard-limit.txt}, "on" or "off", read as the world loads). The
+ * {@code /orbis hardlimit} command went with the other commands the world map replaced.
  */
 public final class HardLimit {
     private static final BlockState BARRIER = Blocks.BARRIER.defaultBlockState();
