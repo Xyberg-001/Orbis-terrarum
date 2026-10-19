@@ -1369,19 +1369,53 @@ server, so players need nothing:
   precipitation rate of the last minutes at the players' place, wet from 0.1
   mm/h: MET Norway's nowcast 2.0 in the Nordic countries (when its
   `radar_coverage` is "ok"; a cell answering 422 is outside and not asked
-  again), DWD's `dwd:Niederschlagsradar` (`RV_ANALYSIS`) in Germany, ECCC's
-  `RADAR_1KM_RRAI` and `RSNO` in Canada (WMS GetFeatureInfo, JSON numbers);
-  else the nearest METAR within 30 km and 75 minutes (NOAA AWC data API, a box
+  again), DWD's `dwd:Niederschlagsradar` (`RV_ANALYSIS`) in Germany, then
+  (19 Oct 2026) EUMETNET OPERA's CIRRUS maximum reflectivity composite for the
+  rest of Europe (`sky/OperaRadar`, CC BY 4.0, 1 km, every 5 minutes, about 5
+  minutes late; Austria and Italy are not in it): the cloud-optimised GeoTIFF
+  `OPERA@<yyyymmddThhmm>@0@DBZH.tiff` in the Open Radar Data bucket
+  (s3.waw3-1.cloudferro.com/openradar-24h/<y>/<m>/<d>/OPERA/COMP/, no key),
+  the newest of the last half hour found by name; its tile table (the first
+  16 kB) once per map, then only the 512-pixel tile under the place (deflate,
+  two float bands: DBZH, quality; NaN = no echo, -9.999e6 = outside every
+  radar), Lambert azimuthal equal-area on the WGS84 ellipsoid (lat 55, lon 10,
+  false easting 1,950,000, northing -2,100,000; matches the HDF5's corner
+  coordinates to half a pixel), dBZ to mm/h by Marshall-Palmer (Z = 200 R^1.6,
+  as OPERA's own rate product); then NOAA MRMS in the United States
+  (`sky/MrmsRadar`, public domain): `MRMS_PrecipRate.latest.grib2.gz` from
+  mrms.ncep.noaa.gov/2D/ (the lower 48; ALASKA/, HAWAII/, CARIB/ and GUAM/
+  for the rest; 20-400 kB, every 2 minutes, fetched again after 5), GRIB2 grid
+  template 3.0 with PNG packing (5.41, value = (R + X·2^E)/10^D; -3 = no
+  coverage), the PNG read row by row with its filters undone so only two rows
+  are unpacked; then ECCC's `RADAR_1KM_RRAI` and `RSNO` in Canada (WMS
+  GetFeatureInfo, JSON numbers); else the nearest METAR within 30 km and 75 minutes (NOAA AWC data API, a box
   round the place): precipitation when its present weather has DZ, RA, SN, SG,
   PL, GR, GS, UP or IC at the station (not VC); else the forecast. Thunder:
-  DWD's lightning density (`dwd:Blitzdichte` above 0) or the nowcast's thunder
-  symbol, else the METAR's TS or VCTS, else the forecast. The temperature is the
+  DWD's lightning density (`dwd:Blitzdichte` above 0), in the lower 48 MRMS's
+  `NLDN_CG_005min_AvgDensity` (cloud-to-ground strikes of the last 5 minutes)
+  above 0 within 12 cells (about 12 km), over Europe, Africa, the Middle East
+  and the Atlantic (within 70° of 0° N 0° E, short of the disc's edge) the
+  Meteosat Third Generation Lightning Imager (`sky/MtgLightning`): EUMETSAT
+  View's `mtg_fd:li_afa` accumulated flash area, every 5 minutes, about 20
+  minutes late; its GetFeatureInfo answers only RGB (0,0,0 even beside
+  flashes), so a 16 x 16 GetMap PNG of ±0.14° round the place is asked for and
+  any pixel with alpha is lightning within about 15 km (an empty one is 87
+  bytes); then the nowcast's thunder symbol, else the METAR's TS or VCTS, else
+  the forecast. The temperature is the
   airport's where there is one. Radar is asked every 5 minutes per 0.01° cell,
   airports every 10 per 0.1° cell. The log names the source ("MET radar 0.0
   mm/h", "KJFK -RA BR"). Checked 16 Oct 2026: Montreal rain at 0.2 mm/h by
-  radar, New York rain by KJFK, Delhi haze (dry) by VIDD. RainViewer's global
-  radar was left out (personal and educational use only); no free lightning
-  source was found for Asia or the Americas beyond the airports.
+  radar, New York rain by KJFK, Delhi haze (dry) by VIDD. Checked 19 Oct 2026:
+  OPERA rain off Cornwall (up to 3.7 mm/h), dry London, Paris, Bern, Madrid,
+  Warsaw and Vienna (Czech and Slovak radars reach it), Rome off the composite
+  (NaN: its airport decides); MRMS 1.8 mm/h at Guam, 6 mm/h with lightning at
+  a cell struck in Arizona, none 40 km away. RainViewer's global radar was
+  left out (since January 2026 limited to zoom 7, personal and educational use
+  only). GOES GLM satellite lightning (the Americas) is NetCDF-4/HDF5, too much
+  to read without a library. MTG lightning checked 19 Oct 2026: a storm in the
+  Gulf of Lion (thunder with OPERA's 2.2 mm/h), none at Paris, Nice, Yaoundé
+  or Nairobi. Austria (GeoSphere INCA) and Italy (Protezione Civile) have
+  open radar of their own, not used yet.
 - **Weather** (`realWeather`, `MetWeather`): MET Norway's locationforecast
   (worldwide) for the players' mean position (the origin when nobody is on),
   asked every 2 minutes but only fetched when the last answer's Expires has
@@ -1405,8 +1439,24 @@ server, so players need nothing:
   switched the season pack off for good in every world with landmarks (all
   26.3 test worlds). At server start a season pack that is not switched on is
   switched on with a reload once the server is idle, so such a world shows
-  the season from its next opening. The south is six months apart; within 23.5°
-  of the equator there are no seasons. `ServerLevelSeasonMixin` thaws in
+  the season from its next opening. The month's look follows the place's
+  own climate from 19 Oct 2026 (`sky/ClimateNormals`): the mean temperature and
+  precipitation of each month over 2021-2025 from Open-Meteo's archive (ERA5
+  at the place's height; one question per place, about 130 of Open-Meteo's
+  fair-use calls, asked in the background, kept in `climate-normals/` by tenth
+  of a degree; ten years at a dozen places in a row got HTTP 429). Below 0 °C
+  winter (cooling 0.3), below 3 °C winter (0.2); a dry season (grass 55% to
+  straw #C8B560, leaves 20% dusty) in a month of at least 10 °C with less
+  rain in mm than twice its temperature in °C (Walter-Lieth) where some month
+  has 60 mm; a mild winter (bare trees, no cooling) in the three coldest months
+  below 12 °C; summer (vanilla) from 16 °C and in the coldest months above 12;
+  between them early spring / spring / late spring (below 7, 12, 16 °C) on the
+  way from the coldest month to the warmest, late autumn / autumn / early
+  autumn on the way back. On the 2016-2025 climates: Oslo winter Nov-Mar,
+  autumn colour Sep-Oct; London a mild winter Dec-Feb; Rome, Los Angeles and
+  Denver dry summers; Darwin dry May-Sep, Mumbai Nov-May; Singapore and Cairo
+  none. Until the climate is kept, the latitude decides: the south six months
+  apart, no seasons within 23.5° of the equator. `ServerLevelSeasonMixin` thaws in
   spring: on Minecraft's precipitation tick, a snow layer loses a layer and
   surface ice turns to water where the biome is warm enough to rain (snow
   layers only when real snow depth is off; it takes over the snow).
@@ -1454,7 +1504,16 @@ server, so players need nothing:
   replaces both: THREDDS OPeNDAP ASCII in 32 x 32 km tiles of the UTM 33 grid
   (`x = (E + 74500) / 1000`, `y = (N - 6450500) / 1000`, cell centres; the
   file's own lat/lon arrays are half a cell off), the newest day from the time
-  axis' length, kept per day in `snow-cache/senorge/`. Checked on 16 Oct 2026:
+  axis' length, kept per day in `snow-cache/senorge/`. In the lower 48 states
+  SNODAS's snow depth (NOAA NOHRSC, public domain, via NSIDC; 19 Oct 2026)
+  does the same: the day's tar (`masked/<y>/<mm>_<Mon>/SNODAS_<ymd>.tar`,
+  3-30 MB, posted about 13:00 UTC) is walked by range requests over its
+  512-byte headers to the snow depth grid (product 1036, `.dat.gz`, 0.3-3 MB),
+  kept unpacked as `snow-cache/snodas/snodas-<ymd>.bin` (6,935 x 3,351
+  big-endian 16-bit mm, 46 MB, memory-mapped), bilinear over cells with data
+  (-9999 is water); glaciers' 32,767 mm cap is taken as 4 m. Checked 19 Oct
+  2026: 4 cm near Boulder, 0 in Denver, Yosemite Valley and Mt Washington.
+  Checked on 16 Oct 2026:
   IMS snow on Greenland, Norilsk, Jotunheimen and Monte Rosa, ice at the Pole,
   bare Oslo, Bergen and Delhi, open Baikal and Hudson Bay; seNorge 22.7 cm at
   Galdhøpiggen, 9.7 in the Tromsø mountains, 0.8 at Finse, 0 in Bergen. The column

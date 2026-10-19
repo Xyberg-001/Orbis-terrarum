@@ -77,8 +77,10 @@ public final class RealSky {
                 java.nio.file.Path packs = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.DATAPACK_DIR);
                 boolean seasons = m.cfg().realSeasons; // the world's own setting decides
                 Seasons.rememberWorldChoice(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT), m.cfg().realSeasons);
-                if (Seasons.update(packs, m.cfg().originLat, seasons)) {
-                    System.out.println("[orbis] Season now " + Seasons.seasonName(m.cfg().originLat) + ": the world shows it from the next time it is opened");
+                java.nio.file.Path data = com.berg.orbis.OrbisMod.dataDir();
+                if (Seasons.update(packs, data, m.cfg().originLat, m.cfg().originLon, seasons)) {
+                    System.out.println("[orbis] Season now " + Seasons.seasonName(data, m.cfg().originLat, m.cfg().originLon)
+                            + ": the world shows it from the next time it is opened");
                 }
                 // A season pack the world has not switched on (new, or once left out of a reload and so disabled):
                 // switch it on with a reload once the server is idle, so the world shows it from the next opening.

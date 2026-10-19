@@ -12,7 +12,9 @@ import java.util.Map;
 
 /**
  * The weather now, as measured where it can be: rain radar (MET Norway's nowcast in Norway, Sweden, Finland and Denmark;
- * DWD in Germany; Environment Canada in Canada: the precipitation rate of the last few minutes, and DWD's lightning),
+ * DWD in Germany; EUMETNET OPERA's composite for the rest of Europe; NOAA's MRMS in the United States; Environment Canada
+ * in Canada: the precipitation rate of the last few minutes; lightning from DWD, the US lightning network and, over Europe
+ * and Africa, the Meteosat Third Generation Lightning Imager),
  * the nearest airport's weather report (METAR from NOAA's Aviation Weather Center, worldwide: rain, snow, drizzle,
  * thunder), and MET Norway's forecast for the coming hour where neither answers. Radar decides whether it rains, the
  * airport whether it thunders; the forecast fills what they leave open.
@@ -34,6 +36,8 @@ public final class LiveWeather {
     private static final long RADAR_EVERY_MS = 5 * 60_000L, METAR_EVERY_MS = 10 * 60_000L;
 
     private final MetWeather forecast = new MetWeather();
+    private final OperaRadar opera = new OperaRadar();
+    private final MrmsRadar mrms = new MrmsRadar();
     private final Map<String, Object[]> cache = new HashMap<>();
     /** Nowcast cells it does not cover (it answers 422 outside the Nordic countries), not asked again. */
     private final java.util.Set<String> noNowcast = new java.util.HashSet<>();
@@ -98,9 +102,21 @@ public final class LiveWeather {
         try {
             if (lat > 54 && lat < 72 && lon > 4 && lon < 32 && !noNowcast.contains(cell)) r = nowcast(lat, lon, cell);
             if (Double.isNaN(r.rateMmH) && lat > 47 && lat < 55.1 && lon > 5.8 && lon < 15.1) r = dwd(lat, lon);
+            if (Double.isNaN(r.rateMmH) && OperaRadar.covers(lat, lon)) r = new Radar(opera.rateMmH(lat, lon), false, "OPERA radar");
+            if (Double.isNaN(r.rateMmH) && MrmsRadar.covers(lat, lon)) r = new Radar(mrms.rateMmH(lat, lon), false, "US radar");
             if (Double.isNaN(r.rateMmH) && lat > 41.5 && lat < 70 && lon > -141 && lon < -52) r = eccc(lat, lon);
         } catch (Exception e) {
             r = Radar.NONE;
+        }
+        try {
+            if (!Double.isNaN(r.rateMmH) && !r.lightning && MrmsRadar.covers(lat, lon) && mrms.lightning(lat, lon)) {
+                r = new Radar(r.rateMmH, true, r.source);
+            } else if (!r.lightning && !MrmsRadar.covers(lat, lon) && MtgLightning.covers(lat, lon) && MtgLightning.near(lat, lon)) {
+                // the satellite sees lightning where no radar reaches too (Africa, the sea): it thunders whatever the rain
+                r = new Radar(r.rateMmH, true, r.source == null ? "MTG lightning" : r.source);
+            }
+        } catch (Exception e) {
+            // no lightning map: the airport's report decides thunder
         }
         if (cache.size() > 400) cache.clear(); // players moving about: old places are not asked again
         cache.put("radar " + cell, new Object[]{System.currentTimeMillis(), r});

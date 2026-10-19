@@ -176,6 +176,7 @@ public final class DataSources {
         l.add(national("nve-lakes", "Lake depths (NVE)", "Norway", no, "NO", List.of("lake-survey-cache")));
         l.add(national("qc-gblq", "Lake depths (GBLQ)", "Canada (Quebec)", new double[]{44.9, -79.8, 63.0, -57.0}, "CA", List.of("quebec-lake-cache")));
         l.add(national("senorge", "Snow depth today (seNorge)", "Norway", no, "NO", List.of("snow-cache/senorge")));
+        l.add(national("snodas", "Snow depth today (SNODAS)", "United States", new double[]{24.95, -124.73, 52.87, -66.95}, "US", List.of("snow-cache/snodas")));
         l.add(national("nibio-sr16", "Forest types: spruce, pine, broadleaf (NIBIO SR16)", "Norway", no, "NO", List.of("forest-type-cache/sr16")));
         l.add(national("nvdb-roads", "Road widths and lanes (NVDB)", "Norway", no, "NO", List.of("nvdb-cache")));
         l.add(national("ch-swisstlm3d-tunnels", "Tunnel heights (swissTLM3D)", "Switzerland", new double[]{45.8, 5.9, 47.9, 10.6}, "CH", List.of()));

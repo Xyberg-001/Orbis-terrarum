@@ -28,8 +28,15 @@ import java.util.stream.Stream;
  * snow where it is cold enough and the snow melts again in spring. Biome colours reach the game with the world's
  * registries, so the pack is written before a world opens (and on a server before it starts): a new month shows
  * the next time the world is opened. Spruce and birch keep their own fixed colours, as they do in the game.
- * Summer is vanilla: the pack is removed. Near the equator (|latitude| below 23.5) there are no seasons; south of
- * it they are six months apart from the north's.
+ * Summer is vanilla: the pack is removed.
+ *
+ * The month's look follows the world's own climate ({@link ClimateNormals}: each month's mean temperature and
+ * precipitation there): winter where the month is near or below freezing (with the cooling that turns rain to snow),
+ * a mild winter of bare trees without snow in the coldest months elsewhere, spring and autumn by the month's warmth on
+ * the way up or down, and a dry season of straw-coloured grass in a warm month with almost no rain in a place that has
+ * a wet one (a Mediterranean summer, a savanna's winter, the months before a monsoon). Until the climate is known
+ * (it is asked for once, in the background) the latitude decides: no seasons within 23.5 degrees of the equator,
+ * and south of it they are six months apart from the north's.
  */
 public final class Seasons {
 
@@ -40,7 +47,7 @@ public final class Seasons {
 
     private static final int WINTER_GRASS = 0x8C8A5E, WINTER_LEAVES = 0x8A7148;
     /** Bumped whenever {@link #MONTHS} changes. */
-    private static final String LOOKS_VERSION = "-2";
+    private static final String LOOKS_VERSION = "-3";
     private static final Look[] MONTHS = {
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // January
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // February
@@ -54,6 +61,15 @@ public final class Seasons {
             new Look("late autumn", 0x9A8C55, 0.70, 0x9A6A3A, 0.65, 0.15),                  // November
             new Look("winter", WINTER_GRASS, 0.55, WINTER_LEAVES, 0.60, 0.30),              // December
     };
+    private static final Look WINTER = MONTHS[0];
+    private static final Look THAWING_WINTER = new Look("winter", WINTER_GRASS, 0.50, WINTER_LEAVES, 0.60, 0.20);
+    /** The coldest months above freezing: trees bare, grass a little dull, no snow. */
+    private static final Look MILD_WINTER = new Look("mild winter", WINTER_GRASS, 0.25, WINTER_LEAVES, 0.45, 0.0);
+    /** A warm month with almost no rain where another month has plenty: straw grass, dusty leaves. */
+    private static final Look DRY_SEASON = new Look("dry season", 0xC8B560, 0.55, 0x9A8C55, 0.20, 0.0);
+    /** A place with a month this wet (mm) has a wet season at all. */
+    private static final double WET_MM = 60;
+
     private static final Set<String> NOT_OVERWORLD = Set.of("nether_wastes", "soul_sand_valley", "crimson_forest", "warped_forest",
             "basalt_deltas", "the_end", "end_highlands", "end_midlands", "small_end_islands", "end_barrens", "the_void");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -61,28 +77,72 @@ public final class Seasons {
     private Seasons() {
     }
 
-    /** The month's look at a latitude today, or null for summer and the tropics (vanilla colours). */
-    private static Look lookFor(LocalDate date, double lat) {
-        if (Math.abs(lat) < 23.5) return null;
+    /** The month's look at a place today, or null for summer and the tropics' wet months (vanilla colours). */
+    private static Look lookFor(LocalDate date, double lat, ClimateNormals.Months climate) {
         int month = date.getMonthValue() - 1;
+        if (climate != null) return lookFor(climate, month);
+        if (Math.abs(lat) < 23.5) return null;
         if (lat < 0) month = (month + 6) % 12;
         return MONTHS[month];
     }
 
-    /** The season's name for a world at this latitude today ("summer" when the colours are vanilla). */
-    public static String seasonName(double lat) {
-        Look look = lookFor(LocalDate.now(ZoneOffset.UTC), lat);
-        return look == null ? (Math.abs(lat) < 23.5 ? "no seasons" : "summer") : look.name();
+    /** The look of a month (0 January) in a climate; null for vanilla colours. */
+    static Look lookFor(ClimateNormals.Months climate, int m) {
+        double[] t = climate.temperatureC(), p = climate.precipitationMm();
+        double tm = t[m];
+        int coldest = 0, warmest = 0, below = 0;
+        double wettest = 0;
+        for (int i = 0; i < 12; i++) {
+            if (t[i] < t[coldest]) coldest = i;
+            if (t[i] > t[warmest]) warmest = i;
+            if (t[i] < tm) below++;
+            wettest = Math.max(wettest, p[i]);
+        }
+        boolean coldMonth = below < 3; // one of the three coldest
+        if (tm < 0) return WINTER;
+        if (tm < 3) return THAWING_WINTER;
+        // Dry as on a climate chart (Walter and Lieth): less rain in mm than twice the temperature in C.
+        if (tm >= 10 && p[m] < 2 * tm && wettest >= WET_MM) return DRY_SEASON;
+        if (coldMonth && tm < 12) return MILD_WINTER;
+        if (tm >= 16 || coldMonth) return null;
+        boolean rising = Math.floorMod(m - coldest, 12) <= Math.floorMod(warmest - coldest, 12);
+        if (rising) return tm < 7 ? MONTHS[2] : tm < 12 ? MONTHS[3] : MONTHS[4];
+        return tm < 7 ? MONTHS[10] : tm < 12 ? MONTHS[9] : MONTHS[8];
+    }
+
+    /** The name of a look (for probes and the log): "summer" or "no seasons" for vanilla colours. */
+    static String name(ClimateNormals.Months climate, int m) {
+        Look look = lookFor(climate, m);
+        if (look != null) return look.name() + (look.cooling() > 0 ? " (cooler " + look.cooling() + ")" : "");
+        return min(climate.temperatureC()) >= 16 ? "no seasons" : "summer";
+    }
+
+    /** The season's name for a world at this place today ("summer" when the colours are vanilla). */
+    public static String seasonName(Path dataDir, double lat, double lon) {
+        ClimateNormals.Months climate = ClimateNormals.cached(dataDir, lat, lon);
+        Look look = lookFor(LocalDate.now(ZoneOffset.UTC), lat, climate);
+        if (look != null) return look.name();
+        boolean tropical = climate != null ? min(climate.temperatureC()) >= 16 : Math.abs(lat) < 23.5;
+        return tropical ? "no seasons" : "summer";
+    }
+
+    private static double min(double[] v) {
+        double m = Double.MAX_VALUE;
+        for (double d : v) m = Math.min(m, d);
+        return m;
     }
 
     /**
-     * Brings a world's season pack up to date (writes, rewrites or removes it) for the world's latitude. Returns
-     * true when the pack changed, which Minecraft picks up the next time the world is loaded.
+     * Brings a world's season pack up to date (writes, rewrites or removes it) for the world's place. Returns true
+     * when the pack changed, which Minecraft picks up the next time the world is loaded. The place's climate by month
+     * is asked for in the background when it is not kept yet; until then the latitude decides.
      */
-    public static boolean update(Path datapacksDir, double lat, boolean enabled) {
+    public static boolean update(Path datapacksDir, Path dataDir, double lat, double lon, boolean enabled) {
         Path dir = datapacksDir.resolve(PACK_NAME);
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        Look look = enabled ? lookFor(today, lat) : null;
+        ClimateNormals.Months climate = ClimateNormals.cached(dataDir, lat, lon);
+        if (climate == null && enabled) ClimateNormals.prepare(dataDir, lat, lon);
+        Look look = enabled ? lookFor(today, lat, climate) : null;
         try {
             if (look == null) {
                 if (!Files.exists(dir)) return false;
@@ -90,7 +150,8 @@ public final class Seasons {
                 return true;
             }
             // The looks' version is part of the key, so a change to them reaches packs written before it.
-            String key = today.getMonthValue() + (lat < 0 ? "S" : "N") + LOOKS_VERSION;
+            String key = today.getMonthValue() + (climate != null ? "C" : lat < 0 ? "S" : "N") + "-" + look.name().replace(' ', '_')
+                    + "-" + Math.round(look.cooling() * 100) + LOOKS_VERSION;
             if (WorldHeight.isCurrent(dir) && key.equals(packKey(dir))) return false;
             write(dir, look, key);
             return true;
@@ -177,9 +238,18 @@ public final class Seasons {
 
     /** The latitude a world was made for, from the spawn file the mod writes into it; NaN when there is none yet. */
     public static double worldLatitude(Path levelDir) {
+        return worldPlace(levelDir, "lat");
+    }
+
+    /** The longitude a world was made for (as {@link #worldLatitude}). */
+    public static double worldLongitude(Path levelDir) {
+        return worldPlace(levelDir, "lon");
+    }
+
+    private static double worldPlace(Path levelDir, String field) {
         try {
             JsonObject spawn = JsonParser.parseString(Files.readString(levelDir.resolve("orbis-spawn.json"), StandardCharsets.UTF_8)).getAsJsonObject();
-            return spawn.get("lat").getAsDouble();
+            return spawn.get(field).getAsDouble();
         } catch (IOException | RuntimeException e) {
             return Double.NaN;
         }

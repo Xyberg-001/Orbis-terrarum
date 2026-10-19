@@ -13,6 +13,10 @@ Orbis Terrarum builds the world from open data, downloaded as you play and kept 
 - **Building registers:** BD TOPO © IGN (Licence Ouverte), 3DBAG (CC BY 4.0), © GURS (CC BY 4.0), © Stadt Wien (CC BY 4.0), NYC Open Data.
 - **Lidar building heights:** © swisstopo (swissSURFACE3D), NRCan HRDEM (Open Government Licence – Canada), AHN (CC0), © IGN (Licence Ouverte), © Geobasis NRW (dl-de/zero-2.0), © Maa- ja Ruumiamet (CC BY 4.0), © ČÚZK (CC BY 4.0), DOGAMI (Oregon), KyFromAbove (Kentucky), DC GIS (CC BY 4.0), GeoNB (New Brunswick, OGL-NB).
 - **Rock types elsewhere:** Macrostrat (macrostrat.org) and its source maps, CC BY 4.0.
-- **Weather:** Norwegian Meteorological Institute (MET Norway), CC BY 4.0.
-- **Time zone and snow depth:** Open-Meteo (open-meteo.com), CC BY 4.0.
+- **Weather:** Norwegian Meteorological Institute (MET Norway), CC BY 4.0; Deutscher Wetterdienst (CC BY 4.0); EUMETNET OPERA radar composite (CC BY 4.0); EUMETSAT MTG Lightning Imager (via EUMETSAT View); Environment and Climate Change Canada (Open Government Licence – Canada); NOAA MRMS radar and lightning, NOAA Aviation Weather Center airport reports (public domain).
+- **Snow and ice today:** NOAA IMS and NOAA NOHRSC SNODAS via NSIDC (public domain); seNorge © MET Norway / NVE (NLOD).
+- **Time zone, snow depth and climate by month:** Open-Meteo (open-meteo.com, with ERA5 from Copernicus/ECMWF), CC BY 4.0.
+- **Climate:** Köppen-Geiger classes 1991-2020, Beck et al. 2023 (CC BY 4.0); CHELSA v2.1 climatologies, Karger et al. (CC0).
+- **Glaciers:** RGI 7.0 outlines via GLIMS (CC BY 4.0); GlaThiDa 3.1.0 measured thickness, World Glacier Monitoring Service (CC BY 4.0, doi:10.5904/wgms-glathida-2020-10).
+- **Switzerland's tunnel heights:** swissTLM3D © swisstopo (free geodata).
 - **Optional data you import yourself:** GLOBathy lake depths (CC0) with HydroLAKES (HydroSHEDS, CC BY 4.0); German LoD2 buildings (Geobasis NRW, dl-de/zero-2.0; Bayerische Vermessungsverwaltung, CC BY 4.0); Meta/WRI canopy height (CC BY 4.0); GlobalBuildingAtlas building heights (TUM, CC BY-NC 4.0); Overture Places.
