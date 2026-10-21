@@ -26,6 +26,47 @@ public final class DataSources {
 
     public enum Kind { BUILT_IN, NATIONAL, IMPORTED }
 
+    /** What a national source makes better: buildings, aerial photos (roof and ground colours), roads, or nature. */
+    public enum Topic { BUILDINGS, PHOTOS, ROADS, NATURE }
+
+    /**
+     * What a national source improves: lidar surface models and building registers give buildings their real heights;
+     * aerial photos; road registers; the rest (lakes, rock, snow, forest) is nature.
+     */
+    public static Topic topic(Source s, OrbisConfig c) {
+        if (isLidar(s, c)) return Topic.BUILDINGS;
+        for (OrbisConfig.BuildingSource b : c.buildingSources) if (b != null && s.id().equals(b.name)) return Topic.BUILDINGS;
+        for (OrbisConfig.ImagerySource i : c.imagerySources) if (i != null && s.id().equals(i.name)) return Topic.PHOTOS;
+        for (OrbisConfig.RoadSource r : c.roadSources) if (r != null && s.id().equals(r.name)) return Topic.ROADS;
+        if ("nvdb-roads".equals(s.id()) || "ch-swisstlm3d-tunnels".equals(s.id())) return Topic.ROADS;
+        return Topic.NATURE;
+    }
+
+    /** Whether a source is a lidar surface model (building and tree tops). */
+    public static boolean isLidar(Source s, OrbisConfig c) {
+        for (OrbisConfig.ElevationSource e : c.surfaceModelSources) if (e != null && s.id().equals(e.name)) return true;
+        return false;
+    }
+
+    /** Who a source is from: the last bracket of its label ("Road widths and lanes (NVDB)": NVDB), else its id. */
+    public static String provider(Source s) {
+        String l = s.label();
+        int open = l.lastIndexOf('('), close = l.lastIndexOf(')');
+        return open >= 0 && close > open ? l.substring(open + 1, close) : s.id();
+    }
+
+    /** What a source is, without who it is from ("Forest types: spruce, pine, broadleaf (NIBIO SR16)": forest types). */
+    public static String subject(Source s) {
+        String l = s.label();
+        int cut = l.length();
+        for (char ch : new char[]{'(', ':'}) {
+            int i = l.indexOf(ch);
+            if (i > 0) cut = Math.min(cut, i);
+        }
+        l = l.substring(0, cut).trim();
+        return l.isEmpty() ? s.id() : Character.toLowerCase(l.charAt(0)) + l.substring(1);
+    }
+
     /**
      * One source. {@code folders} are relative to the data folder; with a {@code prefix} only the files directly in
      * the (single) folder whose names start with it are the source's ("" for every file directly in it, none of its
@@ -114,6 +155,12 @@ public final class DataSources {
         l.add(world("overpass", "OpenStreetMap downloads (Overpass)", List.of("osm-cache"), null));
         l.add(world("worldcover", "Land cover (ESA WorldCover)", List.of("worldcover-cache"), null));
         l.add(world("macrostrat", "Rock types (Macrostrat)", List.of("geology-macrostrat-cache"), null));
+        l.add(world("soilgrids", "Soil types (SoilGrids)", List.of("soil-cache"), null));
+        l.add(world("soil-depth", "Soil depth to bedrock (SoilGrids 2017)", List.of("soil-depth-cache"), null));
+        l.add(world("rgi-glaciers", "Glacier outlines (RGI 7), measured thickness (GlaThiDa)", List.of("glacier-cache"), null));
+        l.add(world("forest-types", "Forest types (CLC+, Copernicus)", List.of("forest-type-cache"), null));
+        l.add(world("overture-buildings", "Buildings OSM lacks (Overture)", List.of("overture-cache"), null));
+        l.add(world("ims-snow", "Snow and ice seen today (NOAA IMS)", List.of("snow-cache/observed"), null));
         l.add(world("map-backgrounds", "Map and preview backgrounds", List.of("map-tile-cache", "preview", "outline-cache"), null));
         // ---- photos (worldwide or national, as configured)
         for (OrbisConfig.ImagerySource s : c.imagerySources) {
@@ -127,7 +174,13 @@ public final class DataSources {
         double[] no = {57.8, 4.0, 71.4, 31.5};
         l.add(national("ngu-bedrock", "Rock types (NGU)", "Norway", no, "NO", List.of("geology-cache")));
         l.add(national("nve-lakes", "Lake depths (NVE)", "Norway", no, "NO", List.of("lake-survey-cache")));
+        l.add(national("qc-gblq", "Lake depths (GBLQ)", "Canada (Quebec)", new double[]{44.9, -79.8, 63.0, -57.0}, "CA", List.of("quebec-lake-cache")));
+        l.add(national("senorge", "Snow depth today (seNorge)", "Norway", no, "NO", List.of("snow-cache/senorge")));
+        l.add(national("at-snowgrid", "Snow depth today (SNOWGRID)", "Austria", new double[]{46.16, 9.39, 49.18, 17.38}, "AT", List.of("snow-cache/snowgrid")));
+        l.add(national("snodas", "Snow depth today (SNODAS)", "United States", new double[]{24.95, -124.73, 52.87, -66.95}, "US", List.of("snow-cache/snodas")));
+        l.add(national("nibio-sr16", "Forest types: spruce, pine, broadleaf (NIBIO SR16)", "Norway", no, "NO", List.of("forest-type-cache/sr16")));
         l.add(national("nvdb-roads", "Road widths and lanes (NVDB)", "Norway", no, "NO", List.of("nvdb-cache")));
+        l.add(national("ch-swisstlm3d-tunnels", "Tunnel heights (swissTLM3D)", "Switzerland", new double[]{45.8, 5.9, 47.9, 10.6}, "CH", List.of()));
         // ---- lidar building heights (each where it covers; Kartverket's with its switch in the Advanced tab)
         for (OrbisConfig.ElevationSource es : c.surfaceModelSources) addLidar(l, es, "dsm-cache");
         // ---- building databases (heights and floors)
@@ -197,6 +250,19 @@ public final class DataSources {
         Source s = sources(c).get(id);
         double m = 0.02;
         return s == null || s.overlaps(south - m, west - m, north + m, east + m);
+    }
+
+    /**
+     * What a source covers, as rings of lat, lon pairs, each with its box (south, west, north, east) first: its country's
+     * or state's outline, else its box as a rectangle.
+     */
+    public static List<double[]> outline(Source s) {
+        if (s.area() != null) {
+            List<double[]> rings = Outlines.load().get(s.area());
+            if (rings != null) return rings;
+        }
+        return List.of(new double[]{s.south(), s.west(), s.north(), s.east(),
+                s.south(), s.west(), s.north(), s.west(), s.north(), s.east(), s.south(), s.east()});
     }
 
     /** The outline keys starting with a prefix ("US-": the states) that touch the box. */

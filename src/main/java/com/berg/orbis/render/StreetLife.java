@@ -95,7 +95,7 @@ public final class StreetLife {
     /** Feet Y on open ground (not road, building or water; solid block with two clear blocks above), or MIN_VALUE. */
     private static int standY(WorldGenLevel level, BlockPos.MutableBlockPos pos, RegionRaster r, int idx, int x, int z, OrbisConfig cfg) {
         if (r.road[idx] != 0 || r.building[idx] != 0 || r.water[idx] != 0 || (r.hasCoastline && r.isSea(idx))) return Integer.MIN_VALUE;
-        int surface = level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
+        int surface = Decorator.groundY(level, x, z);
         if (surface <= cfg.minY || surface + 3 >= cfg.maxY()) return Integer.MIN_VALUE;
         if (!level.getBlockState(pos.set(x, surface, z)).isSolid()) return Integer.MIN_VALUE;
         BlockState a = level.getBlockState(pos.set(x, surface + 1, z));

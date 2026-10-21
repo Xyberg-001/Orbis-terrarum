@@ -93,6 +93,12 @@ public abstract class ChunkMapMixin {
         }
     }
 
+    /** A chunk generated in place of one the hard limit left empty leaves the empty list once it is saved. */
+    @Inject(method = "save(Lnet/minecraft/world/level/chunk/ChunkAccess;)Z", at = @At("RETURN"))
+    private void orbis$savedRegenerated(ChunkAccess chunk, CallbackInfoReturnable<Boolean> cir) {
+        if (cir.getReturnValueZ() && level.dimension() == Level.OVERWORLD) HardLimit.saved(chunk.getPos().x(), chunk.getPos().z());
+    }
+
     @Inject(method = "scheduleChunkLoad", at = @At("HEAD"), cancellable = true)
     private void orbis$takeFastBuilt(ChunkPos pos, CallbackInfoReturnable<CompletableFuture<ChunkAccess>> cir) {
         ProtoChunk built = FastPregen.claim(level, pos);

@@ -79,20 +79,51 @@ public final class Materials {
         };
     }
 
+    /**
+     * Whether a building matched by colour alone may come out in wood: a house, cabin, barn or shed of up to three storeys.
+     * The Empire State Building's beige came out as pale oak planks.
+     */
+    static boolean woodPlausible(String type, int levels) {
+        if (levels > 3) return false;
+        return switch (type) {
+            case "yes", "house", "detached", "semidetached_house", "terrace", "bungalow", "cabin", "hut", "shed", "barn", "farm",
+                 "farm_auxiliary", "stable", "cowshed", "sty", "boathouse", "garage", "garages", "carport", "residential", "allotment_house",
+                 "chalet", "summer_house", "kiosk", "roof", "shelter", "pavilion" -> true;
+            default -> false;
+        };
+    }
+
+    /** Whether a building is of stone or brick by its material, or by what it is (historic, religious, a monument). */
+    static boolean masonry(Map<String, String> tags, String type, String material) {
+        if (material != null) {
+            return material.contains("stone") || material.contains("brick") || material.contains("marble") || material.contains("granite")
+                    || material.contains("concrete") || material.contains("plaster") || material.contains("masonry") || material.contains("tuff")
+                    || material.contains("basalt") || material.contains("adobe") || material.contains("clay");
+        }
+        if (tags.containsKey("historic") || "monument".equals(tags.get("man_made"))) return true;
+        return switch (type) {
+            case "church", "cathedral", "chapel", "mosque", "temple", "synagogue", "shrine", "religious", "monastery", "castle", "fort",
+                 "palace", "amphitheatre", "triumphal_arch", "monument", "tomb", "mausoleum", "gurdwara", "pagoda", "wall", "city_wall" -> true;
+            default -> false;
+        };
+    }
+
     public static BuildingMaterials building(Map<String, String> tags, String type, long id, int levels, Style style,
                                              RoofShape shape, boolean domed) {
         long h = mix(id);
         boolean glassCurtain = false;
 
         BlockState wall = null;
-        String colourRaw = firstTag(tags, "building:colour", "building:color", "colour", "color");
+        String colourRaw = firstTag(tags, "building:colour", "building:color", "building:facade:colour", "building:facade:color", "colour", "color");
         // Mappers sometimes put a material word in the colour field ("brick", "slate", "wood").
         if (colourRaw != null) wall = wallForMaterial(lower(colourRaw), h);
         Integer colour = wall == null ? BlockPalette.parseColour(colourRaw) : null;
-        if (colour != null) {
-            wall = BlockPalette.nearestWall(colour);
-        }
         String material = lower(firstTag(tags, "building:material", "material", "building:facade:material", "building:cladding"));
+        if (colour != null) {
+            // Masonry in its colour where the building is of stone or brick, or is a monument, temple, church or the like
+            // that is: the Colosseum's sand colour came out as birch wood.
+            wall = masonry(tags, type, material) || !woodPlausible(type, levels) ? BlockPalette.nearestMasonryWall(colour) : BlockPalette.nearestWall(colour);
+        }
         if (wall == null && material != null) {
             wall = wallForMaterial(material, h);
             if ("glass".equals(material) || "mirror".equals(material)) glassCurtain = true;
@@ -113,8 +144,19 @@ public final class Materials {
         }
         if (roof == null && roofColourRaw != null) roof = roofForMaterial(lower(roofColourRaw), h);
         Integer roofColour = roof == null ? BlockPalette.parseColour(roofColourRaw) : null;
-        if (roofColour != null) roof = BlockPalette.nearestRoof(roofColour);
+        if (roofColour != null) {
+            boolean stoneRoof = roofMaterial != null
+                    ? !(roofMaterial.contains("wood") || roofMaterial.contains("shingle") || roofMaterial.contains("thatch") || roofMaterial.contains("metal")
+                    || roofMaterial.contains("copper") || roofMaterial.contains("steel") || roofMaterial.contains("zinc") || roofMaterial.contains("tin")
+                    || roofMaterial.contains("glass") || roofMaterial.contains("gold"))
+                    : masonry(tags, type, material) || !woodPlausible(type, levels);
+            roof = stoneRoof ? BlockPalette.nearestMasonryRoof(roofColour) : BlockPalette.nearestRoof(roofColour);
+        }
         if (roof == null && roofMaterial != null) roof = roofForMaterial(roofMaterial, h);
+        // A dome mapped as such (building:part=dome, building=dome, man_made=dome) with only a building colour is that colour
+        // all over: its surface is its roof (the Sheikh Zayed Mosque's white domes came out green copper).
+        if (roof == null && domed && colour != null && ("dome".equals(tags.get("building:part")) || "dome".equals(tags.get("building"))
+                || "dome".equals(tags.get("man_made")))) roof = wall;
         if (roof == null) roof = defaultRoof(type, shape, style, domed, h >>> 8);
 
         if ("greenhouse".equals(type)) {
@@ -411,9 +453,19 @@ public final class Materials {
         return halfB > 12 ? RoofShape.FLAT : (r < 50 ? RoofShape.GABLED : r < 70 ? RoofShape.HIPPED : RoofShape.FLAT);
     }
 
-    public static int roofHeightBlocks(Map<String, String> tags, RoofShape shape, double halfA, double halfB, int storeyBlocks) {
+    public static int roofHeightBlocks(Map<String, String> tags, RoofShape shape, double halfA, double halfB, int storeyBlocks,
+                                       java.util.function.DoubleUnaryOperator metresToBlocks) {
         double explicit = OsmTags.parseLength(tags.get("roof:height"), Double.NaN);
-        if (!Double.isNaN(explicit) && explicit > 0) return (int) Math.max(1, Math.round(explicit));
+        // In blocks as the walls are (as metres, at 4 m a block a roof tagged 8 m stood 8 blocks on a house 3 blocks tall), and no
+        // taller than a 60 m roof (a mistyped tag) unless the building's own height holds it: the Great Pyramid is a pyramid
+        // roof 138 m high on a 138.8 m building, and stood as a 79-block box under a 60-block pyramid (at most 250 m, what a
+        // column's roof can hold).
+        if (!Double.isNaN(explicit) && explicit > 0) {
+            double height = OsmTags.parseLength(tags.get("height"), Double.NaN);
+            if (Double.isNaN(height)) height = OsmTags.parseLength(tags.get("building:height"), Double.NaN);
+            double cap = !Double.isNaN(height) && explicit <= height ? 250.0 : 60.0;
+            return (int) Math.max(1, Math.round(metresToBlocks.applyAsDouble(Math.min(explicit, cap))));
+        }
         int roofLevels = OsmTags.parseInt(tags.get("roof:levels"), -1);
         if (roofLevels > 0 && shape != RoofShape.FLAT) return Math.max(1, roofLevels * storeyBlocks);
         double b = Math.max(1.0, halfB);

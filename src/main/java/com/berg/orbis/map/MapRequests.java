@@ -42,6 +42,8 @@ public final class MapRequests {
     /** The map data download started from a map: its last progress line and fraction (-1: unknown), for every World window. */
     private static volatile String mapDataLine = "";
     private static volatile float mapDataFraction = -1;
+    /** The server whose world map started the running map data download (null: none, or started elsewhere). */
+    private static volatile MinecraftServer mapDataServer;
 
     private MapRequests() {}
 
@@ -49,6 +51,14 @@ public final class MapRequests {
         PayloadTypeRegistry.serverboundPlay().register(MapRequestPayload.TYPE, MapRequestPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(MapAnswerPayload.TYPE, MapAnswerPayload.CODEC);
         ServerPlayNetworking.registerGlobalReceiver(MapRequestPayload.TYPE, (payload, ctx) -> ctx.server().execute(() -> handle(ctx.player(), payload)));
+        // A download started from this world's map stops with it (it carries on from where it was next time): it ran on into the
+        // next world, which could not start its own, and its World window showed the old one's progress.
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            if (mapDataServer == server) {
+                MapDataJob.stop();
+                mapDataServer = null;
+            }
+        });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             lastHere.clear();
             mapDataLine = "";
@@ -126,11 +136,31 @@ public final class MapRequests {
                     ? " A cubic world reaches less far than a normal one; a world made at a smaller scale (more metres a block) holds more of the Earth."
                     : ""));
         }
+        String done = String.format(Locale.ROOT, "Teleported to %.5f, %.5f (block %d, %d).", lat, lon, x, z);
         int surfaceY = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        if (surfaceY <= model.cfg().minY + 1) surfaceY = Math.max(model.terrainHeight(x, z), model.cfg().waterLevelY()) + 1;
-        player.teleportTo(level, x + 0.5, surfaceY + 1, z + 0.5, java.util.Set.of(), player.getYRot(), player.getXRot(), true);
-        return Component.literal(String.format(Locale.ROOT, "Teleported to %.5f, %.5f (block %d, %d).", lat, lon, x, z));
+        if (surfaceY > model.cfg().minY + 1) {
+            player.teleportTo(level, x + 0.5, surfaceY + 1, z + 0.5, java.util.Set.of(), player.getYRot(), player.getXRot(), true);
+            return Component.literal(done);
+        }
+        // Not loaded: the real elevation, which can need terrain tiles downloaded first, so it is worked out off the server thread
+        // (on it, a place far away stopped the server for tens of seconds, and a dedicated server's watchdog ends it after 60).
+        MinecraftServer server = level.getServer();
+        CompletableFuture.supplyAsync(() -> Math.max(model.terrainHeight(x, z), model.cfg().waterLevelY()) + 1, LOOKUPS)
+                .whenComplete((y, error) -> server.execute(() -> {
+                    if (player.isRemoved() || model != OrbisMod.model()) return; // left, or the world changed meanwhile
+                    if (error != null) {
+                        say(player, Component.literal("Could not find the ground there: " + error.getMessage()));
+                        return;
+                    }
+                    player.teleportTo(level, x + 0.5, y + 1, z + 0.5, java.util.Set.of(), player.getYRot(), player.getXRot(), true);
+                    say(player, Component.literal(done));
+                    answer(player, "about", "", about(server, player));
+                }));
+        return Component.literal(String.format(Locale.ROOT, "Finding the ground at %.5f, %.5f...", lat, lon));
     }
+
+    /** Look-ups that may download terrain tiles (What's here, the ground for a teleport). */
+    private static final java.util.concurrent.ExecutorService LOOKUPS = com.berg.orbis.net.Lookups.POOL;
 
     // ------------------------------------------------------------------ what's here
 
@@ -142,8 +172,13 @@ public final class MapRequests {
         WorldModel model = OrbisMod.model();
         MinecraftServer server = player.level().getServer();
         int[] b = model.mapper().toBlock(req.lat(), req.lon());
+        // Only inside the world: anywhere else on Earth, any player could make the server download terrain for it.
+        if (!server.overworld().getWorldBorder().isWithinBounds(b[0], b[1])) {
+            answer(player, "here", req.arg(), List.of("Place\tbeyond the world border"));
+            return;
+        }
         // Off the server thread: a place far away can need terrain tiles fetched first.
-        CompletableFuture.supplyAsync(() -> SpotInfo.describe(model, b[0], b[1], false), net.minecraft.util.Util.backgroundExecutor())
+        CompletableFuture.supplyAsync(() -> SpotInfo.describe(model, b[0], b[1], false), LOOKUPS)
                 .whenComplete((lines, error) -> server.execute(() -> answer(player, "here", req.arg(),
                         error != null ? List.of("Error\t" + error.getMessage()) : lines)));
     }
@@ -235,9 +270,11 @@ public final class MapRequests {
             server.execute(() -> tell(server, who, String.format(Locale.ROOT,
                     "Downloading map data for %s (%s); %s. The world uses the online servers until it is ready.",
                     chosen.region().name(), chosen.sizeText(), kept)));
-            MapDataJob.start(data, plan, OrbisMod.config().keepDownloadedMapFiles, new MapDataJob.Listener() {
+            mapDataServer = server;
+            boolean started = MapDataJob.start(data, plan, OrbisMod.config().keepDownloadedMapFiles, new MapDataJob.Listener() {
                 @Override
                 public void progress(String line, float fraction) {
+                    if (!server.isRunning()) return;
                     mapDataLine = line;
                     mapDataFraction = fraction;
                 }
@@ -245,6 +282,8 @@ public final class MapRequests {
                 @Override
                 public void finished(String message, boolean ok) {
                     System.out.println("[orbis] " + message);
+                    if (mapDataServer == server) mapDataServer = null;
+                    if (!server.isRunning()) return;
                     mapDataLine = "";
                     mapDataFraction = -1;
                     server.execute(() -> {
@@ -253,6 +292,7 @@ public final class MapRequests {
                     });
                 }
             });
+            if (!started && mapDataServer == server) mapDataServer = null; // another download runs (not this world's to stop)
         }, "Orbis-map-data-plan");
         t.setDaemon(true);
         t.start();
@@ -356,9 +396,11 @@ public final class MapRequests {
             // The region file stays after the import: a download queued behind this one in the same region reads it instead of
             // fetching it again. It goes with the shared ones when no download is left (or stays with keepDownloadedMapFiles).
             if (!OrbisMod.config().keepDownloadedMapFiles) noteShared(data.resolve("extracts-src").resolve(plan.region().id() + "-latest.osm.pbf"));
+            mapDataServer = server;
             boolean started = MapDataJob.start(data, plan, true, new MapDataJob.Listener() {
                 @Override
                 public void progress(String line, float fraction) {
+                    if (!server.isRunning()) return;
                     mapDataLine = line;
                     mapDataFraction = fraction;
                     com.berg.orbis.worldgen.PregenTasks.mapDataProgress(id, ticket, fraction);
@@ -367,6 +409,8 @@ public final class MapRequests {
                 @Override
                 public void finished(String message, boolean ok) {
                     System.out.println("[orbis] " + message);
+                    if (mapDataServer == server) mapDataServer = null;
+                    if (!server.isRunning()) return;
                     mapDataLine = "";
                     mapDataFraction = -1;
                     server.execute(() -> {
@@ -376,7 +420,10 @@ public final class MapRequests {
                     });
                 }
             });
-            if (!started) server.execute(() -> com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, false));
+            if (!started) {
+                if (mapDataServer == server) mapDataServer = null; // another download runs (not this world's to stop)
+                server.execute(() -> com.berg.orbis.worldgen.PregenTasks.mapDataDone(id, ticket, false));
+            }
         }, "Orbis-map-data-plan");
         t.setDaemon(true);
         t.start();

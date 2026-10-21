@@ -40,7 +40,12 @@ public final class WorldCoverProvider {
             SNOW_ICE = 70, WATER = 80, WETLAND = 90, MANGROVES = 95, MOSS_LICHEN = 100;
 
     private static final int GRANULE_DEGREES = 3;
-    private static final int HEADER_BYTES = 512 * 1024;
+    /**
+     * The first read of a granule. ESA's files hold everything needed (the full-size image's tags and both tile tables)
+     * in their first 24 KB; tables beyond the read are fetched on their own (parseHeader). 512 KB until 17 Oct 2026:
+     * 21 times more than needed, up to 70 s at the 7-160 KB/s the server gave the user's connection that night.
+     */
+    private static final int HEADER_BYTES = 32 * 1024;
     private static final int MEMORY_TILES = 96;
     private static final Duration FAILURE_BACKOFF = Duration.ofMinutes(5);
 
@@ -70,16 +75,24 @@ public final class WorldCoverProvider {
         if (Double.isNaN(lat) || Double.isNaN(lon) || lat < -60 || lat > 84) return 0; // the product's extent
         int glat = Math.floorDiv((int) Math.floor(lat), GRANULE_DEGREES) * GRANULE_DEGREES;
         int glon = Math.floorDiv((int) Math.floor(lon), GRANULE_DEGREES) * GRANULE_DEGREES;
-        String name = granuleName(glat, glon);
-        Instant failed = failures.get(name);
-        if (failed != null && Duration.between(failed, Instant.now()).compareTo(FAILURE_BACKOFF) < 0) return 0;
+        // A region asks for every block, and a granule is 3 degrees: the last one found answers almost every time
+        // (formatting its name and looking it up for each of a region's 330,000 cells took 1-2 s of a region's build).
+        LastGranule last = this.last;
         Granule g;
-        try {
-            g = granules.computeIfAbsent(name, n -> loadGranule(n));
-        } catch (RuntimeException e) {
-            failures.put(name, Instant.now());
-            System.err.println("[orbis] WorldCover granule " + name + " unavailable: " + e.getMessage() + " -- land cover comes from OSM alone for 5 minutes");
-            return 0;
+        if (last != null && last.glat == glat && last.glon == glon) {
+            g = last.granule;
+        } else {
+            String name = granuleName(glat, glon);
+            Instant failed = failures.get(name);
+            if (failed != null && Duration.between(failed, Instant.now()).compareTo(FAILURE_BACKOFF) < 0) return 0;
+            try {
+                g = granules.computeIfAbsent(name, n -> loadGranule(n));
+            } catch (RuntimeException e) {
+                failures.put(name, Instant.now());
+                System.err.println("[orbis] WorldCover granule " + name + " unavailable: " + e.getMessage() + " -- land cover comes from OSM alone for 5 minutes");
+                return 0;
+            }
+            this.last = new LastGranule(glat, glon, g);
         }
         if (g == Granule.MISSING) return 0;
         double pixel = (double) GRANULE_DEGREES / g.width;
@@ -92,13 +105,19 @@ public final class WorldCoverProvider {
         try {
             tile = tile(g, index);
         } catch (RuntimeException e) {
-            failures.put(name, Instant.now());
-            System.err.println("[orbis] WorldCover tile " + name + "/" + index + " unavailable: " + e.getMessage());
+            failures.put(g.name, Instant.now());
+            this.last = null; // the back-off above applies again
+            System.err.println("[orbis] WorldCover tile " + g.name + "/" + index + " unavailable: " + e.getMessage());
             return 0;
         }
         if (tile == null) return 0;
         return tile[(row - ty * g.tileH) * g.tileW + (col - tx * g.tileW)] & 0xFF;
     }
+
+    /** The granule asked for last (shared by the threads; replaced as a whole). */
+    private record LastGranule(int glat, int glon, Granule granule) {}
+
+    private volatile LastGranule last;
 
     static String granuleName(int glat, int glon) {
         return String.format(Locale.ROOT, "%s%02d%s%03d", glat < 0 ? "S" : "N", Math.abs(glat), glon < 0 ? "W" : "E", Math.abs(glon));
@@ -305,7 +324,7 @@ public final class WorldCoverProvider {
                 } else {
                     raw = fetchRange(urlTemplate.replace("{tile}", g.name), g.offsets[index], g.counts[index]);
                     if (raw == null) return null;
-                    Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                    Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
                     Files.write(tmp, raw);
                     Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }

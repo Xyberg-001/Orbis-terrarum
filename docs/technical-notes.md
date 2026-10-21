@@ -13,7 +13,7 @@ at Y -1700, so a column's Y is roughly `elevation - 1700` (see "Vertical
 mapping" for what happens above 1500 m).
 
 
-> **Versions.** 2.0.0 (13 October 2026) is the first full release, a complete overhaul of the 1.0.0 beta; it was published as 1.1.0 for two days (11 to 13 October) and replaced a first 1.1.0 build of 3 October that was only on GitHub. Where these notes say "before 2.0.0", worlds made with those 1.1.0 builds of 3 October count as before.
+> **Versions.** 2.0.0 is the first full release, a complete overhaul of the 1.0.0 beta. It was published as 1.1.0 for two days (11 to 13 October 2026), replacing a first 1.1.0 build of 3 October that was only on GitHub, then as a first 2.0.0 build of 13 October; while Modrinth was still reviewing it, the work of 13 to 21 October went into 2.0.0 itself (21 October). Where these notes say "before 2.0.0" or "new worlds from 2.0.0", worlds made with the 1.1.0 builds and with the first 2.0.0 build of 13 October count as before.
 
 ## Installing
 
@@ -641,7 +641,11 @@ Kartverket's surface model (building heights) stays.
 - **Materials**: `building:material` / `roof:material` (brick, stone,
   concrete, wood, plaster, glass, metal, slate, roof_tiles, copper, thatch,
   tar_paper, …) map to matching blocks; material words in the colour field
-  are handled too.
+  are handled too. A stone, brick or historic building (its material, a
+  `historic` tag, or a church, mosque, temple, castle, monument and the like)
+  is matched among masonry blocks only, its roof colour too unless the roof
+  is metal or wood: the Colosseum's sand colour came out as birch wood and
+  Brunelleschi's terracotta dome as jungle planks.
 - **Defaults** when nothing is tagged: chosen per building type
   (house / apartments / office / industrial / church / mosque / barn / …)
   with a regional style from latitude (Nordic: white, falu-red, ochre wood
@@ -651,7 +655,52 @@ Kartverket's surface model (building heights) stays.
   pyramidal, skillion, gambrel, mansard, round, dome, onion, cone; ridge
   along the footprint's longest edge; hipped/pyramidal use true distance
   to the outline so L-shapes work; `roof:height` / `roof:levels` honoured.
-  Mosques and `dome=yes` get domes; mosques get four corner minarets.
+  Mosques, gurdwaras, `dome=yes`, `building=dome`, `building:part=dome` and
+  `man_made=dome` get domes; mosques get four corner minarets. A dome only
+  guessed (no `roof:shape`, no dome tag) is left out over a footprint more
+  than 32 m across (a great mosque's whole roof, which stood as 2 blocks of
+  wall under one flattened dome), and corner minarets over one more than
+  60 m across or where the mosque's real minarets are mapped beside it.
+- **3D-mapped buildings (parts)**: as the 3D building scheme has it, a part
+  without `roof:shape` is flat, and an outline that has parts is drawn by its
+  parts: no dome or minarets are guessed for it, its roof is flat where parts
+  leave gaps, and the gaps are left open when the parts cover at least half of
+  it (the space between the Eiffel Tower's legs and platforms, which its 330 m
+  outline filled as one block 120 m wide). Parts are matched to the smallest
+  outline holding their middle, outside its holes (the Kaaba's parts lie in
+  the courtyard hole of the Great Mosque's outline). Parts mapped one above
+  another on the same ground (a tower in tiers, a spire on its tower, the
+  Kaaba's walls, gold band and roof) are kept in a column together, each in
+  its own height band (`RegionRaster.stacked`); before, one part per column
+  won and the Kaaba stood as black ribs of different heights with gold blocks
+  floating. A thin part (a 0.4 m roof slab) is one block at its height instead
+  of a wall from the ground. Every part stands on its building's ground (the
+  outline's base: heights count from it), not on the lowest point under its
+  own footprint: in the Great Mosque of Mecca, in a valley, a minaret's 36 m
+  began 7 blocks above the roof it stands on and galleries and domes hung
+  over their halls. A part with no height of its own (the storey guess) under
+  a part standing higher reaches up to it. Two parts starting at the same
+  height are one or the other (the newer wins: a tower drawn inside a lower
+  block); a part starting higher stands on the lower one even where their
+  mapped heights overlap a little (Hagia Sophia's domes start at 23 m on a
+  hall mapped to 25 m); a part wholly inside another's band adds nothing.
+  Where a part over its own outline has nothing mapped under it, the outline
+  stays below it up to where the part begins (St Peter's drum from 54 m,
+  Hagia Sophia's domes from 23 m: the church's inside is left to the outline),
+  except under a tower, an arch, a bridge or a roof, where the space is open
+  (the Eiffel Tower's arches). A building (not a part) starting above the
+  ground over another one stands on it, on its ground (hotel towers over
+  their podium in Mecca). Measured on 21 3D-mapped landmarks: columns whose
+  lowest building starts in the air fell from 8,831 to 1,241 at St Peter's,
+  2,966 to 193 at Hagia Sophia, 3,180 to 44 at the Empire State Building; what
+  remains is meant to be raised (canopies on posts, bridge decks, the Arc de
+  Triomphe's vault, Bernini's colonnade roof). `windows=no` is honoured and
+  `building:facade:colour` read as the wall colour. A part with no kind of its own takes its
+  building's default materials (all parts of a building alike); a shrine
+  (`building=religious` or `shrine`) drawn in parts without storeys, and a
+  `building=wall`, get no windows. Checked against 57 landmarks worldwide
+  (scratchpad audit: the region built at 1:1 with the place in its middle,
+  every building near it listed with what was decided).
 - **Facades**: hollow interiors with a floor slab per storey, window rows
   (glass; tinted glass curtain walls for tall offices; stained glass for
   churches), corner quoins in an accent block, parapet band on flat roofs,
@@ -690,7 +739,34 @@ Kartverket's surface model (building heights) stays.
   at the same grade, continuing through split ways. Stone-brick underside,
   railings (stone wall / fence / iron bars by road type), pillars every 12 m
   where nothing runs below.
-- `tunnel=yes` → the road between the two portals is pushed down wherever it
+- `tunnel=yes` → the road follows a guide line: a straight line between the
+  two portals, or (new worlds from 2.0.0, world setting `surveyedTunnels`)
+  the shape of the floor a national road database surveyed in the tunnel:
+  NVDB in Norway, BD TOPO in France (road sections under ground, those IGN
+  has heights for: the Mont Blanc tunnel has none), Digiroad in Finland
+  (links marked silta_alik -11); France and Finland via `osm/TunnelSurveys`,
+  cached in tunnel-survey-cache/. Switzerland's come with the mod (19 Oct
+  2026): swissTLM3D's web API gives flat lines without a tunnel flag, so
+  `tools/swisstlm_tunnels.py` reads its road layer (TLM_STRASSE) straight out
+  of the national 3.4 GB Shapefile zip with range requests (about 490 MB
+  streamed, 6 minutes), keeps the 1,739 pieces marked KUNSTBAUTE = Tunnel
+  (motorways, roads, paths) with their heights, LV95 to WGS84 by swisstopo's
+  formulas, thinned to 1 m, as `orbis-ch-tunnels.txt.gz` (110 KB); the
+  Gotthard road tunnel comes out 16.5 km from 1,145 m (Airolo) and 1,080 m
+  (Göschenen) to 1,175 m inside, as published.
+  NVDB's tunnel bores (object type 67, Tunnelløp, fetched per region beside
+  the road widths and cached as `*_tunnels.json.gz` in nvdb-cache/) carry a
+  height every few metres; each tunnel way takes the line nearest most of
+  its length and the pieces joined to it end to end (a shared end within 2
+  blocks and 2 m: France's and Finland's come in sections; twin tubes lie at
+  different depths and never touch), the gaps are joined
+  straight, and the ends are moved onto the same heights as before (the
+  portal's ground, or the floor agreed at a node with the next tunnel way),
+  the difference shared out along the way, so nothing steps where the tunnel
+  meets another road. NVDB returns a bore whole, so every region a tunnel
+  crosses draws the same floor. On the 1:1 and 1:2 Bergen road tests it moves
+  about a third of the tunnel cells by 1–5 blocks and thins the rock over
+  them less often. The guide line is then pushed down wherever it
   would come within 6.5 blocks of the ground above it, across its whole
   width (so a hillside falling away beside it does not open the wall), of a
   street crossing above, or of the floor of a building it passes under,
@@ -889,15 +965,43 @@ Kartverket's surface model (building heights) stays.
   `config/orbisterrarum/schematics/` may be WorldEdit/FAWE Sponge `.schem`
   (v1–v3) or vanilla structure-block `.nbt`. They are pasted at the terrain
   height (or a fixed `baseY`) across chunk borders, and OSM buildings inside
-  the radius are suppressed. Missing files are just logged.
+  the radius are suppressed. Missing files are just logged. A file's own
+  `Offset` is ignored (WorldEdit keeps the copied build's world corner there);
+  `yOffset` moves a landmark up or down.
 - Without a schematic, tag-based shapes still avoid "flat slab" landmarks:
   domes, minarets, spires (`roof:shape=cone`), roof profiles.
 
 ### Climate and biomes (`biome/`)
-- Mean annual temperature from latitude + elevation lapse rate
-  (+ configurable offset); zones: ice cap, tundra, alpine, taiga,
+- Worlds made before 2.0.0: mean annual temperature from latitude + elevation
+  lapse rate (+ configurable offset); zones: ice cap, tundra, alpine, taiga,
   temperate, subtropical, arid, savanna, tropical. `climateOverride`
   ("arid" / "humid") resolves the precipitation ambiguity for a region.
+- Real climate (`realClimate`, new worlds from 2.0.0, config v20; servers keep
+  false; a `climateOverride` still takes over): `ClimateMap` reads the climate
+  pack shipped with the mod, `src/main/resources/orbis-climate.bin.gz` (3.4 MB,
+  made by `tools/climate_pack.py`, 21 MB in memory: the classes kept as runs per
+  row). In it: Beck et al. 2023 Köppen-Geiger classes 1991-2020 (CC BY 4.0),
+  the 1 km map reduced to 0.05° by the most common class; and from CHELSA v2.1
+  1981-2010 (CC0) at 0.1°: mean annual temperature (bio1) and coldest-quarter
+  temperature (bio11), both reduced to sea level with 6.5 °C/km using CHELSA's
+  own elevation grid, annual precipitation (bio12, log-coded) and each cell's
+  mean land elevation. The CHELSA files are hundreds of MB each, one deflate
+  strip per row, so the tool reads one row per 0.1° band (range requests,
+  about 190 MB in all, 18 minutes here) and averages the band's 12 pixels per
+  cell. The class picks the zone: Af/Am tropical, Aw/BSh savanna, BW arid, BSk
+  arid below 250 mm, savanna from 15 °C, else temperate; Csa/Cwa/Cfa
+  subtropical; Csb/Csc/Cwb/Cwc/Cfb temperate; Cfc taiga; Dsa/Dwa/Dfa
+  temperate; Dsb/Dwb/Dfb taiga below 4 °C, else temperate; Dsc-Dfd taiga; ET
+  tundra (alpine above 1500 m within 60° of the equator); EF ice cap. The
+  temperature is the cell's sea-level value less 6.5 °C per km of the block's
+  own height; a block 400 m above its cell's mean height (or above 2600 m)
+  takes the colder zone its temperature gives (old thresholds), one 400 m below
+  the warmer of the cold ones. Over the sea the nearest land cell within a few
+  cells answers. Checked: Bergen Cfb 7.9 °C temperate (was taiga), Yakutsk Dfc
+  -8.7 °C (was +6.1), Tamanrasset BWh 22.4 °C arid (was temperate), Atacama
+  BWk arid, Mumbai Am tropical (was savanna), Lhasa 6.5 °C alpine (was -5.6),
+  Zermatt 3.6 °C, Everest's summit -28 °C. WorldClim was not usable (no
+  redistribution); ERA5 needs an account per user.
 - `RealWorldBiomeSource` picks vanilla biomes per column for grass/foliage
   tint, water colour, snow and spawns from climate + land cover + water
   (ocean variants by temperature and depth, river, beach, swamp, forest,
@@ -970,6 +1074,277 @@ as plain stone. Adjectives are told apart by their endings (-ic, -ique, -ico,
 -isch, -ed, -ive...), so "granitic gneiss" is a gneiss and "basaltic andesite"
 an andesite. Generic world-map units ("sedimentary rocks") stay plain stone.
 
+### Soil and glacier ice (`geology/Soils`, `RowTiff`, `Glaciers`)
+New worlds from 2.0.0 (world setting `groundLayers`, config v20; servers keep
+false) draw the ground between the top block and the rock from soil maps; older
+worlds keep three blocks of dirt everywhere. One rasteriser step after the rock
+(`rasterizeGround`) fills three raster arrays: `soil` (a soil profile and a
+texture packed in one byte), `soilDepth` (blocks of loose ground, plus one) and
+`iceDepth` (blocks of glacier ice).
+
+Soil profiles come from ISRIC SoilGrids 2.0 (CC BY 4.0, 250 m): the most
+probable WRB reference soil group (`wrb.map`, coverage `MostProbable`: the 30
+groups in alphabetical order from 0, and 0 is also the map's no-data, so it
+counts as Acrisols only where there is texture and within 38° of the equator)
+and the subsoil's sand, clay and stones at 30-60 cm (`sand`, `clay`, `cfvo`,
+per mille). Each is a WCS 2.0.0 GetCoverage in lat/lon for tiles of 0.25°
+(about 120 pixels a side, 2-11 kB each), kept as `soil-cache/<s>_<w>.bin.gz`.
+Groups map to profiles: Histosols peat, Podzols podzol, Arenosols sandy,
+Gleysols / Stagnosols / Planosols wet, Vertisols clay, Ferralsols / Nitisols /
+Lixisols / Plinthosols / Alisols / Acrisols red, Calcisols / Gypsisols /
+Solonchaks / Solonetz / Durisols dry, Cryosols frozen, Andosols volcanic,
+Fluvisols alluvial, Leptosols gravelly; the rest (Cambisols, Luvisols,
+Chernozems...) by texture (stones 35 % or more gravelly, sand 65 % sandy, clay
+40 % clay, else loam). Towns have a group but no texture: their own group, or
+loam. Each column reads the map half a pixel off at random, so neighbouring
+pixels meet along a dithered seam.
+
+Depth comes from Shangguan et al. 2017 (ISRIC, ODbL, 250 m): `BDRICM`, depth
+to rock within 2 m (1.4 GB), and where that says no rock within 2 m, `BDTICM`,
+the absolute depth to bedrock (8.5 GB), capped at 30 m. Both are whole-planet
+GeoTIFFs with one image row per strip (deflate, no predictor): `RowTiff` reads
+the strip tables once (`layout.bin`, about 1 MB) and then only the rows a
+region crosses, by range requests (8 neighbouring rows in one), keeping each
+row's compressed bytes as `soil-depth-cache/<map>/rows/<k>/<row>.z` (BDRICM
+about 20 kB a row, BDTICM up to 200 kB; BDTICM is only read where a region has
+deep ground). The depth is bilinear between pixels and rounded up or down per
+column by a hash, so a layer boundary is never a flat shelf.
+
+The painter (natural ground with a dirt subsoil only; roads, buildings, beds,
+sand, gravel, rock and mud keep theirs) puts `soilDepth` blocks of loose ground
+between the top and the rock: one or two blocks of topsoil by profile (mud and
+packed mud for peat, terracotta under red earths, clay under wet and clay soils,
+tuff under volcanic ones, ice lenses in frozen ground, flood beds of clay, dirt
+and gravel in alluvium), then for loam, podzol, dry and gravelly soils the
+subsoil's texture: sand (sandstone from the fifth block down, as vanilla has it
+under deserts), clay, or gravel near the top and coarse dirt deeper (loose sand
+and gravel deep down would pour into every cave). The top of wild ground also
+follows the soil a little: moss and mud on peat, podzol on podzols, bare patches
+on sandy, stony, dry and frozen ground. Steep ground: a column 2 blocks above a
+neighbour has no soil under its top, one 3 or more above is bare rock, so cliffs
+show their rock; the chunk generator samples a ring of columns just outside the
+chunk so a cliff along a chunk border is drawn the same way. Bergen's hills come
+out as podzol on 1-2 blocks of soil, the Veluwe as podzol over 16 m of sand,
+the Sahara as 30 m of stony ground.
+
+Glacier ice: where the land cover is a glacier (OSM, ESA WorldCover) or the
+photo shows snow, and the place lies inside a glacier of the Randolph Glacier
+Inventory 7.0 (GLIMS WFS, layers `RGI2000-v7.0-G-<region>`, CC BY 4.0, outlines
+for about 2000, kept per 0.25° tile in `glacier-cache/`), the ice under the
+snow is as thick as a perfectly plastic glacier would be (Nye: the square root
+of 22.2 m times the distance from the edge, 47 m at 100 m in, 150 m at a
+kilometre, 298 m at 4 km and beyond) and no thicker than twice the mean that
+the glacier's area gives (Bahr: 34 m x area^0.375 in km², so 12 m for a small
+cirque glacier, 190 m for 100 km²), at most 600 m. Glaciers that touch (an ice
+cap's outlets) are one body, so the ice stays thick under the divides. The
+distance is worked out on a lattice fixed in world coordinates about 32 m
+apart, over the region plus 4 km (the inventory's outlines filled even-odd per
+row, then an 8-neighbour chamfer distance), and blended to each column, so
+neighbouring regions agree. Packed ice, blue ice deeper than 40 m, then rock.
+No gridded thickness may be used (Millan 2022 states no licence, Farinotti 2019
+is non-commercial), hence the model; but where the ice was measured, the
+measurement leads (19 Oct 2026). GlaThiDa 3.1.0 (the World Glacier Monitoring
+Service's Glacier Thickness Database, CC BY 4.0, doi:10.5904/wgms-glathida-2020-10;
+radar and borehole surveys, 3.85 million readings) is packed by
+`tools/glathida_pack.py` into `orbis-glathida.tsv.gz` (52 KB in the jar): per
+survey not flagged as doubtful, the place of its deepest reading and the greatest
+thickness it measured (its stated maximum or deepest reading, whichever is
+larger); 3,463 of 5,141 surveys. A glacier takes the deepest of the surveys whose
+point lies inside its outline (a survey can only miss the deepest ice, never add
+to it: the Grosser Aletsch's 2011 radar found 436 m, its 1958 survey 890 m), at
+most 1,500 m, and its ice grows from the edge in the same square-root shape to
+reach that at its widest interior, worked out once from its own outline (a grid of
+at most 250,000 cells, chamfer distance) so every region agrees. Before and after,
+the thickest ice: Grosser Aletsch 187 to 890 m (widest interior 1.6 km from the
+edge), Khumbu 150 to 440 m, Pasterze 150 to 311 m, Rhône 174 to 256 m, Columbia
+(Alaska) 283 to 900 m. Unsurveyed glaciers keep the model (Austerdalsbreen, an
+outlet of Jostedalsbreen, has no survey of its own). The underground band starts
+100 m under the lowest ground near a column, so on deep glaciers its caves and
+buried structures can lie in the ice, as before but more often.
+
+### Forest types (`landcover/ForestTypes`, `TileTiff`)
+New worlds from 2.0.0 (world setting `forestTypes`, config v20; servers keep
+false): after WorldCover fills the gaps (`refineForests`), every generic
+`FOREST` cell (OSM forest or wood without `leaf_type` / `wood`, and WorldCover's
+tree cover) becomes `FOREST_CONIFER` or `FOREST_BROADLEAF` where the maps say
+so; mixed woods and places they do not know stay `FOREST` (the climate's mix).
+Species, biome (Taiga, Birch Forest, Old Growth Pine...) and forest floor
+(podzol under conifers) all follow the land cover. OSM's own leaf type always
+wins.
+
+Europe: CLC+ Backbone 2021 (Copernicus Land Monitoring Service, 10 m, the EEA's
+ArcGIS image service in EPSG:3035), one exportImage per region in lat/lon on a
+lattice fixed per degree of latitude (1/11000° tall), so neighbouring regions
+ask for the same pixels; uncompressed 8-bit, a few kB a region, kept as
+`forest-type-cache/clc-plus/<box>.bin.gz`. Classes 2 (needle-leaved) and 3/4
+(broadleaved deciduous / evergreen) are read as stands: the 3 x 3 pixels around
+a column, conifer where needles outnumber broad leaves two to one, broadleaf the
+other way round, mixed otherwise (single 10 m pixels gave a speckle of biomes).
+
+Elsewhere, and where CLC+ has no trees: the Copernicus Global Land Service Land
+Cover 100 m 2019 forest type layer (CGLS-LC100 v3.0.1, CC BY 4.0), one 1 GB
+BigTIFF on Zenodo (record 3939050) in 256-pixel deflate tiles. `TileTiff` reads
+the tile tables a row of tiles at a time (`table/<row>.bin`) and each tile once
+by a range request (`tiles/<row>/<col>.z`), keeping 160 decoded tiles in memory.
+Values 1 and 3 (evergreen and deciduous needle leaf, larch included) are
+conifer, 2 and 4 broadleaf, 5 mixed; each column reads half a pixel off at
+random. In Norway NIBIO's forest resource map SR16 (16 m, NLOD) comes first, layer
+`SRRTRESLAG`: 1 spruce (gran), 2 pine (furu), 3 broadleaf (lauv). Its WCS is
+switched off and GetFeatureInfo gives the value only in an HTML page, so the
+WMS map is read back by its three flat legend colours (82,176,56 spruce;
+205,170,101 pine; 255,220,130 broadleaf; transparent: no forest), one GetMap
+per region in EPSG:4326 on a lattice of about 8 m fixed per degree of latitude
+(`forest-type-cache/sr16/`). Spruce and pine make the forest coniferous,
+broadleaf broadleaved, and each forest column keeps the kind in the raster
+(`treeKind`, where it agrees with the land cover, OSM's leaf type included), so
+`Decorator.pickSpecies` grows a spruce stand as 82 % spruce, 10 % birch, 8 %
+pine and a pine stand the other way round (a conifer forest was 80 % spruce
+everywhere). Checked: Østerdalen at Elverum 1,029 pine to 404 spruce samples,
+Nordmarka 1,041 spruce to 311 pine, Trondheim's Bymarka 609 spruce to 335 pine.
+LANDFIRE's vegetation types (US, 30 m) were left out: its image service
+has no attribute table to turn its 900 codes into leaf types. Checked: the Black
+Forest and the Cascades come out coniferous, Fontainebleau, Białowieża and the
+Amazon broadleaved, the Smokies and Hokkaido mixed.
+
+### The far view past the loaded regions (`worldgen/FarGround`)
+
+Its settings (`farViewFromData` for Distant Horizons, `voxyFarView` and `voxyFarViewChunks`) are in the video settings since
+17 Oct 2026 (Mod Menu's Performance tab before): an Orbis Terrarum page in Sodium's (`client/SodiumVideoOptions`, Sodium's
+config API through the `sodium:config_api_user` entry point, compiled against its API classes only, `libs/sodium-config-api`),
+or a Far view section at the foot of Minecraft's own without Sodium (`mixin/VideoSettingsFarViewMixin`, only for the far view
+mods installed). An option for a mod that is not installed is greyed out in Sodium's, with "Needs ... installed".
+
+Distant Horizons and Voxy paint columns nobody has generated with
+`worldgen/FarTerrain`, from the elevation, the climate (Köppen, observed snow and
+ice) and ESA WorldCover. Where no region is loaded, `FarGround` reads the maps
+the regions read, a sixteenth of a degree at a time (two low-priority threads,
+at most 30 s of waiting per column, 256 cells kept): the bedrock map (the rock
+of bare ground and cliffs), SoilGrids' soil groups only (the grass top: moss on
+peat, podzol, coarse dirt; the depth never shows from afar) and the forest type
+maps at no finer than 10 m (a WorldCover wood becomes coniferous or broadleaved,
+and SR16's spruce and pine pick the species). Lakes past the map data freeze
+with the climate, as the chunks' do. Only inside the world: the scenery past its
+border stays the terrain alone. Glacier ice depth is left out (the surface is
+the same; only the inside of the ice differs). Measured 20 km from the origin
+(4,096 columns each): Jotunheimen's bare rock went from stone to deepslate (the
+Jotun nappe's gabbro), Elverum's woods from the climate's oak, dark oak and
+birch to spruce and pine on podzol, the Flow Country from grass to podzol and
+mud in patches.
+
+### Buildings OSM lacks (`osm/OvertureBuildings`)
+New worlds from 2.0.0 at 1:4 or finer (world setting `overtureBuildings`, config
+v20; servers keep false). Overture's buildings theme (ODbL) merges OSM with
+Google Open Buildings, Microsoft's ML buildings and others, and marks each
+footprint's `@geometry_source`. The mod reads Overture's PMTiles archive
+(`tiles.overturemaps.org/<release>/buildings.pmtiles`, vector tiles to zoom 14)
+by range requests: the release named in `overture-cache/release.txt`, else the
+catalogue's latest (`stac.overturemaps.org/catalog.json`), then kept; the
+header and root directory once a session, leaf directories once
+(`dirs/<offset>.gz`, about 9 kB), each zoom-14 tile once (`tiles/<x>/<y>.mvt.gz`,
+kept as it came, so a world's regions agree even after a new release). Tile ids
+follow the PMTiles Hilbert curve.
+
+From the `building` layer only the footprints not from OSM, and only where OSM
+is thin: a tile's other footprints are used when they are at least 15 % of its
+buildings. Measured per zoom-14 tile: Bergen centre 1 %, Paris 1 %, Amsterdam
+0 %, Kansas City 2 %, São Paulo 5 % (where the extra footprints were mostly
+plazas and slivers along mapped roofs), Nairobi 20 %, Lagos 46 %, Delhi 66 %.
+A tile cuts a building at its edge (with a buffer): each piece is trimmed to its
+own tile (Sutherland-Hodgman) and the pieces are joined again by the building's
+Overture id, as one area with several outer rings (they meet without
+overlapping). Exterior rings are clockwise in tile coordinates, holes the other
+way. Properties become OSM tags (`class` building, `height`, `num_floors`
+building:levels, `roof_shape`, `roof_height`, `min_height`, `@name` name) and
+the areas get ids from 2^62 up, far from OSM's.
+
+The rasteriser adds them to the region's areas before land cover
+(`addOvertureBuildings`), so they get heights (tags, lidar, databases, storey
+guess), roofs, walls and rooms like OSM's. One that comes within 2 m of an OSM
+building or building part is left out (OSM's is newer, or the same building).
+A Lagos region went from 55 buildings to 4,209; central Bergen stays at 428.
+
+### River widths (`water/RiverWidths`)
+New worlds from 2.0.0 (world setting `riverWidths`, config v20; servers keep
+false). A `waterway=river` line without a `width` tag was drawn 12 m wide. GRWL
+(Global River Widths from Landsat, Allen & Pavelsky 2018, CC BY 4.0) measured
+every river 30 m and wider; its summary statistics give each stretch of about
+20 km its median width. `tools/river_widths.py` turns them into
+`src/main/resources/orbis-river-widths.bin.gz` (2.2 MB, shipped in the jar, so
+every region has them at once and alike: a first-use download from Zenodo ran
+at 230 kB/s for 43 MB, and broke off once): lake and reservoir stretches
+dropped, lines simplified to 400 m (the points were already about 500 m apart),
+coordinates in 0.0003° steps, varint deltas. Read once (0.4 s, about 15 MB) into
+float arrays and a grid of 0.05° cells held as one sorted array of
+(cell, edge) longs (a map of lists took four times the memory).
+
+`widthFor(line)` samples the whole OSM way (every 100 m, 3 to 40 samples, so
+every region it crosses gets the same answer), finds for each sample the
+nearest GRWL edge within 600 m that runs the same way (within 40°, either
+direction: a tributary meeting a big river runs another way and keeps its
+own), and takes the median width when at least half the samples found one.
+Checked: the Rhine at Bonn 351 m, the Danube at Vienna 339 m, the Niger at
+Niamey 299 m, a line across the Rhine none.
+
+The widened line is drawn only where no water area is mapped: a line that
+touches an OSM water area (riverbank, natural=water) anywhere in the region
+keeps its old width, since a river mapped as an area has its line wandering
+out of it across islands and banks (Niamey: 3,452 cells of island and bank
+flooded before this rule, none after). A 67 m river in central Nigeria mapped
+only as a line went from 7,547 water cells to 45,883. The channel's depth
+follows the width used.
+
+### Lake beds from Seascape (`water/WaterBeds`)
+New worlds from 2.0.0 (world setting `seascapeLakes`, config v20; servers keep
+false). Open Waters' Seascape, read for the sea floor anyway, also holds the
+beds of many big lakes as depth below the lake's surface (Lake Geneva -309 m at
+its deepest, Tahoe -482 m, Superior -252 m in its eastern basin: depths, not
+heights, since a height would put Superior's floor below its 406 m greatest
+depth), and 0 (or 2) where it has none: the Great Lakes, Geneva, Neuchâtel, the
+Bodensee, Tahoe, Champlain from regional surveys; Baikal, Victoria, Winnipeg,
+Great Slave Lake, parts of Ladoga from GEBCO. Mjøsa, Zürich, Lucerne, Maggiore,
+Como, Garda, Titicaca and Tanganyika read 0.
+
+After NVE's lakes and the national surveys, a lake of 0.2 km² or more (not a
+pond) is sampled on an even grid of at most about 150 x 150 points over its
+whole outline, from the Seascape zoom whose pixels are about that far apart
+(6 to 14), shore cells left out. When at least half the points have a depth,
+they become soundings for the same smooth surveyed bed as NVE's (Laplace through
+the points, the shore at 0 m); else the lake keeps GLOBathy's or the estimated
+bowl. A tile that cannot be read leaves the lake a bowl in that region without
+keeping the shape, so a later region asks again. Lake Tahoe's west-central
+region went from the 51 m estimate to 266-273 m. swissBATHY3D's other 20 lakes
+come only as whole-lake ASCII grids of 15-390 MB (40 minutes for Lucerne at the
+speed swisstopo answers here), so they are left out.
+
+### Quebec's lake surveys (`water/QuebecLakes`, `SqliteTables`)
+New worlds from 2.0.0 (world setting `quebecLakes`, config v20; servers keep
+false). The Géobase des bathymétries de lacs du Québec (GBLQ, CC BY 4.0) has
+about 2,200 lakes with survey data, each only as a zip of its own (a GeoPackage
+with depth contours `iso_<lake>_<year>_<who>`, deepest point `fos_...`, often
+soundings `pts_...` and a bed raster, plus the paper maps as PDFs; 1 to 6 MB),
+on the province's Azure storage; there is no map service (the ministry's ArcGIS
+portal answers 403), and which lake lies where is only in a 41 MB GeoJSON
+index. The storage sent 38-250 kB/s here, so the index is reduced once by
+`tools/quebec_lakes.py` to `src/main/resources/orbis-quebec-lakes.tsv.gz` (id,
+zip name, box per lake) and shipped with the mod; a lake's zip is fetched the
+first time a world's region reaches its box, its GeoPackage read and kept as
+soundings (`quebec-lake-cache/<id>.bin.gz`, floats), the zip and GeoPackage
+dropped.
+
+`SqliteTables` reads the GeoPackage as the SQLite file it is: the schema from
+sqlite_master (column names from each CREATE TABLE), each table's b-tree page by
+page (interior 0x05 and leaf 0x0D pages, overflow pages followed), records by
+SQLite's serial types. The geometries are GeoPackage blobs (a GP header with its
+envelope, then WKB: points, lines, multi-lines, with or without Z/M), in Quebec
+Lambert (EPSG:32198), converted with the closed formulas of the Lambert
+conformal conic (GRS80; checked against the deepest point's own latitude and
+longitude columns: equal to six decimals). The newest survey (the year in the
+table name) is used: every contour vertex and the deepest point become
+soundings, and `WaterBeds` builds the same smooth surveyed bed as NVE's, after
+NVE and the other national surveys and before Seascape. Lac Anne (Laurentides):
+26 contours, 13,398 points, 25.34 m deepest, read in 0.1 s. A survey that cannot
+be fetched leaves the lake estimated in that region without keeping its shape.
+
 ### Real daylight, weather and seasons (`sky/`)
 Settings under Look & Climate → Real sky, saved with each world (new worlds
 take the installation's values), and each also switched off everywhere when
@@ -989,12 +1364,192 @@ server, so players need nothing:
   light or dark. The day count is chosen so day % 8 is the real moon's phase
   and it never decreases (checked hourly over a year at Tromsø). Sleeping does
   not skip the night (the next update puts the clock back). Off: rate 1 again.
+- **Live weather** (`sky/LiveWeather`, from 2.0.0): the forecast below only
+  fills in where nothing is measured. Rain: radar where it exists, the
+  precipitation rate of the last minutes at the players' place, wet from 0.1
+  mm/h: MET Norway's nowcast 2.0 in the Nordic countries (when its
+  `radar_coverage` is "ok"; a cell answering 422 is outside and not asked
+  again), DWD's `dwd:Niederschlagsradar` (`RV_ANALYSIS`) in Germany, then
+  (19 Oct 2026) EUMETNET OPERA's CIRRUS maximum reflectivity composite for the
+  rest of Europe (`sky/OperaRadar`, CC BY 4.0, 1 km, every 5 minutes, about 5
+  minutes late; Austria and Italy are not in it): the cloud-optimised GeoTIFF
+  `OPERA@<yyyymmddThhmm>@0@DBZH.tiff` in the Open Radar Data bucket
+  (s3.waw3-1.cloudferro.com/openradar-24h/<y>/<m>/<d>/OPERA/COMP/, no key),
+  the newest of the last half hour found by name; its tile table (the first
+  16 kB) once per map, then only the 512-pixel tile under the place (deflate,
+  two float bands: DBZH, quality; NaN = no echo, -9.999e6 = outside every
+  radar), Lambert azimuthal equal-area on the WGS84 ellipsoid (lat 55, lon 10,
+  false easting 1,950,000, northing -2,100,000; matches the HDF5's corner
+  coordinates to half a pixel), dBZ to mm/h by Marshall-Palmer (Z = 200 R^1.6,
+  as OPERA's own rate product); then NOAA MRMS in the United States
+  (`sky/MrmsRadar`, public domain): `MRMS_PrecipRate.latest.grib2.gz` from
+  mrms.ncep.noaa.gov/2D/ (the lower 48; ALASKA/, HAWAII/, CARIB/ and GUAM/
+  for the rest; 20-400 kB, every 2 minutes, fetched again after 5), GRIB2 grid
+  template 3.0 with PNG packing (5.41, value = (R + X·2^E)/10^D; -3 = no
+  coverage), the PNG read row by row with its filters undone so only two rows
+  are unpacked; then ECCC's `RADAR_1KM_RRAI` and `RSNO` in Canada (WMS
+  GetFeatureInfo, JSON numbers); else the nearest METAR within 30 km and 75 minutes (NOAA AWC data API, a box
+  round the place): precipitation when its present weather has DZ, RA, SN, SG,
+  PL, GR, GS, UP or IC at the station (not VC); else the forecast. Thunder:
+  DWD's lightning density (`dwd:Blitzdichte` above 0), in the lower 48 MRMS's
+  `NLDN_CG_005min_AvgDensity` (cloud-to-ground strikes of the last 5 minutes)
+  above 0 within 12 cells (about 12 km), over Europe, Africa, the Middle East
+  and the Atlantic (within 70° of 0° N 0° E, short of the disc's edge) the
+  Meteosat Third Generation Lightning Imager (`sky/MtgLightning`): EUMETSAT
+  View's `mtg_fd:li_afa` accumulated flash area, every 5 minutes, about 20
+  minutes late; its GetFeatureInfo answers only RGB (0,0,0 even beside
+  flashes), so a 16 x 16 GetMap PNG of ±0.14° round the place is asked for and
+  any pixel with alpha is lightning within about 15 km (an empty one is 87
+  bytes); then the nowcast's thunder symbol, else the METAR's TS or VCTS, else
+  the forecast. The temperature is the
+  airport's where there is one. Radar is asked every 5 minutes per 0.01° cell,
+  airports every 10 per 0.1° cell. The log names the source ("MET radar 0.0
+  mm/h", "KJFK -RA BR"). Checked 16 Oct 2026: Montreal rain at 0.2 mm/h by
+  radar, New York rain by KJFK, Delhi haze (dry) by VIDD. Checked 19 Oct 2026:
+  OPERA rain off Cornwall (up to 3.7 mm/h), dry London, Paris, Bern, Madrid,
+  Warsaw and Vienna (Czech and Slovak radars reach it), Rome off the composite
+  (NaN: its airport decides); MRMS 1.8 mm/h at Guam, 6 mm/h with lightning at
+  a cell struck in Arizona, none 40 km away. RainViewer's global radar was
+  left out (since January 2026 limited to zoom 7, personal and educational use
+  only). GOES GLM satellite lightning (the Americas) is NetCDF-4/HDF5, too much
+  to read without a library. MTG lightning checked 19 Oct 2026: a storm in the
+  Gulf of Lion (thunder with OPERA's 2.2 mm/h), none at Paris, Nice, Yaoundé
+  or Nairobi. Austria from 19 Oct 2026: GeoSphere's INCA nowcast
+  (`nowcast-v1-15min-1km`, CC BY 4.0; radar, stations and model merged on
+  1 km every 15 minutes; data hub timeseries API, point JSON, no key), the
+  first quarter hour's `rr` (mm) x 4 as the rate; asked first inside Austria
+  (before DWD, whose radars reach Innsbruck over the mountains) and after
+  OPERA in the rest of its box (45.5-49.5 N, 8.1-17.7 E: Bolzano, Trentino and
+  Slovenia); checked dry at Vienna, Innsbruck and Bolzano. Italy's own radar
+  (Protezione Civile, radar-api.protezionecivile.it) answers "Access Denied"
+  from outside Italy and its open archive (IT-DPC-SRI) is a Zarr datacube with
+  no live feed: Italy keeps its airports and MTG lightning. NWS station
+  observations add nothing to the METARs of the same airports; EUMETSAT's
+  cloud mask has no Minecraft weather to drive (clear, rain, thunder only).
 - **Weather** (`realWeather`, `MetWeather`): MET Norway's locationforecast
   (worldwide) for the players' mean position (the origin when nobody is on),
   asked every 2 minutes but only fetched when the last answer's Expires has
   passed (If-Modified-Since, identifying User-Agent, 4 decimals, as its terms
   ask). The coming hour's symbol gives clear, rain (rain, sleet, snow,
   showers) or thunder, set like /weather with a 30-minute hold.
+- **Each place's own season** (players with Orbis, from 19 Oct 2026,
+  `client/LocalSeasons`): the pack gives the whole world its origin's season
+  and changes at the next opening; with `orbisterrarum:season_info` from the
+  server (seasons on; sea level, vertical metres per block, relief knee,
+  relative mode) the client colours each block's grass and leaves by its own
+  place's season, today. Hooks: `Biome.getGrassColor(DD)` (the grass
+  resolver is the method reference) and `BiomeColors.lambda$static$0` (the
+  foliage resolver, the first lambda in 26.2 and 26.3), so Sodium's own
+  blending gets them too. A place's year comes from the climate pack (Köppen
+  class, sea-level annual and coldest-quarter means, annual precipitation, per
+  32-block cell): a cosine through the coldest quarter's mean (three months
+  average 0.911 of the swing; coldest mid-January north, mid-July south), at
+  the block's height (chunk MOTION_BLOCKING height maps kept as chunks load;
+  (Y - sea level) x metres per block, and above 80% of the relief knee in a
+  relative world at least the climate cell's mean height, as whole regions are
+  lowered there), 6.5 °C/km; dry months by Köppen (Cs/Ds: the four warmest;
+  Cw/Dw/Aw: the five coldest; Am: the four coldest; B: none), 5 mm each, the
+  rest shared with a peak opposite the dry season (evenly, Los Angeles' 380
+  mm made no month wet). `Seasons.colourIn` applies the pack's rules to the
+  vanilla colour (MapColours' table), so the pack's own shift is replaced;
+  swamp and dark forest grass stays the game's; mid-months are pure and the
+  neighbour month blends in day by day; a new day recolours
+  (`clearTintCaches`, `levelExtractor.allChanged`). The climate pack (25 MB)
+  is read off the render thread on joining. Synthesised years checked: Oslo
+  winter Nov-Mar, London and Tokyo mild winters, Rome dry Jun-Sep, Los Angeles
+  May-Sep, Darwin May-Sep, Mumbai Dec-Mar, Zermatt's village winter Nov-Mar and
+  3,000 m winter Sep-May, Singapore and Cairo none. Plain clients keep the pack.
+  Checked in the game 19 Oct 2026 (26.3, Sodium, Bergen 1:2) with the self
+  test (`client/SelfTest`: `selftest-seasons.txt` in the config folder runs it
+  once; it answers Minecraft's experimental-settings warning once (pressing on
+  every tick reopened the world and the second opening took the first's
+  session lock: "Lock is no longer valid"), sets a singleplayer world's clock
+  to noon and back, logs the colours at the player and 2, 20 and 200 km away,
+  takes screenshots with local seasons on and off, opens the vanilla video
+  settings and quits; launch with `prismlauncher --launch 26.3 --world
+  "<folder>"`, quoted, or Prism cuts the name at a space): local seasons on
+  5 s after joining; the player's hill late autumn (grass #949a66 against the
+  pack's autumn #a3a860), Hardangervidda at 1,037 m winter; switched off,
+  some 14,000 foreground pixels changed, the hillside brighter and yellower
+  under the pack alone; Sodium @Overwrites getGrassColor and getFoliageColor,
+  and the RETURN injections apply on top. Also found: before a world opens the
+  client fell back to the installation's origin when the world had no spawn
+  file (a Bergen world got Everest's winter); worlds now record
+  `orbis-origin.json` at server start and the client never uses the
+  installation's origin for a world.
+  Fixed with it: `orbisterrarum.mixins.json` had two "client" lists, the
+  first (`VideoSettingsFarViewMixin`, the far view options in vanilla video
+  settings, since 17 Oct) lost to the second.
+- **26.2 worlds would not open from 1.1.0 to 19 Oct 2026**: the biome source
+  named 26.3's `dappled_forest` (a string key, so 26.2 compiled); asked for
+  while a world loads, a biome the version lacks is left as an unbound
+  reference and the registry refuses to freeze ("Unbound values in registry
+  ... worldgen/biome: [minecraft:dappled_forest]", "Errors in the currently
+  selected data pack(s)"). Now added only when the version's jar has
+  `data/minecraft/worldgen/biome/dappled_forest.json`; the forest stands in.
+  Found by the self test on the 26.2 instance (its last world load was 29 Sep,
+  a 1.1.0 dev build); the released 2.0.0 for 26.2 has it.
+- **The first weather question** goes out on the world's first tick, before
+  the ground under the players is loaded: without its height the temperature
+  had no block height to stand for, and rain or snow stayed the biomes' until
+  the next question two minutes later (seen on 26.3, 19 Oct 2026: the server's
+  temperature at the player NaN a minute in). Without a height the question
+  is asked again ten seconds later (10.8 °C a minute in after the fix).
+- **Self test, explore mode** (`selftest.txt` containing "explore", for a
+  copy of a world only): after the colours and the weather it switches to
+  spectator, makes three trips about 3 km out (90 s each, facing 40° down),
+  logging the ground the client has under the player, then opens the world
+  map, the area preview and the data sources. 26.2 and 26.3 copies of the
+  Bergen worlds (made with robocopy, Voxy's cache left out): fresh land drawn
+  within the render distance (8 chunks), every screen opened, logcheck clean.
+  A world with "Only generate the selection" needs `orbis-pregen/hard-limit.txt`
+  set to off for land past its selection (the /orbis hardlimit command went
+  with the commands the world map replaced).
+- **Each player's own weather** (players with Orbis, real weather on, from
+  19 Oct 2026, `client/LocalWeather`, `LevelLocalWeatherMixin`): Minecraft has
+  one weather per world, set from the players' mean place. Every 2 minutes
+  the server also asks LiveWeather for each 0.05° cell holding players with
+  Orbis and sends them `orbisterrarum:local_weather` (rain, thunder, the
+  temperature with its block height and metres per block, the sources); their
+  client's `Level.getRainLevel` / `getThunderLevel` (ClientLevel only, so a
+  singleplayer game's server keeps the world's) ease to it at vanilla's 0.01 a
+  tick, so rain or snow falls, the sky darkens, fog and sounds follow where
+  the player really is; thunder the world lacks rolls far off every 15-60 s
+  (LIGHTNING_BOLT_THUNDER, played locally); rain or snow by the player's own
+  temperature (`RealPrecipitation` keeps server and client readings apart).
+  Gameplay (crops, fire, the server's lightning) keeps the world's weather.
+  No report for 10 minutes, or real weather off (on=false is sent): the
+  world's weather again. Every player's area (with Orbis or not) also gives the
+  server's rain or snow near them: `RealPrecipitation.setAreas` keeps one
+  reading per 5 km cell, and a place takes the nearest within 30 km, the
+  players' mean beyond (a probe: -5 °C by one player snows, +8 °C 200 km away
+  rains, 1.5 °C between them leaves it to the biome), so snow builds up by the
+  temperature where it falls. Checked in game 19 Oct 2026 (self test, Bergen,
+  26.3 + Sodium): the server's local report arrived (clear, MET radar
+  0.0 mm/h); set to thunder at 8 °C the game reported rain 1.00, thunder 1.00
+  and rain falling, at -6 °C snow falling, clear back to 0.00, the world's
+  weather clear throughout; screenshots show the storm, the snow and the
+  clear sky.
+- **Rain or snow by the real temperature** (with real weather, from 19 Oct
+  2026, `sky/RealPrecipitation`, `BiomePrecipitationMixin`): the season pack
+  cools a whole month's biomes, so taiga could snow on a +6 °C day of a cold
+  month. Each applied report's temperature is taken as the air at the ground
+  of the players' mean position (block height from `VerticalMapping.toY`, and
+  the real metres one block of height is there, from toY at +100 m), cooling
+  6.5 °C/km up the world: from 2 °C `Biome.getPrecipitationAt` answers rain,
+  at 0 °C and below snow (a biome without precipitation stays dry), between
+  them the biome's own choice. `shouldSnow` asks getPrecipitationAt, so snow
+  settles by it too; `shouldFreeze` (water freezing) is left to the biome, so
+  a frosty night does not ice the sea. Only the server thread (recorded at
+  SERVER_STARTED) and the client's render thread get the answer: world
+  generation's workers never do, so chunks stay the same whatever the weather.
+  Clients with Orbis get `orbisterrarum:real_temperature` with each applied
+  report and on joining (NaN clears it); plain clients see the biome's choice
+  while the server's snow follows the real one. A reading over 20 minutes old
+  is dropped. The season thaw takes snow layers off where it rains now. Checked:
+  5 °C at Y 64 (a block a metre) rains to Y 500, leaves Y 600-700 to the biome,
+  snows from Y 900; a generation thread gets no answer; the mixin applies on a
+  26.3 server (Bergen, 8 °C).
 - **Seasons** (`realSeasons`, `Seasons`): a data pack `orbis_season` in the
   world overrides every overworld biome (the version's own biome JSON, read
   from the jar) with grass and foliage colours blended from the biome's own
@@ -1012,8 +1567,38 @@ server, so players need nothing:
   switched the season pack off for good in every world with landmarks (all
   26.3 test worlds). At server start a season pack that is not switched on is
   switched on with a reload once the server is idle, so such a world shows
-  the season from its next opening. The south is six months apart; within 23.5°
-  of the equator there are no seasons. `ServerLevelSeasonMixin` thaws in
+  the season from its next opening. The month's look follows the place's
+  own climate from 19 Oct 2026 (`sky/ClimateNormals`): the mean temperature and
+  precipitation of each month from TerraClimate's 1991-2020 normals (CC0,
+  1/24°: OPeNDAP ASCII point reads of `tmax`, `tmin` and `ppt` from
+  `TERRACLIMATE_ALL/climatology/TerraClimate_19912020_<v>.nc` on
+  thredds.northwestknowledge.net, row (89.979 - lat) x 24, column (lon +
+  179.979) x 24, Int16/Int32 x 0.1 (temperatures - 73), 6-22 s each; the mean
+  of the mean highs and lows, brought from the cell's mean height
+  (`layers/terraclim_dem.nc`, x 0.1) to the place's (Open-Meteo's elevation
+  API, 90 m terrain) at 6.5 °C/km: Zermatt's cell is at 2,054 m, the village
+  at 1,608, and uncorrected it came out 2.1 °C a year with eleven cooled
+  months; corrected 5.0 °C, against the climate pack's 3.5 at the same height,
+  1981-2010), or where it has no cell (at sea) or fails,
+  over 2021-2025 from Open-Meteo's archive (ERA5 at the place's height, about
+  130 of Open-Meteo's fair-use calls; ten years at a dozen places in a row got
+  HTTP 429); one question per place, asked in the background, kept in
+  `climate-normals/` by tenth of a degree. TerraClimate gave Rome 8.2 °C in
+  January and 18 mm in August, Oslo -1.2 and 17.8, Darwin 0 mm in July. Below 0 °C
+  winter (cooling 0.3), below 3 °C winter (0.2); a dry season (grass 55% to
+  straw #C8B560, leaves 20% dusty) in a month of at least 10 °C with less
+  rain in mm than twice its temperature in °C (Walter-Lieth) where some month
+  has 60 mm; a mild winter (bare trees, no cooling) in the three coldest months
+  below 12 °C; summer (vanilla) from 16 °C and in the coldest months above 12;
+  between them early spring / spring / late spring (below 7, 12, 16 °C) on the
+  way from the coldest month to the warmest, late autumn / autumn / early
+  autumn on the way back, all without cooling (from 3 °C a month's
+  precipitation is mostly rain; the latitude table's 0.15 made taiga snow in a
+  Moscow October at 8 °C). On the 2016-2025 climates: Oslo winter Nov-Mar,
+  autumn colour Sep-Oct; London a mild winter Dec-Feb; Rome, Los Angeles and
+  Denver dry summers; Darwin dry May-Sep, Mumbai Nov-May; Singapore and Cairo
+  none. Until the climate is kept, the latitude decides: the south six months
+  apart, no seasons within 23.5° of the equator. `ServerLevelSeasonMixin` thaws in
   spring: on Minecraft's precipitation tick, a snow layer loses a layer and
   surface ice turns to water where the biome is warm enough to rain (snow
   layers only when real snow depth is off; it takes over the snow).
@@ -1042,7 +1627,67 @@ server, so players need nothing:
   asked again in 10 minutes). Each of the four nearest cells gives a depth
   (its rate × height above its line, at most 3 m), blended by distance.
   Measuring the rate from today's depths at nearby model points was tried and
-  left: in early October almost none of nine points per cell had snow. The column
+  left: in early October almost none of nine points per cell had snow.
+- **Snow and ice as seen** (with `realSnow`, `sky/ObservedSnow`, `sky/SeNorge`):
+  the model's depth is checked against NOAA's IMS daily snow and ice analysis
+  (Northern Hemisphere, 1 km, public domain, via NSIDC: drawn by analysts from
+  satellites and stations, no cloud gaps). The day's file (3 MB,
+  `imsYYYYDDD_00UTC_1km_v1.3.asc.gz`, posted the next afternoon) is a text grid
+  of 24,576 rows of class digits on a WGS84 polar stereographic map (true at
+  60° N, central meridian 80° W, 1 km cells, bottom row first); it is read as a
+  stream into runs of water, ice and snow per row (16-bit, about 6 MB) and kept
+  as `snow-cache/observed/ims-<day>.bin.gz` (1.5 MB; 10 s the first time, 1 s
+  after). A 1 km cell seen under snow gets at least 5 cm where the model has
+  none; one seen bare loses 30 cm of the model's depth (a peak in a mostly bare
+  cell keeps its deep snow). Water is frozen when its cell is ice, open when
+  open water, and frozen in a cell of snowy land (a lake too small for the
+  cells) once the column's snow is 10 cm deep (from 19 Oct 2026: IMS saw the
+  first snow round Yellowstone Lake on 18 Oct with SNODAS at 0 cm); otherwise
+  the year-round climate rule. Cross-checked 19 Oct 2026 (`ConflictProbe`):
+  seNorge, SNOWGRID and SNODAS agree with IMS at 85-100% of sampled places,
+  the rest thin early snow of 2-11 cm (the national depth wins); the radars
+  agree where their boxes overlap (MET, DWD, INCA, OPERA, all dry that day);
+  swissTLM3D tunnel ends lie a median 1.3 m below Mapterhorn's ground (the
+  hillside over the portal; no datum step). In Norway seNorge's snow depth
+  (MET Norway / NVE, NLOD, 1 km, the day's model run on observed weather)
+  replaces both: THREDDS OPeNDAP ASCII in 32 x 32 km tiles of the UTM 33 grid
+  (`x = (E + 74500) / 1000`, `y = (N - 6450500) / 1000`, cell centres; the
+  file's own lat/lon arrays are half a cell off), the newest day from the time
+  axis' length, kept per day in `snow-cache/senorge/`. In the lower 48 states
+  SNODAS's snow depth (NOAA NOHRSC, public domain, via NSIDC; 19 Oct 2026)
+  does the same: the day's tar (`masked/<y>/<mm>_<Mon>/SNODAS_<ymd>.tar`,
+  3-30 MB, posted about 13:00 UTC) is walked by range requests over its
+  512-byte headers to the snow depth grid (product 1036, `.dat.gz`, 0.3-3 MB),
+  kept unpacked as `snow-cache/snodas/snodas-<ymd>.bin` (6,935 x 3,351
+  big-endian 16-bit mm, 46 MB, memory-mapped), bilinear over cells with data
+  (-9999 is water); glaciers' 32,767 mm cap is taken as 4 m. Checked 19 Oct
+  2026: 4 cm near Boulder, 0 in Denver, Yosemite Valley and Mt Washington.
+  In Austria SNOWGRID's (GeoSphere, CC BY 4.0; the snow model on INCA's
+  observed weather, 1 km, about two days late): the data hub's grid API as
+  GeoJSON points in tiles of 0.2° (some 400 cells; cells outside Austria are
+  null), the day from the dataset's `end_time`, kept per day in
+  `snow-cache/snowgrid/`, the nearest cell through 0.01° buckets; 15 cm by the
+  Großglockner on 17 Oct 2026, 0 in Vienna. South of 1° N, where IMS stops,
+  NOAA/NESDIS GMASI (public domain): the 4 km "Autosnow" daily map
+  (`binary/multisensor/global/<y>/gl_4km_snow_ice_map_<yyyyddd>.Z` on
+  www.star.nesdis.noaa.gov, about 365 kB, posted about 05:15 UTC the next day;
+  the 2 km product is NetCDF-4/HDF5), a 9,000 x 4,500 byte grid from 90 N
+  180 W in 0.04° cells (0 water, 1 land, 2 snow, 3 ice), packed by Unix
+  compress: `sky/UnixCompress` (LZW with ncompress's skip to the end of a
+  group of eight codes at each width change or clear, groups counted from
+  the end of the 3-byte header) gives gzip's bytes exactly in 0.2 s. The south
+  is kept as runs of water, snow and ice per row (`gmasi-<day>.bin.gz`). Its
+  snow gives the 5 cm floor and its ice freezes the sea, but bare land is not
+  told (a 4 km cell seen bare can hold a snowy peak; the model's depth stands).
+  Checked: snow on Aconcagua, the Patagonian ice fields and Antarctica, ice in
+  the Weddell Sea, bare Sydney and Kilimanjaro. Copernicus' global snow cover
+  needs a CDSE login per user; NASA GIBS' 500 m snow cover has cloud and night
+  gaps and OpenLandMap's snow probability is a 2000-2012 climatology, so both
+  were left: IMS, GMASI and the national depths answer every day.
+  Checked on 16 Oct 2026:
+  IMS snow on Greenland, Norilsk, Jotunheimen and Monte Rosa, ice at the Pole,
+  bare Oslo, Bergen and Delhi, open Baikal and Hudson Bay; seNorge 22.7 cm at
+  Galdhøpiggen, 9.7 in the Tromsø mountains, 0.8 at Finse, 0 in Bergen. The column
   painter lays it as snow layers (eight to a block at the world's metres per
   block; at least one from 2 cm, at least one on ice caps): whole snow blocks
   then the rest as layers, one layer on roads and flat roofs. Generation waits
@@ -1149,6 +1794,20 @@ button until then) does the same for the selection before it is pre-generated, f
 operators; Stop on its entry in the pre-generation list stops it (the part is continued
 next time, or started again when 12 h old).
 
+**While travelling** (`worldgen/MapDataTrip`, 18 Oct 2026): when a player has been for a minute (checked every 5 s)
+where no store usable at the world's scale covers the land (finer than 8 m per block, inside the hard limit), the region
+holding the place is looked up (`MapDataJob.planTrip`) and the singleplayer host, or a server's operators, get a chat
+message with **[Download]** **[Not now]** **[Never for ...]** (`/orbis mapdata download|notnow|never <region>`, for
+operators or the singleplayer host with cheats off too). Download keeps the 100 km square around the player at full
+detail and keeps the region file, so once a region is accepted its next squares start by themselves as the player goes
+on (a short import with no new download); progress shows above the hotbar of whoever accepted it, and a chat line when
+it is done. Not now lasts for the game session, Never is remembered (`mapDataDeclined`), an offer is not repeated within
+10 minutes, and `offerMapDownloads` turns these offers off with the one at Create. Not whole countries: Libya's 73 MB
+file imported whole made 3.25 GB in 7 minutes (the Sahara's huge polygons are written into every 0.05-degree cell they
+cover, 100 KB to 1 MB each over 8,000 cells), where a square took 15 s and 61 MB round Tripoli (486,538 ways, under
+512 MB of heap) and 1.2 MB in the desert. The point is nights like 17 Oct 2026, when two of three Overpass servers
+failed and every region queued behind overpass-api.de's single slot (50-190 s a region).
+
 ### Pre-generation bar (`PregenTask.showBar`)
 
 A vanilla boss bar for every player while a sweep runs (friends on vanilla
@@ -1164,8 +1823,63 @@ the sweep's own wait (building terrain ahead, writing to disk, unloading,
 freeing memory). Players saw "0.0 chunks/s" in chat for minutes while a fresh
 area downloaded (Oslo, 4 Oct 2026) and could not tell a working sweep from a
 stuck one.
+The maps' own tiles (street, satellite, elevation, in singleplayer on the same
+machine) are counted apart as `map:host` from their User-Agent and left out.
+
+### Map around you bar (`worldgen/LiveStatus`, 17 Oct 2026)
+
+The same kind of bar for live generation, one per player, so the work behind
+walking into new land is visible too (until then it was only in the log:
+regions downloading and rasterising, terrain tiles retried, flat ground after
+2 minutes without them). It counts the map regions kept ready around the player
+(`regionPrefetchRadius`; regions the hard limit leaves out are not counted, as
+they are never fetched) and names what is being done: the downloads by kind
+(`PregenTask.downloadsNow`), else regions being prepared, else waiting. Shown
+after 2 s of work (a region that comes at once shows nothing); "ready" for 3 s
+when every region is there, else it simply goes (a region given up on leaves
+the count short). Yellow when the player's own region has waited 20 s, red
+while terrain downloads keep failing (`RealWorldChunkGenerator.terrainWaiting`,
+`OsmRegionManager.terrainRetries`). Never during a pre-generation (its own bar),
+only in the overworld of an Orbis world. A vanilla boss bar, so players without
+the mod see theirs too. `liveStatusBar` (Mod Menu Performance, `/orbis settings`)
+turns it off.
 
 ### Generation pipeline (`worldgen/RealWorldChunkGenerator`)
+
+**Slow regions in the Sahara (17-18 Oct 2026).** Walking in a Sahara world felt slow: building a map region took
+12-18 s (median 15.8 s over 21 regions) though none held a building, road or lake, and some took minutes. A
+headless server at 22.25 N, 10.30 E (JFR, `-Dorbis.profileRegions=true` for the step times) found three causes:
+- **Roads graded along their whole length.** A region's map data holds whole ways, and `gradeProfile` sampled the
+  ground across the road once per block along all of a desert highway (hundreds of km) for the half kilometre in the
+  region: regions with one road took 5 to 7 minutes, 9 s with the terrain cached; 944 of 994 s of elevation waiting
+  came from `roadBed`. Now only the stretch within `GRADE_CLIP_BLOCKS` (384) of the raster is graded, and an end
+  outside it is not pinned: 1.5-3 s, like the regions without roads; the road tests are unchanged.
+- **Soil depth from ISRIC's file server.** The depth to bedrock is read in full-width rows of two planet files, and
+  files.isric.org sent 12-45 KB/s to the user's connection (1 MB in 22 s): 10-30 s of rows per region, over three
+  minutes for the first ones of an area (3 tries of 60 s), and then a failure that dropped the soil groups too. Now a
+  region waits at most 5 s (`Soils.DEPTH_WAIT_MS`), the download goes on in the background (two at a time) and keeps
+  the rows on disk, the regions after a wait that ran out do not wait until a download comes back (or 2 minutes),
+  the row reads try twice for 20 s, and a failure leaves out only the depth. On a slow link the soil depth can then
+  differ between neighbouring regions (underground only). ISRIC's map service has no copy of the depth maps.
+- **Land cover looked up block by block.** `WorldCoverProvider.classAt` formatted the 3-degree granule's name and
+  looked it up for each of a region's 330,000 cells: 0.9-2.5 s a region; the last granule is kept now (0.13-0.3 s).
+
+**Sparse land asks for 2 x 2 blocks** (`combineSparseRegions`, on; 18 Oct 2026). When the map data answers of the
+regions within two of a region all came back under 256 KB (Sahara regions are tens of KB, a city's several MB), its data
+comes out of one Overpass answer for its 2 x 2 block (`OsmDataProvider.getDataFromBlock`: asked once, the regions of a
+block asking at once share the request, kept as `block_<box>.json.gz`), and each region takes the nodes inside its own
+box and the ways and areas with a point inside it, which is what Overpass returns for that box: at Djanet (Algeria) the
+region asked on its own and cut from its block held the same 21 nodes, 36 ways and 46 areas in the same order, and the
+block took 38 s against 42 s for the region alone. With one working Overpass server taking one request at a time
+(50-190 s a region on 17 Oct 2026), four regions then wait in the queue once. The first regions of a new area are
+still asked one by one (nothing to judge by yet), cities always.
+
+What remains for a fresh area is a one-time wait while its data arrives: a soil-group tile (a quarter degree, 7-25 s)
+and the terrain tiles (11-24 s), after which regions build in about 2 s (median of 32). A WorldCover granule's header
+took about 90 s the first time until the first read was cut from 512 to 32 KB (`HEADER_BYTES`; ESA's files hold the
+tags and both tile tables in their first 24 KB): 0.7-1.5 s for a new granule, the first regions of a fresh area
+20-30 s instead of 104-178 s, a test server's start 96 s instead of 179-306 s. Two of the three Overpass servers (kumi.systems, private.coffee) failed that
+night, which made map data take 50-190 s a region; that is outside Orbis.
 - OSM is streamed per 512 × 512 m region with a 32 m margin (so nothing
   breaks at region edges), fetched from Overpass, cached on disk (gzip) and
   kept in a bounded LRU. Downloads are priority-scheduled: a region a chunk
@@ -1555,6 +2269,43 @@ No extra software or DNS change is needed on the player's side.
   - Each cell of a graded road takes its height from the nearest piece of
     the road (as its surface does), not the first piece to reach it: on a
     bend two pieces meet at different distances along it.
+  - At a region's edges a ramp or cutting comes back to the graded road at
+    half a block per block. The graded height comes from the whole way and
+    the ground, so both regions agree on it; a ramp or cutting starts at a
+    bridge or tunnel the next region may not have (beyond its 32-block
+    margin) or sees with less above it. Mecca's First Ring Road went 41
+    blocks down towards its tunnel in one region and stayed on the ground in
+    the next: a 10-block wall across six lanes. Road steps across region
+    edges (16 Oct 2026, scratchpad seam probe): Bergen 5 x 5 km 46 -> 13,
+    Mecca 3 x 3 km 230 -> 171 at first.
+  - Bridges and tunnels two regions draw: a bridge within a region margin
+    of an edge, with every bridge it forms one with (pieces joined end to
+    end, ways side by side within 12 m of deck), takes its deck from what
+    both regions know alike (`sharedBridgeProfile`): the ground along it
+    (the sea at sea level), and the roads, railways and paths under its
+    width (another bridge's own deck where one runs under it) from map boxes
+    on a fixed world grid (`CORRIDOR_CELL`, 0.002 degrees) along it and 12 m
+    to either side. A box wholly inside the region's own data is served by
+    that data; the others come from the map lookup (the same source and
+    cache as regions). The ways beside it are levelled as a group, each
+    deck worked out the same way. A tunnel near an edge is pushed down under
+    the buildings and the streets over its width from the same boxes, with
+    two blocks more under a street (its graded height is not known to
+    both). Before, each region worked these out from what lay under or over
+    them inside its own data: decks stepped up to 9 blocks and tunnel floors
+    up to 11 at region edges. Bridges and tunnels away from the edges keep
+    the details only their region knows (graded streets under them, water,
+    `unifyParallelBridges`). Road steps across region edges, 16-17 Oct 2026:
+    Mecca 3 x 3 km 230 -> 3, Bergen 5 x 5 km 46 -> 2 (1:1), 0 -> 0 (1:2).
+    Road tests: steps 1:2 22 -> 16, deck (paths) 3 -> 0, thin tunnel cover
+    82 -> 76 / 29 -> 24; at 1:2 near region edges, 4 deck cells where a slip
+    road merges into Nygaardstangen bru (2 blocks) and 3 headroom cells
+    (streets in cuttings over tunnels) are new.
+  - A ramp or cutting runs until it is within half a block of the road it
+    meets (within a block, its last cell could round up while the road
+    beyond rounded down: a two-block step), and at a region edge it is
+    limited by the distance of the road's centre point, so the road stays
+    level across its width.
   Counts on the four test areas (roads, 1:1 / 1:2): steps 94 / 70 -> 7 / 22
   (the rest mostly the touching legs of the Nordre Skuteviksveien
   switchback), road-under-road headroom 43 / 5 -> 0 / 0, bridge-deck
@@ -1611,6 +2362,11 @@ No extra software or DNS change is needed on the player's side.
   around the place (60 m for peaks, 30 m otherwise), and a "Grand Tour"
   challenge wants all of them. Places with a Wikipedia entry rank first.
   The pack rebuilds itself when new map data arrives (`Landmarks.rebuildSoon`). Vanilla clients get all of it from the server.
+  Names are English where the map has one (`name:en`, else `int_name` in Latin letters; `Landmarks.english`,
+  17 Oct 2026): Kaaba, Hagia Sophia, Eiffel Tower, Bryggen Hanseatic Wharf. Mecca, Bergen, Paris, Istanbul, Agra
+  and New York kept 2 names of 207 in another script (no English name mapped). The advancement ids are still made
+  from the map's own name (`Landmark.localName`), so worlds made before keep their progress; their titles turn
+  English when the pack is next rebuilt (new map data, or `/orbis landmarks`).
 - **Caves and dungeons** (`vanillaCaves`): vanilla's cave tunnels (the
   worm carver with rooms, branches and lava below vanilla Y -56) are
   re-implemented inside the same underground band as the structures: per
@@ -1803,7 +2559,7 @@ pedestrian streets as light streets, footpaths and tracks as fixed-width dashes,
 thin; national and regional borders; then labels, most important first, each claiming its space (places,
 water names, peaks with heights, street names upright along their longest straight piece from 14, named
 places as dots coloured by kind from 15 by rank, all from 17, house numbers from 18). Names are the local ones
-in Latin letters, else `name_en`, `name:latin` or `name_int`. Drawing takes about half a second a tile, so a drawn tile is kept as a PNG in `map-tile-cache/street-v1/` (named `.img` so the cache trim counts it) and read back in 20-60 ms while it is newer than its source tile; `STYLE` is bumped when the drawing changes. A source tile is decoded once for all the finer tiles drawn from it (the last 8, shared by the drawing threads), and a finer tile only draws the features whose bounds reach into it (a zoom-17 tile is a 64th of its zoom-14 source). Places carry a white symbol in their dot by kind (bag, trolley, fork and knife, cup, glass, bed, cross, pill, mortarboard, book, columns, star, film, bus, train, boat, plane, P, $, pump, church cross, tree, ball, envelope, shield), drawn with Java2D shapes. The night street map (`orbis-street-dark`, `Layer.STREET_DARK`; a button at the map's right edge, shown with the street map, with a 12-pixel sun (light) or crescent moon (dark) drawn over it for the mode the map is in (the font's ☾ read as a "C"), switches it and remembers the choice in `streetMapDark`; the layer button skips it) is the same drawing with every colour looked up in `StreetTiles.DARK` (streets a little lighter than the ground, as on Google's night map; places' colours lightened; a dark halo), cached in `street-dark-v2/`. Footpaths and sidewalks are quiet white lines with a faint edge (red dashes for each of Oslo's mapped sidewalks covered the centre); cycleways blue, steps short grey dashes, tracks brown dashes. The world map's not-generated haze is orange (0x80F5A04A; grey until 4 Oct 2026, lost on the light street map), its button "Not generated: on/off". The Minecraft blocks over the map (Blocks: on/off, on by default) are drawn fully opaque (an opacity cycle until 2.0.0). The elevation layer
+in Latin letters, else `name_en`, `name:latin` or `name_int`. Drawing takes about half a second a tile, so a drawn tile is kept as a PNG in `map-tile-cache/street-v3/` (named `.img` so the cache trim counts it) and read back in 20-60 ms while it is newer than its source tile; `STYLE` is bumped when the drawing changes (v3, 17 Oct 2026: an empty source tile is land with nothing mapped, not sea; deserts had square lakes from zoom 10, 8 of 25 tiles at zoom 12 around 22.2 N, 9.8 E, while open sea always comes as the ocean's water polygon, 58 bytes a tile mid-Atlantic). A source tile is decoded once for all the finer tiles drawn from it (the last 8, shared by the drawing threads), and a finer tile only draws the features whose bounds reach into it (a zoom-17 tile is a 64th of its zoom-14 source). Places carry a white symbol in their dot by kind (bag, trolley, fork and knife, cup, glass, bed, cross, pill, mortarboard, book, columns, star, film, bus, train, boat, plane, P, $, pump, church cross, tree, ball, envelope, shield), drawn with Java2D shapes. The night street map (`orbis-street-dark`, `Layer.STREET_DARK`; a button at the map's right edge, shown with the street map, with a 12-pixel sun (light) or crescent moon (dark) drawn over it for the mode the map is in (the font's ☾ read as a "C"), switches it and remembers the choice in `streetMapDark`; the layer button skips it) is the same drawing with every colour looked up in `StreetTiles.DARK` (streets a little lighter than the ground, as on Google's night map; places' colours lightened; a dark halo), cached in `street-dark-v3/`. Footpaths and sidewalks are quiet white lines with a faint edge (red dashes for each of Oslo's mapped sidewalks covered the centre); cycleways blue, steps short grey dashes, tracks brown dashes. The world map's not-generated haze is orange (0x80F5A04A; grey until 4 Oct 2026, lost on the light street map), its button "Not generated: on/off". The Minecraft blocks over the map (Blocks: on/off, on by default) are drawn fully opaque (an opacity cycle until 2.0.0). The elevation layer
 (`client/ElevationTiles`, also in the world generator map) is drawn here from
 Mapterhorn's terrain tiles, the heights the world is built from, sharing the
 generator's `dem-cache` (files and `.missing` markers): a hypsometric tint
@@ -1952,7 +2708,7 @@ outside the game).
 New worlds start at Mount Everest's summit (`PreviewChoices`, at game start and
 after each world is created) until a preset, a search or a right-click chooses
 another place; they spawn at their centre: the spawn chosen on the world generator map
-is block 0, 0. Right-click the map, type coordinates ("60.39, 5.32") into its
+is block 0, 0. Right-click the map (**Set the spawn here**), type coordinates ("60.39, 5.32") into its
 search, search a place without an outline (a summit, a building, an address:
 the map and the spawn go to its point, nothing is selected), or search a place
 outside the spawn's current area (the spawn goes to
@@ -1970,7 +2726,11 @@ and `exactSpawn` in `config/orbisterrarum/orbisterrarum.json`.
 
 The spawn is applied once, on the world's first start (`worldgen/WorldSpawn`):
 the chunk there is generated in full and the spawn goes on its surface, so it
-is never inside a building or under the ground. `orbis-spawn.json` in the
+is never inside a building or under the ground. The start waits up to 20 s for
+that chunk (the server's other work going on); one that needs longer (map data
+still downloading) is finished in the background, so a dedicated server's
+watchdog never ends the start, and players who joined meanwhile near
+Minecraft's spawn are moved to it. `orbis-spawn.json` in the
 world folder records it, so a later `/setworldspawn` is kept. The fitted
 world height also samples 10 km around a custom spawn, so a spawn on a
 mountain away from the location is not cut off. Existing worlds keep their
@@ -2001,6 +2761,21 @@ need to press Done first.
   trimmed first): used as is for the day Esri's Cache-Control allows, then
   revalidated with the ETag (a "not modified" answer has no body), and shown
   from disk when offline.
+- **Ahead of need** (`MapTiles.view`, `MapTiles.warmUp`, 17 Oct 2026). A
+  first visit is mostly downloading: a screen of street map took 1.8-4.7 s
+  with an empty cache, 0.2-2 s of it drawing (the whole world the slowest),
+  and 0.07-0.3 s once drawn. Once a view has been still for 400 ms, two of
+  the six tile threads, when no tile on screen waits, download and draw
+  onto the disk the view one zoom out, one tile beyond each edge and one
+  zoom in over the middle half (Bergen at zoom 13: 6 + 20 + 36 tiles in
+  25 s); nothing is kept in memory, and a moved view drops what it had
+  queued. 15 s after the game starts, three low-priority threads draw the
+  whole world (zooms 1 and 2) and the world generator map's opening view
+  (30 km across the chosen spawn, the zooms a 400-1,200 pixel map shows it
+  at, plus 7 km around): 68 tiles, done 16 s later from an empty cache.
+  Shipping the world tiles in the jar was rejected (a few MB for what a
+  background thread draws once). A search already moves the map the moment
+  its answer arrives, so there was nothing to start sooner there.
 - **The chunks.** Drawn over the map in green, computed off the render
   thread per view (`client/PreviewRaster`): every screen pixel is mapped
   through the world's own projection to its block, so the chunks sit where
@@ -2116,7 +2891,7 @@ done (`CubicSweeper.doneRow`), so its purple shrinks and its percentage moves as
 normal world. The world preview
 (`AreaPreviewScreen`) has the same tool through `client/map/MapView` (the
 preview's own map implements it; `MapCanvas` does on the world map), without
-Generate: right-drag pans there and a right-click still sets the spawn. Its
+Generate: right-drag pans there and a right-click opens the menu (spawn, What's here). Its
 shapes are stored under `preview`; the preview's scale buttons re-project their
 lat/lon to blocks.
 
@@ -2141,6 +2916,37 @@ lidar terrain and surface model there whatever the switches say (logged): at
 Kartverket requests. The tool is always
 on there, with a hand tool for panning; creating a world (the new-world settings saved) clears the
 preview selection after copying it into the world.
+
+**The data viewer on the world generator map** (`client/map/CoverageOverlay`, the layers button under the
+night button; closed until opened, remembered for the game session). Opened, a card under the button says what
+Orbis reads at the cursor (at the spawn while the cursor is off the map; the last place while the cursor is on the
+card), by what it improves (`DataSources.topic`: buildings, aerial photos, roads, nature): a filled teal square and
+every national service by name where there is one (Bergen: "Lidar building heights and roofs (Kartverket)", "Road
+widths and lanes (NVDB)", NGU rock types, NVE lake depths, seNorge snow, NIBIO SR16 forest), a hollow grey square
+and the worldwide sources where there is none. Terrain has no row: lidar terrain comes through Mapterhorn, which does
+not say where its tiles are lidar. While it is open and the view is at least 150 km across (`COVERAGE_MIN_KM`, where
+borders show) the map is shaded in two levels with a line along their edges, stronger where buildings get their real
+heights (lidar surface models, building registers), lighter for other national data, with the key at the foot of the
+card; zoomed in, the card says to zoom out instead. History: until 17 Oct 2026 a teal shade by how many services
+overlap (1, 2, 3+) covered the map at every zoom with its key on the map (zoomed into a city the whole view was one
+shade, and the key covered pins), then for a day the rows were in the side panel. The shapes are the outlines that
+decide which services are asked (`orbis-coverage.json`, via `DataSources.outline`; a source without one, its box),
+worked out on a 4-pixel grid of the screen, row by row across each outline's edges, again only when the view moves.
+
+**What's here and landmark pins on the world generator map.** A right-click opens a menu (as on the world
+map): **Set the spawn here**, or **What's here**, the world map's card (`client/map/PlaceCard`, shared)
+filled before any world exists: the place's name (`Geocoder.reverse`, filled in when it answers), its
+coordinates, the block it lands on at the chosen scale, the climate (`BiomeClassifier` at the climate grid's
+height: zone, mean temperature, snowy), the national services there (`DataSources.list`, a box of
+±0.005°), the landmarks within 1.5 km, inside or outside the selection, and a **Spawn here** button.
+Gold diamonds mark the landmarks the world would get as advancements (`client/LandmarkPreview`): the same
+choice (`Landmarks.select`) over the same area (`Landmarks.searchBox`) for the centre and scale on screen,
+asked 700 ms after they stop changing, on a thread of its own. Its data is the local extract or the
+downloaded regions where those hold the area, else one Overpass query for the named places of the kinds
+`select` looks at (`OsmDataProvider.getQuery`, cached as `osm-cache/landmarks_<box>.json.gz`). The side
+panel says how many there are. Measured 17 Oct 2026: Mecca 27 pins, Bergen, Paris, Istanbul 1:2, Agra and
+New York 1:4 36 each (the cap); a first lookup took 13-57 s (three Overpass mirrors failing that day),
+a cached one under 0.2 s. With `landmarkAdvancements` off there are no pins.
 
 **Aternos export** (`export/AternosExport`, **Export for Aternos** in the World window: plain or
 Orbis server, one zip or split; the operator hosting the world). Saves the world, then on a background thread: every fully generated
@@ -2174,7 +2980,8 @@ default): world_gen_settings' overworld generator becomes flat cold ocean
 (bedrock, stone, 4 gravel, 20 water up to the sea level), world_border.dat
 goes round the kept chunks' square, the frame-lock datapack is added (with
 this version's pack format; it had 26.2's 107 alone) and orbis-map dropped.
-The world's placement for the map goes in that pack as a chat type,
+The world's placement for the map goes in a pack of its own, `orbis-map-info`
+(it shared the frame lock's until 2.0.0, so switching the lock off took the map with it), as a chat type,
 `orbisterrarum:world_info`, whose translation key carries origin, scale,
 projection and world id (`WorldInfoPayload.encode`): chat types are synced to
 every player by any server, plain Minecraft never uses this one, and an Orbis
@@ -2478,9 +3285,42 @@ for the regions still downloading. Sweeps now queue the map regions of the
 two region rows ahead (not one), and the region cache holds five rows
 across (at most 480 regions, about 8 MB each). A sweep never slows down for the players: while it runs,
 nobody is expected to be playing.
-On a dedicated server, also set `pause-when-empty-seconds=-1` in
-`server.properties`: 26.2 pauses an empty server after 60 s, and a paused
-server neither ticks the sweep nor unloads and saves its chunks.
+A dedicated server pauses once it has been empty for `pause-when-empty-seconds` (60 by default), and a
+paused server neither ticks the sweep nor unloads and saves its chunks: an automatic pre-generation on a
+test server stopped at 440 chunks a minute after start (17 Oct 2026). Setting the property by hand is no
+longer needed: while an Orbis pre-generation runs or waits, `mixin/DedicatedServerPauseMixin` makes
+`pauseWhenEmptySeconds` 0, and the server pauses as usual a minute after it ends.
+
+**Performance pass, 17 Oct 2026** (a 26.3 dedicated server, Bergen 2 km at 1:1, 42,933 chunks, the map
+data cached, JFR recordings; i7-9750H laptop, 8 GB heap). G1 ran 73.0 and 78.2 chunks/s and ZGC 71.4: no
+difference in speed. The sweep allocates about 650 MB/s (383 GB in 10 min), a third of it Minecraft packing
+every section's palette as a chunk is saved (`PalettedContainer.pack` inside `SerializableChunkData.write`);
+G1 stopped all threads 376 times for 48 s in all (median 146 ms), ZGC for 22 ms in all but stalled
+allocating threads for 73 s. ZGC is still the better choice for playing (no 150 ms freezes). CPU use
+averaged 50-58%: the server thread had 2.5% of the samples, Minecraft's workers 53-57%, the terrain
+builders 25-31%, the map regions 10-12%. The sweep sat at its 128 requests in flight most of the time;
+256 ran 79.4 and 85.2 chunks/s against 73.0 and 78.2 at 128 just before (+9% both times), 512 ran 71.9,
+so the cap is 256 (`-Dorbis.pregenInFlight=N` for tests); at 256 the sweep sometimes waits for the disk
+queue. Left for later: the terrain fill looks each block up in the section's palette (4.3% of CPU) and
+recounts touched sections afterwards (4.6%); the CPU is not the limit, so neither was changed.
+**One-block sections saved without re-encoding** (`worldgen/SectionPacking`, `mixin/PalettedContainerPackMixin`, 18 Oct
+2026): Minecraft's `PalettedContainer.pack` builds a new palette, a 4,096-entry array and new storage for every section
+it saves, and 86% of an Orbis world's sections hold one block (82% air; Bergen, 122 sections a chunk). Such a section is
+now seen from its storage (at most 256 longs compared, nothing allocated) and given what `pack` returns for it: the one
+entry, no storage, the bits Minecraft's strategy gives a palette of one; anything else, or a surprise, goes to Minecraft's
+packing. Bergen 1 km at 1:1 (12,255 chunks, same seed): allocation 114 to 70 GB (packing 36% to 7% of it), G1 pauses 107
+to 95 (12.0 to 10.5 s); speed within the noise (86.9 and 81.2 chunks/s), as the sweep is not held up by the collector.
+All 106,952 one-block sections of a region file were the same as those Minecraft saved.
+
+Lithium 0.26.2 (same day, same area, 256 in flight): loads without a Mixin conflict or error, but does
+not speed up pre-generation: 81.8 and 72.3 chunks/s against 87.8 and 81.9 without it in the runs just
+before or after (plain runs at 256 ranged 74.9-87.8). Its gains are in ticking (mobs, hoppers, redstone),
+which a paused sweep does not do; fine to use for playing. With a fixed seed, two plain worlds matched in
+75% of the chunks: the rest differ in the deep underground band only (sculk, sculk veins, deepslate
+facing, around Y -1830 at Bergen), where features placed on several threads land in a different order;
+with Lithium the same kind of difference reached most chunks. Both runs, with and without it, logged
+Minecraft's "unsafe terrain read during worldgen" 24 times at chunk [4, -93] (a feature reading two
+chunks away; not yet traced).
 
 ## Exploring a whole country
 
@@ -2631,11 +3471,12 @@ tunnel such as e4mc or playit) handles fresh exploration comfortably.
   only: at 1:2 the Nygårdstunnelen portals sank 4 blocks into flat ground.)
 - Relief mode is not 1:1 above 1500 m of regional elevation, and the very
   top of the Himalaya is squeezed; a 4064-block engine cannot hold Earth.
-- One building per column: a `building:part` that floats above another
-  building (skybridge) is dropped in favour of the lower building.
+- A `building:part` that floats above another building that is not its own
+  (a skybridge) is dropped in favour of the lower building; parts of one
+  building stack.
 - Roof stairs and ridge slabs are chosen by colour; a roof block with no
   close-coloured stairs in the running Minecraft version stays in full-block
   steps (bright concrete colours on 26.2, gold domes, thatch).
 - Interiors are empty shells (floors only).
-- Climate has no precipitation data; use `climateOverride` where the
-  latitude default is wrong.
+- Worlds made before 2.0.0 have no precipitation data; use `climateOverride`
+  where the latitude default is wrong.

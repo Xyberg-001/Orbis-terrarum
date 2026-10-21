@@ -59,8 +59,12 @@ public final class PregenTask {
      * Chunk requests outstanding at once. Generating a chunk is a chain of small steps handed between the
      * server thread and the worker pool, so one request rarely keeps a core busy; a sample of a sweep with 32
      * showed 3 of 11 workers in use. A few hundred keeps the pool fed; memory and the disk queue throttle it.
+     * 256 since 17 Oct 2026: Bergen 2 km at 1:1 on a test server (42,933 chunks, 6-core laptop) ran 79.4 and 85.2
+     * chunks/s against 73.0 and 78.2 at 128 in the runs just before (+9% both times); 512 ran 71.9. At 256 the
+     * sweep sat at its cap and now and then waited for the disk queue instead. The JVM flag
+     * -Dorbis.pregenInFlight=N sets it for tests.
      */
-    private static final int MAX_IN_FLIGHT = 128;
+    private static final int MAX_IN_FLIGHT = Integer.getInteger("orbis.pregenInFlight", 256);
     /**
      * The area is walked in square tiles of this many chunks a side, tile-rows in serpentine order, rather than
      * in rows of the full width. A finished chunk drags a ring of neighbours through the early generation
@@ -132,6 +136,11 @@ public final class PregenTask {
 
         boolean running();
 
+        /** Whether the last sweep stopped on an error (its progress kept), not at the end of its area. */
+        default boolean lastFailed() {
+            return false;
+        }
+
         /** Where the running sweep has got, for the world map; null when none runs. */
         Snapshot snapshot();
 
@@ -181,6 +190,8 @@ public final class PregenTask {
     private final java.util.ArrayDeque<ChunkPos> held = new java.util.ArrayDeque<>();
     private final AtomicInteger inFlight = new AtomicInteger();
     private volatile boolean producerDone, stopRequested;
+    /** Why the sweep thread stopped before the end of the area (an error), or null. */
+    private volatile String failure;
     /** Why the producer is paused right now, or null. */
     private volatile String waiting;
     /** Rows whose chunks have all left memory (their writes are queued), and of those the rows the disk has. */
@@ -232,6 +243,7 @@ public final class PregenTask {
      * coasts are complete, become the task's area. An older progress file of the same place (1.1.0) gives the rows already done.
      */
     public static synchronized Component startArea(ServerLevel level, AreaOutline outline, boolean mainlandOnly, String kind, boolean paused) {
+        if (com.berg.orbis.export.AternosExport.running()) return EXPORTING;
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
         AreaSweep sweep = AreaSweep.of(outline, model.mapper());
@@ -289,7 +301,11 @@ public final class PregenTask {
     }
 
     /** The same, listed in the given state (QUEUED: start or wait its turn; PAUSED; DOWNLOADING: when its map data is in). */
+    /** An export copies the world: no pre-generation writes under it (the export already waits for one to finish). */
+    private static final Component EXPORTING = Component.literal("An export for Aternos is copying the world: start the pre-generation once it is done.");
+
     public static synchronized Component startSelection(ServerLevel level, ChunkSelection selection, Boolean skipSea, String kind, PregenTasks.State initial) {
+        if (com.berg.orbis.export.AternosExport.running()) return EXPORTING;
         WorldModel model = OrbisMod.model();
         if (model == null) return Component.literal("The world model is not ready yet.");
         if (selection.isEmpty()) return Component.literal("The selection is empty.");
@@ -371,7 +387,8 @@ public final class PregenTask {
             DiskChunks disk = new DiskChunks(level);
             try {
                 walkArea(model, true, (cx, row) -> {
-                    if (disk.finished(cx, row)) {
+                    // A chunk the hard limit left empty is on disk as finished too: asked for, it is generated properly now
+                    if (disk.finished(cx, row) && !HardLimit.emptied(cx, row)) {
                         skippedExisting.incrementAndGet();
                         return;
                     }
@@ -384,6 +401,7 @@ public final class PregenTask {
             } catch (RuntimeException e) {
                 System.err.println("[orbis] Area sweep failed: " + e);
                 e.printStackTrace();
+                failure = e.toString();
             } finally {
                 producerFinishedAt = System.currentTimeMillis();
                 producerDone = true;
@@ -475,7 +493,7 @@ public final class PregenTask {
         for (int cz = Math.max(c0z, startRow); cz <= Math.min(c1z, sweep.lastRow()); cz++) {
             for (int[] range : sweep.rowRanges(cz)) {
                 for (int cx = Math.max(range[0], c0x); cx <= Math.min(range[1], c1x); cx++) {
-                    if (!disk.finished(cx, cz)) return true;
+                    if (!disk.finished(cx, cz) || HardLimit.emptied(cx, cz)) return true;
                 }
             }
         }
@@ -538,6 +556,13 @@ public final class PregenTask {
         }
         inFlight.incrementAndGet();
         level.getServer().execute(() -> {
+            // Stopped (or put aside) after this was queued: its ticket would be added to a task nobody collects any more,
+            // and the chunk kept in memory until the game closes.
+            if (stopRequested) {
+                inFlight.decrementAndGet();
+                slots.release();
+                return;
+            }
             ChunkPos pos = new ChunkPos(cx, cz);
             CompletableFuture<?> future;
             try {
@@ -840,11 +865,11 @@ public final class PregenTask {
                 level.getServer().execute(() -> level.getServer().getPlayerList().broadcastSystemMessage(
                         Component.literal(text).withStyle(ok ? ChatFormatting.GOLD : ChatFormatting.RED), false));
             }
-        }, net.minecraft.util.Util.backgroundExecutor()).exceptionally(e -> null);
+        }, com.berg.orbis.net.Lookups.POOL).exceptionally(e -> null);
     }
 
     private static void warnIfTooLow(ServerLevel level, WorldModel model, ChunkSelection selection) {
-        CompletableFuture.supplyAsync(() -> WorldHeight.peak(model, selection), net.minecraft.util.Util.backgroundExecutor())
+        CompletableFuture.supplyAsync(() -> WorldHeight.peak(model, selection), com.berg.orbis.net.Lookups.POOL)
                 .thenAccept(p -> {
                     if (p == null || p.squeezedBy() <= SQUEEZE_WARNING_BLOCKS) return;
                     String text = String.format(Locale.ROOT,
@@ -984,6 +1009,18 @@ public final class PregenTask {
             return;
         }
         if (++barTicks % 20 == 0) showBar(server, t);
+        if (t.failure != null) {
+            // The sweep thread died: stopped with its progress kept, not finished (that deleted the task, and the rest
+            // of the area was never generated).
+            PregenTasks.Task task = t.task;
+            stop();
+            PregenTasks.failed(task);
+            Component msg = Component.literal("Pre-generation of " + t.label + " stopped by an error (" + t.failure
+                    + "). Its progress is kept: resume it on the world map (B).");
+            System.err.println("[orbis] " + msg.getString());
+            server.getPlayerList().broadcastSystemMessage(msg, false);
+            return;
+        }
         if (t.step()) {
             active = null;
             lastFinished = t;
@@ -1105,8 +1142,8 @@ public final class PregenTask {
         return queued > 0 ? "waiting for map data (" + queued + (queued == 1 ? " region)" : " regions)") : null;
     }
 
-    /** The data being downloaded right now, by kind: "map data (3), building heights (12)". */
-    private static String downloadsNow() {
+    /** The data being downloaded right now, by kind: "map data (3), building heights (12)" (also for LiveStatus's bar). */
+    static String downloadsNow() {
         java.util.Map<String, Integer> byKind = new java.util.LinkedHashMap<>();
         for (java.util.Map.Entry<String, Integer> e : com.berg.orbis.net.OrbisHttp.activeRequests().entrySet()) {
             String kind = dataKind(e.getKey());
@@ -1123,6 +1160,7 @@ public final class PregenTask {
     /** What a host's data is, for the bar; null for requests that are not generation (weather, time zone). */
     private static String dataKind(String host) {
         String h = host.toLowerCase(Locale.ROOT);
+        if (h.startsWith("map:")) return null; // the maps' own tiles (see OrbisHttp.begin)
         if (h.contains("met.no") || h.contains("open-meteo")) return null;
         if (h.contains("mapterhorn")) return "terrain";
         if (h.contains("opengeohub")) return "bare-earth terrain";
@@ -1132,6 +1170,11 @@ public final class PregenTask {
         if (h.contains("vegvesen")) return "road widths";
         if (h.contains("worldcover")) return "land cover";
         if (h.contains("macrostrat") || h.contains("ngu.no")) return "rock types";
+        if (h.contains("isric")) return "soil";
+        if (h.contains("glims")) return "glacier outlines";
+        if (h.contains("discomap") || h.contains("zenodo")) return "forest types";
+        if (h.contains("overturemaps")) return "buildings";
+        if (h.contains("stqc380")) return "lake depths";
         if (h.contains("geonorge") || h.contains("ahn") || h.contains("dsm") || h.contains("lidar") || h.contains("hoyde")) return "building heights";
         if (h.contains("arcgis") || h.contains("imagery") || h.contains("orto") || h.contains("photo") || h.contains("wms")) return "aerial photos";
         return "other data";

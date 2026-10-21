@@ -429,7 +429,7 @@ public final class Interiors {
                 if (!free(c[0], c[1], floorY) || !free(sx, sz, floorY)) continue;
                 set(c[0], floorY + 1, c[1], Blocks.OAK_FENCE.defaultBlockState());
                 set(c[0], floorY + 2, c[1], Blocks.OAK_PRESSURE_PLATE.defaultBlockState());
-                set(sx, floorY + 1, sz, Blocks.OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, front));
+                set(sx, floorY + 1, sz, Blocks.OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, front.getOpposite())); // back to the room, facing the desk
             }
             placeNearAnchor(k, Blocks.LECTERN.defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, front.getOpposite()));
         }
@@ -451,8 +451,10 @@ public final class Interiors {
                 set(c[0], floorY + 1, c[1], Blocks.BARREL.defaultBlockState());
                 if (n % 2 == 0) frame(c[0], floorY + 2, c[1], wall.getOpposite(), Items.GLASS_BOTTLE);
                 int sx = c[0] - 2 * wall.getStepX(), sz = c[1] - 2 * wall.getStepZ();
-                if (n % 2 == 1 && free(sx, sz, floorY)) {
-                    set(sx, floorY + 1, sz, Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, wall));
+                // Two cells in from the wall: past the window, free() would read beyond the chunks this pass may touch.
+                boolean inWindow = sx >= loX && sx <= hiX && sz >= loZ && sz <= hiZ;
+                if (n % 2 == 1 && inWindow && free(sx, sz, floorY)) {
+                    set(sx, floorY + 1, sz, Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, wall.getOpposite())); // facing the bar
                 }
             }
         }
@@ -499,7 +501,7 @@ public final class Interiors {
                 if (across == aisle) {
                     set(c[0], floorY + 1, c[1], Blocks.CARPET.red().defaultBlockState());
                 } else if (Math.floorMod(along, 2) == 0) {
-                    set(c[0], floorY + 1, c[1], Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, front));
+                    set(c[0], floorY + 1, c[1], Blocks.DARK_OAK_STAIRS.defaultBlockState().setValue(StairBlock.FACING, front.getOpposite())); // facing the screen
                 }
             }
         }

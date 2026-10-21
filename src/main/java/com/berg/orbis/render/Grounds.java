@@ -36,7 +36,7 @@ public final class Grounds {
                 if (ColumnPainter.inFrontOfDoor(r, x, z)) continue;
                 LandCover lc = r.landCoverAt(idx);
                 if (lc != LandCover.CEMETERY && lc != LandCover.PLAYGROUND) continue;
-                int surface = level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
+                int surface = Decorator.groundY(level, x, z);
                 if (surface <= cfg.minY || surface + 5 >= cfg.maxY()) continue;
                 if (!level.getBlockState(pos.set(x, surface, z)).isSolid()) continue;
                 if (!level.getBlockState(pos.set(x, surface + 1, z)).getFluidState().isEmpty()) continue;

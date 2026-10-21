@@ -215,6 +215,14 @@ public final class DataSourcesScreen extends Screen {
 
     /** Asks before deleting a source's copies (re-import: they are fetched again when needed; delete: to free the space). */
     private void ask(Source s, boolean reimport) {
+        if (minecraft.level != null) {
+            // The open world reads these files (and keeps some open, or their index in memory): deleted under it, its
+            // chunks came out without the data, and on Windows a file held open was left half deleted.
+            net.minecraft.client.gui.components.toasts.SystemToast.add(minecraft.gui.toastManager(),
+                    net.minecraft.client.gui.components.toasts.SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
+                    Component.translatable("orbisterrarum.toast.move.inworld"), Component.translatable("orbisterrarum.sources.inworld"));
+            return;
+        }
         Usage u = usage.get(s.id());
         String size = u == null ? "?" : DataSources.bytes(u.bytes());
         String key = reimport ? "orbisterrarum.sources.ask.reimport" : downloaded(s) ? "orbisterrarum.sources.ask.free" : "orbisterrarum.sources.ask.delete";

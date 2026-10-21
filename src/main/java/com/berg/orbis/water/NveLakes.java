@@ -102,6 +102,9 @@ public final class NveLakes {
             }
         } catch (IOException | InterruptedException | RuntimeException e) {
             failed(e);
+            // Not kept: kept, the lake had no soundings for the whole session, and its regions built meanwhile got a plain bowl
+            // while those built after a restart got the surveyed bed (a step inside the lake)
+            return result;
         }
         soundings.put(lakeId, result);
         return result;
@@ -200,6 +203,11 @@ public final class NveLakes {
             }
             prev = cur;
         }
+    }
+
+    /** Whether NVE failed lately (its answers are missing for a few minutes, not "none"). */
+    public boolean failing() {
+        return System.currentTimeMillis() < failingUntil;
     }
 
     private void failed(Exception e) {

@@ -71,6 +71,14 @@ public final class RegionRaster {
     public byte[] seaShore;
     /** Depth of the lake or river bed below the water surface per column, in blocks (0 = the water body's own depth); null when not shaped. */
     public short[] bedDepth;
+    /** The soil under each column (geology.Soils.pack: profile and texture, 0 = unknown: dirt as before); null where no soil map covers the region. */
+    public byte[] soil;
+    /** Blocks of loose ground (soil and sediment) between the top block and the rock, plus one (0 = unknown: three); null when not known. */
+    public byte[] soilDepth;
+    /** Blocks of glacier ice under the top block (0 = none or unknown: three of packed ice); null where no glacier outline covers the region. */
+    public short[] iceDepth;
+    /** The kind of tree each forest column's stand is made of (landcover.ForestTypes.Kind ordinal, 0 = unknown); null where no map says. */
+    public byte[] treeKind;
     /** The streets' colour in this region's aerial photo (0xRRGGBB), the neutral reference for roof colours; -1 = none. */
     public int imageryStreetColour = -2;
 
@@ -172,6 +180,43 @@ public final class RegionRaster {
         return w <= 0 ? null : waters.get(w - 1);
     }
 
+    /**
+     * Building parts mapped one above another on the same ground (a tower in tiers, a spire on its tower, the Kaaba's
+     * walls, gold band and roof): the column's own building ({@link #building}) is the lowest, these stand over it,
+     * each in its own height band. Per column the packed parts: code | flags << 16 | roof extra << 24. Null while the
+     * region has none.
+     */
+    public java.util.Map<Integer, int[]> stacked;
+
+    /** The parts stacked over a column's own building (packed as in {@link #stacked}), or null. */
+    public int[] stackedAt(int idx) {
+        java.util.Map<Integer, int[]> m = stacked;
+        return m == null ? null : m.get(idx);
+    }
+
+    /** Whether a building (by code) stands at a column, as the column's own or stacked over it. */
+    public boolean hasBuilding(int idx, short code) {
+        if (idx < 0) return false;
+        if (building[idx] == code) return true;
+        int[] s = stackedAt(idx);
+        if (s != null) for (int p : s) if ((short) (p & 0xFFFF) == code) return true;
+        return false;
+    }
+
+    /** Sets a building's flags and roof extra at a column, whether it is the column's own building or stacked. */
+    public void setBuildingCell(int idx, short code, int flags, int extra) {
+        if (building[idx] == code) {
+            buildingFlags[idx] = (byte) flags;
+            roofExtra[idx] = (byte) extra;
+            return;
+        }
+        int[] s = stackedAt(idx);
+        if (s == null) return;
+        for (int i = 0; i < s.length; i++) {
+            if ((short) (s[i] & 0xFFFF) == code) s[i] = (code & 0xFFFF) | (flags & 0xFF) << 16 | (extra & 0xFF) << 24;
+        }
+    }
+
     public BuildingFeature buildingAt(int idx) {
         int b = building[idx];
         if (b <= 0) return null;
@@ -215,12 +260,30 @@ public final class RegionRaster {
         return rock == null ? 0 : rock[idx];
     }
 
+    public int soilAt(int idx) {
+        return soil == null ? 0 : soil[idx] & 0xFF;
+    }
+
+    /** Blocks of loose ground between the top block and the rock, or -1 when not known. */
+    public int soilDepthAt(int idx) {
+        return soilDepth == null ? -1 : (soilDepth[idx] & 0xFF) - 1;
+    }
+
+    public int iceDepthAt(int idx) {
+        return iceDepth == null ? 0 : iceDepth[idx];
+    }
+
+    public int treeKindAt(int idx) {
+        return treeKind == null || idx < 0 ? 0 : treeKind[idx];
+    }
+
     public int roadDirAt(int idx) {
         return roadDir[idx] & 0xFF;
     }
 
     public long approxBytes() {
         long n = (long) stride * stride;
-        return n * (1 + 2 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + (roadUnder != null ? 5 : 0) + (rock != null ? 1 : 0) + (bedDepth != null ? 2 : 0));
+        return n * (1 + 2 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + (roadUnder != null ? 5 : 0) + (rock != null ? 1 : 0) + (bedDepth != null ? 2 : 0)
+                + (soil != null ? 1 : 0) + (soilDepth != null ? 1 : 0) + (iceDepth != null ? 2 : 0) + (treeKind != null ? 1 : 0));
     }
 }

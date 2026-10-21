@@ -40,7 +40,15 @@ public class BlendedElevationService {
             } catch (RuntimeException e) {
                 depth = Double.NaN;
             }
-            if (!Double.isNaN(depth) && depth < 0) return Math.max(depth, -maxDepthMeters);
+            if (!Double.isNaN(depth) && depth < 0) {
+                // Real land below sea level (Dutch polders, the Jordan valley) keeps its own height: any negative height was taken for
+                // sea and the coarse sea-floor model's was used instead. Unless the sea floor lies well below it: then it is water below
+                // sea level with a floor (the Caspian, the Dead Sea), and the floor is drawn down to its depth limit from that water's
+                // surface (from sea level, the Dead Sea's floor was cut flat 130 m above it).
+                if (!Double.isNaN(land) && land < -1.0 && depth > land - 20.0) return land;
+                double surface = Double.isNaN(land) ? 0.0 : Math.min(0.0, land);
+                return Math.max(depth, surface - maxDepthMeters);
+            }
         }
         return land;
     }

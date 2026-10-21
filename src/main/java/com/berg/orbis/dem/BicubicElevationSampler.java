@@ -67,6 +67,11 @@ public class BicubicElevationSampler {
      * edge. Without this every tile boundary shows up as a flat seam.
      */
     private float[][] tile(Memo m, int x, int y) {
+        // Round the globe: past ±180° the tile beyond the last is the first (Fiji, the Aleutians and Chukotka asked for tiles that do
+        // not exist, and every column there failed); at the map's top and bottom edge the edge row stands in for the one beyond.
+        int n = 1 << zoom;
+        x = Math.floorMod(x, n);
+        y = Math.max(0, Math.min(n - 1, y));
         long key = ((long) x << 32) | (y & 0xffffffffL);
         for (int i = 0; i < 4; i++) if (m.keys[i] == key) return m.tiles[i];
         float[][] t = tiles.getTile(zoom, x, y);

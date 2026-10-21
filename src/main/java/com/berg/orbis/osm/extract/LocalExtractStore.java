@@ -33,11 +33,18 @@ import java.util.stream.Stream;
  * features come from the local cells instead of Overpass.
  */
 public final class LocalExtractStore {
+    /** The Geofabrik region's outline, kept with an extract downloaded for it (see {@link Extract#covers}). */
+    static final String OUTLINE_FILE = "outline.json";
 
     public record Extract(String name, Path dir, String profile, double south, double west, double north, double east,
-                          long ways, long relations) {
+                          long ways, long relations, java.util.List<java.util.List<double[][]>> outline) {
+        /**
+         * Whether the extract holds this box: inside its region's outline when it came with one (Geofabrik's file is the country: its
+         * box alone, Norway's, took in most of Sweden, which then had no lakes, rivers or roads), else inside the box of its data.
+         */
         public boolean covers(double s, double w, double n, double e) {
-            return s >= south && n <= north && w >= west && e <= east;
+            if (!(s >= south && n <= north && w >= west && e <= east)) return false;
+            return outline == null || Geofabrik.holds(outline, s, w, n, e);
         }
 
         public boolean usableAt(double metersPerBlock) {
@@ -90,12 +97,35 @@ public final class LocalExtractStore {
                     if (!Files.exists(index)) continue;
                     try {
                         JsonObject o = JsonParser.parseString(Files.readString(index, StandardCharsets.UTF_8)).getAsJsonObject();
+                        Path outlineFile = dir.resolve(OUTLINE_FILE);
+                        java.util.List<java.util.List<double[][]>> outline = null;
+                        if (Files.exists(outlineFile)) {
+                            try {
+                                outline = Geofabrik.outlineFrom(Files.readString(outlineFile, StandardCharsets.UTF_8));
+                            } catch (RuntimeException | IOException e) {
+                                System.err.println("[orbis] Extract " + dir.getFileName() + ": its outline is unreadable (" + e + "); its box is used");
+                            }
+                        } else if (o.has("source") && o.get("source").getAsString().endsWith("-latest.osm.pbf")) {
+                            // Downloaded before the outline was kept with it: its region's, from Geofabrik's index on disk
+                            String id = o.get("source").getAsString().replace("-latest.osm.pbf", "");
+                            for (Geofabrik.Region r : Geofabrik.regionsOnDisk(root.resolveSibling("extracts-src"))) {
+                                if (r.id().equals(id) && r.polygons() != null && !r.polygons().isEmpty()) {
+                                    outline = r.polygons();
+                                    try {
+                                        Files.writeString(outlineFile, Geofabrik.outlineJson(outline), StandardCharsets.UTF_8);
+                                    } catch (IOException e) {
+                                        // used from memory this session; written next time
+                                    }
+                                    break;
+                                }
+                            }
+                        }
                         found.add(new Extract(
                                 o.has("name") ? o.get("name").getAsString() : dir.getFileName().toString(), dir,
                                 o.has("profile") ? o.get("profile").getAsString() : "map",
                                 o.get("south").getAsDouble(), o.get("west").getAsDouble(),
                                 o.get("north").getAsDouble(), o.get("east").getAsDouble(),
-                                o.has("ways") ? o.get("ways").getAsLong() : 0, o.has("relations") ? o.get("relations").getAsLong() : 0));
+                                o.has("ways") ? o.get("ways").getAsLong() : 0, o.has("relations") ? o.get("relations").getAsLong() : 0, outline));
                     } catch (RuntimeException | IOException e) {
                         System.err.println("[orbis] Ignoring extract " + dir + ": " + e.getMessage());
                     }

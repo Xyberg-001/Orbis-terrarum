@@ -82,11 +82,14 @@ public final class BareEarthBlend implements DemTileProvider.TileCorrection {
                 }
                 double w = 1;
                 if (!near.isEmpty()) {
-                    double px = ox + (i + 0.5) / n * per, d = Double.MAX_VALUE;
+                    // The nearest survey tile by squared distance, one square root at the end (Math.hypot for each of up to 80
+                    // tiles at each of a tile's 262,144 pixels was most of a correction's time).
+                    double px = ox + (i + 0.5) / n * per, d2 = Double.MAX_VALUE;
                     for (int[] r : near) {
                         double ddx = Math.max(0, Math.max(r[0] - px, px - (r[0] + 1))), ddy = Math.max(0, Math.max(r[1] - py, py - (r[1] + 1)));
-                        d = Math.min(d, Math.hypot(ddx, ddy));
+                        d2 = Math.min(d2, ddx * ddx + ddy * ddy);
                     }
+                    double d = Math.sqrt(d2);
                     double t = Math.min(1, d * unitM / BLEND_METRES);
                     w = t * t * (3 - 2 * t);
                 }

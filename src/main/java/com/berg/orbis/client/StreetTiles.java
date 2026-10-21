@@ -369,7 +369,7 @@ public final class StreetTiles {
     }
 
     /** Bumped when the drawing changes, so tiles drawn the old way are drawn again. */
-    private static final String STYLE = "v2";
+    private static final String STYLE = "v3"; // v3: empty tiles are land, not sea
 
     private static int[] readDrawn(Path drawn, Path source) {
         try {
@@ -449,9 +449,12 @@ public final class StreetTiles {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
             g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            // An empty tile is open sea (OpenMapTiles leaves nothing out on land).
+            // An empty tile is land with nothing mapped (the Sahara from zoom 10 on: 8 of 25 tiles at zoom 12
+            // around 22.2 N, 9.8 E). Open sea is never empty: it comes as the ocean's water polygon (58 bytes from
+            // zoom 7 to 13 in the mid-Atlantic). Until 17 Oct 2026 an empty tile was painted as sea, and deserts
+            // showed square lakes.
             Painter painter = new Painter(g, z, x, y, sz, sx, sy, layers, dark);
-            g.setColor(painter.c(empty ? WATER : BACKGROUND));
+            g.setColor(painter.c(BACKGROUND));
             g.fillRect(0, 0, PX, PX);
             painter.paint();
         } finally {

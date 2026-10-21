@@ -79,14 +79,22 @@ public class OrbisMod implements ModInitializer {
     private static int modelHeight;
     /** The height of the level actually loaded (from its dimension type), 0 while no level is loaded. */
     private static volatile int levelHeight;
+    /** See {@link #modelChangedInWorld}. */
+    private static volatile boolean rebuildAfterWorld;
+    /** The model whose spawn area was fetched ahead, so each is fetched once. */
+    private static WorldModel prefetched;
     private static volatile Float cloudHeight;
     private static Thread spawnPrefetch;
     /** The model built while the mod starts (the defaults'): a client fetches nothing for it. */
     private static boolean startupModel;
 
-    /** Cloud layer Y for the active world (about 800 m above the ground at its origin), or null before a model exists. */
+    /**
+     * Cloud layer Y for the active world (about 800 m above the ground at its origin), or null when no Orbis world runs in this game or
+     * server: on someone else's server the model here is the last singleplayer world's (or the defaults'), and the clouds came from it
+     * instead of the server's (Everest's height over Bergen); its dimension type has the server's value.
+     */
     public static Float cloudHeightOverride() {
-        return cloudHeight;
+        return levelHeight != 0 ? cloudHeight : null;
     }
 
     /** The active world model (never null after initialisation). */
@@ -136,8 +144,14 @@ public class OrbisMod implements ModInitializer {
      */
     public static boolean isOrbisSeaLevel(int seaLevel) {
         WorldModel m = model;
-        return m != null && seaLevel == m.cfg().seaLevelY;
+        if (levelHeight != 0 && m != null) return seaLevel == m.cfg().seaLevelY;
+        // No Orbis world runs here (a player on someone else's server): the model here is another world's, so its sea level says
+        // nothing about this one. A sea below vanilla's floor is an Orbis world's.
+        return seaLevel < VANILLA_MIN_Y;
     }
+
+    /** The lowest Y of any vanilla dimension. */
+    private static final int VANILLA_MIN_Y = -64;
 
     public static Path configDir() {
         return configDir;
@@ -293,17 +307,23 @@ public class OrbisMod implements ModInitializer {
         cloudHeight = (float) built.cloudHeightY();
         System.out.println("[orbis] Cloud layer at Y " + cloudHeight);
         if (current != null) current.shutdown();
-        boolean client = FabricLoader.getInstance().getEnvironmentType() == net.fabricmc.api.EnvType.CLIENT;
-        if (built.regions() != null && config.prefetchSpawnAtStartup && !(startupModel && client)) {
-            // Start downloading the spawn regions NOW, while the player is
-            // still in the menu: vanilla's spawn search generates chunks
-            // synchronously on the server thread and would otherwise look
-            // frozen at "Create New World" until the downloads finish.
-            spawnPrefetch = new Thread(built.regions()::prefetchSpawnArea, "Orbis-spawn-prefetch");
-            spawnPrefetch.setDaemon(true);
-            spawnPrefetch.start();
-        }
+        // The defaults' model at startup fetches nothing: no world is known to be Orbis's yet (a server's world is fetched
+        // for as it starts, below; a server running a vanilla world downloaded the default place's spawn area every boot).
+        if (!startupModel) prefetchSpawn(built);
         return built;
+    }
+
+    /**
+     * Starts downloading the model's spawn regions NOW, while the player is still in the menu (or the server is still starting):
+     * vanilla's spawn search generates chunks synchronously on the server thread and would otherwise look frozen at "Create New
+     * World" until the downloads finish. Once per model.
+     */
+    private static synchronized void prefetchSpawn(WorldModel m) {
+        if (m == null || m.regions() == null || !config.prefetchSpawnAtStartup || m == prefetched) return;
+        prefetched = m;
+        spawnPrefetch = new Thread(m.regions()::prefetchSpawnArea, "Orbis-spawn-prefetch");
+        spawnPrefetch.setDaemon(true);
+        spawnPrefetch.start();
     }
 
     /**
@@ -355,13 +375,29 @@ public class OrbisMod implements ModInitializer {
         saveConfigFile();
     }
 
-    /** Replaces the installation config (from the settings screen), saves it and rebuilds the model. */
-    public static synchronized void replaceConfig(OrbisConfig newConfig) {
+    /** Replaces the installation config (from the settings screen) and saves it; true when the open world takes it only when opened again. */
+    public static synchronized boolean replaceConfig(OrbisConfig newConfig) {
         newConfig.sanitizeValues();
         config = newConfig;
         saveConfigFile();
-        modelSettings = null; // network / data-source settings changed: force a rebuild
-        modelFor(WorldSettings.fromConfig(config));
+        // Network and data-source settings take effect with the next model. Never rebuilt under an open world: chunks
+        // being generated still held the retired model and waited forever on it (or were saved without roads and
+        // buildings). The open world picks them up when it is opened again; anywhere else (the title screen, someone
+        // else's server) the next world builds its own.
+        if (levelHeight != 0) {
+            rebuildAfterWorld = true;
+            return true;
+        }
+        modelSettings = null;
+        return false;
+    }
+
+    /**
+     * The model's settings were changed while its world ran (settings saved, or the real sky switched by command): the
+     * next world builds a fresh model even when its settings match, instead of inheriting the changes.
+     */
+    public static void modelChangedInWorld() {
+        rebuildAfterWorld = true;
     }
 
     /** The mod used to be called TellusPlus: carry its config folder (and the valuable caches inside) over once. */
@@ -401,6 +437,12 @@ public class OrbisMod implements ModInitializer {
                 .register(com.berg.orbis.net.WorldInfoPayload.TYPE, com.berg.orbis.net.WorldInfoPayload.CODEC);
         net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
                 .register(com.berg.orbis.net.AllowedAreaPayload.TYPE, com.berg.orbis.net.AllowedAreaPayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
+                .register(com.berg.orbis.net.RealTemperaturePayload.TYPE, com.berg.orbis.net.RealTemperaturePayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
+                .register(com.berg.orbis.net.SeasonInfoPayload.TYPE, com.berg.orbis.net.SeasonInfoPayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry.clientboundPlay()
+                .register(com.berg.orbis.net.LocalWeatherPayload.TYPE, com.berg.orbis.net.LocalWeatherPayload.CODEC);
         com.berg.orbis.map.BlockMapService.register();
         com.berg.orbis.compat.dh.DhCompat.init(); // optional: only acts when Distant Horizons is installed
         com.berg.orbis.mc.Cubic.init(); // optional: cubic worlds, when Cubic Worlds is installed (26.3)
@@ -413,6 +455,13 @@ public class OrbisMod implements ModInitializer {
                     new com.berg.orbis.net.WorldInfoPayload(c.originLat, c.originLon, c.metersPerBlock, c.projection,
                             com.berg.orbis.map.BlockMapService.worldId(server)));
             com.berg.orbis.worldgen.HardLimit.sendTo(handler.getPlayer());
+            com.berg.orbis.sky.RealSky.sendTemperature(server, handler.getPlayer());
+            // each place's own season on the grass and leaves (their game colours them)
+            if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(handler.getPlayer(), com.berg.orbis.net.SeasonInfoPayload.TYPE)) {
+                net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.getPlayer(), new com.berg.orbis.net.SeasonInfoPayload(
+                        c.realSeasons && config.realSeasons, c.seaLevelY, c.verticalMetersPerBlock(), c.reliefKneeMeters,
+                        m.vertical().mode() == com.berg.orbis.dem.VerticalMapping.Mode.RELATIVE));
+            }
         });
         RealWorldBiomeSource.register();
         TeleportCommands.register();
@@ -464,25 +513,35 @@ public class OrbisMod implements ModInitializer {
             int actual = server.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DIMENSION_TYPE)
                     .getOrThrow(net.minecraft.world.level.dimension.BuiltinDimensionTypes.OVERWORLD).value().height();
             levelHeight = actual;
-            WorldModel m = model;
-            if (m != null && m.cfg().worldHeight != actual && !cubicWorld()) {
-                System.out.println("[orbis] Level height is " + actual + " (model had " + m.cfg().worldHeight + "); rebuilding the model");
-                m = modelFor(modelSettings);
-            }
             System.out.println("[orbis] World Y " + OrbisConfig.DIMENSION_MIN_Y + ".." + (OrbisConfig.DIMENSION_MIN_Y + actual - 1) + " (" + actual / 16 + " sections)");
-            if (m != null && m.regions() != null) {
-                System.out.println("[orbis] Server starting; " + m.regions().stats());
-            }
+        });
+        // This world's model from the moment its overworld loads, built from the world's own settings: until its generator first asked
+        // for one, the model stayed the previous world's (or the defaults'), and what ran before that (the sky, the spawn) read the wrong
+        // place. A cubic world has its heights by now (its cube generator is made on the same event, registered earlier). Rebuilding at
+        // SERVER_STARTING by height alone rebuilt the previous world's place and fetched its spawn area.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents.LOAD.register((server, level) -> {
+            if (level.dimension() != net.minecraft.world.level.Level.OVERWORLD
+                    || !(level.getChunkSource().getGenerator() instanceof RealWorldChunkGenerator generator)) return;
+            WorldModel m = modelFor(generator.settings().orElse(null));
+            prefetchSpawn(m);
+            if (m.regions() != null) System.out.println("[orbis] Server starting; " + m.regions().stats());
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             com.berg.orbis.worldgen.StructureSearches.clear();
+            com.berg.orbis.render.Transit.clearCartSpots();
             levelHeight = 0;
             cubicHeights = null;
+            // A model changed while its world ran is not handed to the next world with the same settings.
+            if (rebuildAfterWorld) {
+                rebuildAfterWorld = false;
+                modelSettings = null;
+            }
         });
         ServerLifecycleEvents.SERVER_STARTING.register(server -> stopping = false);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             stopping = true;
             com.berg.orbis.worldgen.PregenTask.serverStopping();
+            com.berg.orbis.export.AternosExport.serverStopping();
         });
         com.berg.orbis.worldgen.AutoPregen.register();
         com.berg.orbis.worldgen.HardLimit.register();
@@ -522,6 +581,12 @@ public class OrbisMod implements ModInitializer {
             if (!positions.isEmpty()) m.regions().updatePlayers(positions);
         });
         ServerTickEvents.END_SERVER_TICK.register(com.berg.orbis.worldgen.PregenTask::tick);
+        ServerTickEvents.END_SERVER_TICK.register(com.berg.orbis.worldgen.LiveStatus::tick);
+        ServerTickEvents.END_SERVER_TICK.register(com.berg.orbis.worldgen.MapDataTrip::tick);
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(s -> {
+            com.berg.orbis.worldgen.LiveStatus.clear();
+            com.berg.orbis.worldgen.MapDataTrip.reset();
+        });
 
         System.out.println("[orbis] Origin " + config.originLat + ", " + config.originLon + " at 1 block = " + config.metersPerBlock
                 + " m; sea level Y=" + config.seaLevelY + "; world Y " + config.minY + ".." + config.maxY());
@@ -652,6 +717,8 @@ public class OrbisMod implements ModInitializer {
                     return Double.NaN;
                 }
             });
+            // Surveyed heights (tunnel floors) to block Y as the terrain's are.
+            rasterizer.setMetresToY((metres, bx, bz) -> vertical.toY(metres, (int) Math.floor(bx), (int) Math.floor(bz)));
             // The terrain tiles under a region, all at once, before its roads and water read them point by point.
             rasterizer.setTerrainPrefetch(box -> tiles.prefetch(cfg.demZoom, box[0], box[1], box[2], box[3]));
             // The surface model's tiles under a region's buildings, fetched in parallel before the buildings are measured.
@@ -729,8 +796,13 @@ public class OrbisMod implements ModInitializer {
                 if (global != null) System.out.println("[orbis] Lake depths found in lake-depths/: GLOBathy greatest depths for " + global.size() + " lakes (CC0)");
                 com.berg.orbis.water.LakeSurveys surveys = cfg.lakeSurveySources == null || cfg.lakeSurveySources.isEmpty() ? null
                         : new com.berg.orbis.water.LakeSurveys(cfg, data.resolve("lake-depth-cache"));
-                rasterizer.setWaterBeds(new com.berg.orbis.water.WaterBeds(mapper, cfg.metersPerBlock, nve, global)
-                        .withSurveys(surveys == null || surveys.isEmpty() ? null : surveys));
+                com.berg.orbis.water.WaterBeds beds = new com.berg.orbis.water.WaterBeds(mapper, cfg.metersPerBlock, nve, global)
+                        .withSurveys(surveys == null || surveys.isEmpty() ? null : surveys);
+                if (cfg.quebecLakes) beds.withQuebecLakes(new com.berg.orbis.water.QuebecLakes(data.resolve("quebec-lake-cache")));
+                if (cfg.seascapeLakes && cfg.bathymetryTileUrl != null && cfg.bathymetryTileUrl.contains("openwaters")) {
+                    beds.withLakeFloors(new DemTileProvider(data.resolve("dem-cache"), cfg.bathymetryTileUrl, 64));
+                }
+                rasterizer.setWaterBeds(beds);
             }
             // The rock under each place: NGU's bedrock map in Norway, Macrostrat's world map everywhere else (and
             // where NGU has nothing). Each keeps its downloads in a folder of its own.
@@ -744,7 +816,16 @@ public class OrbisMod implements ModInitializer {
                 }
                 if (!maps.isEmpty()) rasterizer.setBedrock(new com.berg.orbis.geology.Rocks(maps));
             }
-            if (cfg.nvdbRoadWidths) rasterizer.setNvdb(new com.berg.orbis.osm.NvdbRoads.Store(data.resolve("nvdb-cache")));
+            // What the ground is made of under the grass, how deep it goes, and how thick the glaciers are.
+            if (cfg.groundLayers) {
+                rasterizer.setGround(new com.berg.orbis.geology.Soils(data.resolve("soil-cache"), data.resolve("soil-depth-cache")),
+                        new com.berg.orbis.geology.Glaciers(data.resolve("glacier-cache")));
+            }
+            if (cfg.riverWidths && cfg.generateWater) rasterizer.setRiverWidths(com.berg.orbis.water.RiverWidths.get());
+            if (cfg.overtureBuildings) rasterizer.setOvertureBuildings(new com.berg.orbis.osm.OvertureBuildings(data.resolve("overture-cache")));
+            if (cfg.forestTypes) rasterizer.setForestTypes(new com.berg.orbis.landcover.ForestTypes(data.resolve("forest-type-cache")));
+            if (cfg.nvdbRoadWidths || cfg.surveyedTunnels) rasterizer.setNvdb(new com.berg.orbis.osm.NvdbRoads.Store(data.resolve("nvdb-cache")));
+            if (cfg.surveyedTunnels) rasterizer.setTunnelSurveys(new com.berg.orbis.osm.TunnelSurveys(data.resolve("tunnel-survey-cache")));
             if (cfg.nvdbRoadWidths && cfg.roadSources != null && !cfg.roadSources.isEmpty()) {
                 com.berg.orbis.osm.RoadDatabases roads = new com.berg.orbis.osm.RoadDatabases(cfg, data.resolve("road-db-cache"));
                 if (!roads.isEmpty()) rasterizer.setRoadDatabases(roads);
@@ -753,7 +834,13 @@ public class OrbisMod implements ModInitializer {
         }
 
         WorldModel model = new WorldModel(cfg, mapper, elevation, vertical, classifier, regions, landmarks);
-        if (cfg.realSnow) model.setSnowCover(com.berg.orbis.sky.SnowCover.shared(data.resolve("snow-cache")));
+        if (cfg.realSnow) {
+            model.setSnowCover(com.berg.orbis.sky.SnowCover.shared(data.resolve("snow-cache")));
+            model.setObservedSnow(com.berg.orbis.sky.ObservedSnow.shared(data.resolve("snow-cache").resolve("observed")));
+            model.setSeNorge(com.berg.orbis.sky.SeNorge.shared(data.resolve("snow-cache").resolve("senorge")));
+            model.setSnodas(com.berg.orbis.sky.Snodas.shared(data.resolve("snow-cache").resolve("snodas")));
+            model.setAustriaSnow(com.berg.orbis.sky.AustriaSnow.shared(data.resolve("snow-cache").resolve("snowgrid")));
+        }
         model.setCoarseSampler(new BicubicElevationSampler(tiles, Math.min(cfg.demZoom, 11)));
         model.setTerrainTiles(tiles, cfg.demZoom);
         model.setWorldCover(worldCover);

@@ -90,7 +90,14 @@ public class ImageServiceDemSource implements DemSource, TileSource {
      * tile in a row. Tiles already on disk cost nothing.
      */
     public void prefetch(List<double[]> boxes) {
-        if (unavailable()) return;
+        // Outside the service's country nothing is asked of it, not even whether it answers (a world at Mecca logged
+        // Kartverket's reachability as if Norway's roofs were in use there).
+        boolean any = false;
+        for (double[] b : boxes) {
+            any |= !(b[2] < src.south || b[0] > src.north || b[3] < src.west || b[1] > src.east)
+                    && com.berg.orbis.config.DataSources.covers(src.name, b[0], b[1], b[2], b[3]);
+        }
+        if (!any || unavailable()) return;
         java.util.Set<Long> seen = new java.util.HashSet<>();
         List<CompletableFuture<?>> jobs = new ArrayList<>();
         for (double[] b : boxes) {

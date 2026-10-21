@@ -44,6 +44,13 @@ public final class NvdbRoads {
      * One road line: lat/lon points, carriageway width in metres (NaN if unknown), lane count (-1 if unknown), and
      * whether width and lanes count both directions of a road OSM may draw as two one-way carriageways (HPMS).
      */
+    /** A tunnel bore (NVDB object type 67, Tunnelløp): its road's centre line, each point lat, lon and height in metres. */
+    public record Bore(List<double[]> latLonZ) {
+    }
+
+    /** NVDB's object type for a tunnel bore. */
+    private static final int TUNNEL_BORE_TYPE = 67;
+
     public record Segment(List<double[]> latLon, double widthM, int lanes, boolean bothWays) {
         public Segment(List<double[]> latLon, double widthM, int lanes) {
             this(latLon, widthM, lanes, false);
@@ -117,6 +124,74 @@ public final class NvdbRoads {
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 return List.of();
             }
+        }
+
+        private volatile long tunnelsFailedUntil;
+
+        /**
+         * The tunnel bores touching the box, each whole (NVDB returns an object entire, so every region a long tunnel crosses gets
+         * the same bore and draws the same floor); null when they could not be had (not kept: asked again next time).
+         */
+        public List<Bore> tunnels(double south, double west, double north, double east) {
+            if (!inNorway(south, west, north, east)) return List.of();
+            Path file = cacheDir.resolve(String.format(Locale.ROOT, "%.5f_%.5f_%.5f_%.5f_tunnels.json.gz", south, west, north, east));
+            try {
+                if (Files.exists(file)) return parseBores(readGzip(file));
+            } catch (IOException | RuntimeException e) {
+                System.err.println("[orbis] NVDB tunnel cache " + file.getFileName() + " unreadable, refetching: " + e);
+            }
+            if (System.currentTimeMillis() < tunnelsFailedUntil) return null;
+            try {
+                List<Bore> out = new ArrayList<>();
+                String url = BASE + "/vegobjekter/api/v4/vegobjekter/" + TUNNEL_BORE_TYPE + "?kartutsnitt=" + box(south, west, north, east)
+                        + "&srid=4326&inkluder=geometri&antall=1000";
+                for (int page = 0; url != null && page < 20; page++) {
+                    JsonObject root = fetch(url);
+                    for (JsonElement el : root.getAsJsonArray("objekter")) {
+                        for (List<double[]> line : wktLines(el.getAsJsonObject())) {
+                            if (line.size() >= 2 && line.get(0).length >= 3) out.add(new Bore(line));
+                        }
+                    }
+                    url = nextPage(root, url);
+                }
+                Files.createDirectories(cacheDir);
+                writeGzip(file, serializeBores(out));
+                return out;
+            } catch (IOException | InterruptedException | RuntimeException e) {
+                tunnelsFailedUntil = System.currentTimeMillis() + 10 * 60_000L;
+                System.err.println("[orbis] NVDB tunnel heights unavailable (" + e.getMessage() + "); tunnels run straight between their portals for 10 minutes");
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+
+        private static String serializeBores(List<Bore> bores) {
+            JsonArray arr = new JsonArray();
+            for (Bore b : bores) {
+                JsonArray pts = new JsonArray();
+                for (double[] p : b.latLonZ()) {
+                    JsonArray q = new JsonArray();
+                    q.add(Math.round(p[0] * 1e7) / 1e7);
+                    q.add(Math.round(p[1] * 1e7) / 1e7);
+                    q.add(Math.round(p[2] * 100) / 100.0);
+                    pts.add(q);
+                }
+                arr.add(pts);
+            }
+            return arr.toString();
+        }
+
+        private static List<Bore> parseBores(String json) {
+            List<Bore> out = new ArrayList<>();
+            for (JsonElement b : JsonParser.parseString(json).getAsJsonArray()) {
+                List<double[]> pts = new ArrayList<>();
+                for (JsonElement p : b.getAsJsonArray()) {
+                    JsonArray q = p.getAsJsonArray();
+                    pts.add(new double[]{q.get(0).getAsDouble(), q.get(1).getAsDouble(), q.get(2).getAsDouble()});
+                }
+                if (pts.size() >= 2) out.add(new Bore(pts));
+            }
+            return out;
         }
 
         private static List<Segment> join(java.util.concurrent.Future<List<Segment>> f) throws IOException, InterruptedException {
@@ -232,7 +307,9 @@ public final class NvdbRoads {
                     String[] c = pair.trim().split("\\s+");
                     if (c.length < 2) continue;
                     try {
-                        line.add(new double[]{Double.parseDouble(c[0]), Double.parseDouble(c[1])});
+                        line.add(c.length >= 3
+                                ? new double[]{Double.parseDouble(c[0]), Double.parseDouble(c[1]), Double.parseDouble(c[2])}
+                                : new double[]{Double.parseDouble(c[0]), Double.parseDouble(c[1])});
                     } catch (NumberFormatException ignored) {
                         // skip a malformed vertex
                     }
@@ -286,7 +363,7 @@ public final class NvdbRoads {
         }
 
         private static void writeGzip(Path file, String content) throws IOException {
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
             try (OutputStream out = new GZIPOutputStream(Files.newOutputStream(tmp))) {
                 out.write(content.getBytes(StandardCharsets.UTF_8));
             }
@@ -370,7 +447,7 @@ public final class NvdbRoads {
                             double[] near = nearest(lines.get(idx), p[0], p[1]);
                             if (near[0] > matchBlocks) continue;
                             double db = Math.abs(((near[1] - bearing) % 180 + 270) % 180 - 90); // 0 = parallel
-                            if (90 - db > MATCH_BEARING_DEG && db > MATCH_BEARING_DEG) continue;
+                            if (db > MATCH_BEARING_DEG) continue; // across it (only 35-55 degrees was turned away: a bridge took the motorway under it)
                             double w = widths.get(idx);
                             if (!Double.isNaN(w) && near[0] < bestWd) {
                                 bestWd = near[0];

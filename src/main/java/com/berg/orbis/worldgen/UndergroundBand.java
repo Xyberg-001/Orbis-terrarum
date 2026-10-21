@@ -62,8 +62,12 @@ public final class UndergroundBand {
         // The whole vanilla frame (-64..64) must stay above the bedrock floor.
         int floor = model.cfg().minY + 6 + (VANILLA_SURFACE - VANILLA_BOTTOM);
         if (top < floor) top = floor;
-        if (tops.size() > CACHE_LIMIT) tops.clear();
-        tops.put(key, top);
+        // Kept only when every terrain tile it read was there: a failed one reads as sea level, and the band worked out from it
+        // sat hundreds of blocks off for as long as it was kept (neighbouring chunks then disagreed once it was worked out again).
+        if (model.terrainReady(cx - REACH, cz - REACH, cx + REACH, cz + REACH)) {
+            if (tops.size() > CACHE_LIMIT) tops.clear();
+            tops.put(key, top);
+        }
         return top;
     }
 

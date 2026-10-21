@@ -6,10 +6,11 @@ coastlines, rivers, every building, roads, bridges, railways and forests. Minecr
 ## Features
 
 - **Real terrain** from laser-scanned maps where a country has them, a bare-earth satellite model everywhere else, and a real sea floor.
-- **Every building** from OpenStreetMap, with its real height, roof shape and colour; walkable floors and doors.
+- **Every building** from OpenStreetMap (and from Overture where OpenStreetMap is thin), with its real height, roof shape and colour; walkable floors and doors.
 - **Roads, rails, bridges and tunnels** at their real width, with markings, sidewalks, street lamps and street name signs.
-- **Nature:** water, forests, fields and parks; real rock under the ground and real lake beds.
-- **Real sky:** real daylight and moon, real weather, seasons and today's snow depth.
+- **Real climate:** deserts, rainforests, oceanic coasts and frozen interiors where they really are, from measured climate data.
+- **Nature:** water, forests of the real kind (conifer or broadleaf), fields and parks; real rock under the ground, real soil (peat, podzol, clay, sand) as deep as it really is, glaciers with thick ice, rivers at their measured width, and real lake beds.
+- **Real sky:** real daylight and moon, real weather (radar, satellite lightning and airport reports; each player sees their own with Orbis installed), seasons, and today's snow and ice as satellites see them.
 - **Any scale:** 1:1 down to 1:32 for a whole country.
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.
 - **World map (B):** street, satellite and elevation map of your world, with search and teleport.
@@ -27,7 +28,12 @@ New areas need an internet connection while they generate; everything downloaded
 ## Create a world
 
 **Create New World → World Type: Orbis Terrarum → Customize**, open the **World generator map**, search a place or right-click
-where you want to spawn, and create the world. The other tabs (Features, Look & Climate, Data Sources, Advanced) have sensible defaults.
+where you want to spawn (**Set the spawn here**; **What's here** tells you about the place, gold pins are the landmarks to find), and create the world. The other tabs (Features, Look & Climate, Data Sources, Advanced) have sensible defaults.
+
+## Far view
+
+With Distant Horizons or Voxy, Orbis fills the far view with land that is not generated yet. Its settings are in
+**Video Settings**: Sodium's **Orbis Terrarum** page, or **Far view** at the bottom without Sodium.
 
 ## World map (B)
 
@@ -61,6 +67,7 @@ after a restart.
 | `regionPrefetchRadius` | 2 | How far ahead of players map data is downloaded (0–6; 2 is a 2.5 km square) | 1 on slow internet or small servers; 3 for players flying fast |
 | `overpassConcurrentRequests` | 4 | Map downloads at once (1–8) | 2 on slow or shared connections |
 | `osmMaxWaitMinutes` | 15 | How long a chunk waits for its map data before it generates without buildings | 30 on slow connections |
+| `liveStatusBar` | true | A "Map around you" bar for each player while the map data around them comes in | Off if players find it distracting |
 | `waitForOsm` | true | New chunks wait for their map data | Keep on; off only while the map services are down and land without buildings is fine |
 | `imageryZoom` | 18 | Detail of the aerial photos used for colours (14–20) | 17 on slow internet (a quarter of the downloads); 19 for sharper colours |
 | `fastPregen` | true | Pre-generation builds terrain ahead on several threads | Keep on: it is several times faster |
@@ -88,6 +95,10 @@ World window (**i**) with your position, the real sky and hard limit switches, D
 - Install the mod on the server only; set `level-type=orbisterrarum\:earth` in `server.properties` before the first start.
 - Easiest: create and pre-generate the world in singleplayer, then upload it.
 - Aternos: **Export for Aternos** in the world map's World window (**i**) makes the upload and a how-to file.
+
+> **Travelling far:** where the map comes from the online servers, Orbis offers (in chat, to the host or operators)
+> to download the country's map file and keep the 100 km around you on your disk; once accepted, it does the same
+> further on by itself. Turn the offers off with `offerMapDownloads`.
 
 > **Pre-generating on a server:** it gets slower when the server is short of memory (4 GB is tight for big areas; give it 6–8 GB, more for cubic worlds). **Map data: Download** fetches the region's whole Geofabrik file onto the server's storage (tens of MB for a small region, several GB for a big country); the area cut out of it stays there for good, and the file itself is deleted afterwards unless `keepDownloadedMapFiles` is on. Check the server has the space, or use **Live**.
 

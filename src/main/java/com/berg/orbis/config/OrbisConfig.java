@@ -21,7 +21,7 @@ import java.util.List;
 public class OrbisConfig {
 
     /** Bumped when defaults change in a way that an old file should pick up (network settings, world height). */
-    public static final int CURRENT_CONFIG_VERSION = 18;
+    public static final int CURRENT_CONFIG_VERSION = 20;
     public int configVersion = CURRENT_CONFIG_VERSION;
 
     /** Fixed by data/minecraft/dimension_type/overworld.json: the engine maximum of Y -2032..2031. */
@@ -161,6 +161,50 @@ public class OrbisConfig {
      */
     public boolean reliefBiomes = true;
     /**
+     * Road tunnels follow the heights a national road database surveyed along them (Norway's NVDB tunnel bores), where it has
+     * them: their real rises and dips inside the mountain, not a straight line between the portals. New worlds take this value;
+     * a world keeps its own.
+     */
+    public boolean surveyedTunnels = true;
+    /**
+     * The ground between the grass and the rock as the soil maps have it (SoilGrids' soil groups and texture, Shangguan's
+     * depth to bedrock): peat, podzol, clay, sand or red earth, as deep as it really is, rock under cliffs, and glaciers as
+     * thick as their size and shape make them (Randolph Glacier Inventory). New worlds take this value; a world keeps its own.
+     */
+    public boolean groundLayers = true;
+    /**
+     * Forests OSM does not describe take their leaf type from the forest type maps (CLC+ in Europe, Copernicus' global map
+     * elsewhere): spruce and pine where the woods are coniferous, oak and birch where they are broadleaved, with the biome
+     * and forest floor to match. New worlds take this value; a world keeps its own.
+     */
+    public boolean forestTypes = true;
+    /**
+     * Buildings OpenStreetMap does not have yet, from Overture's buildings (footprints from Google Open Buildings, Microsoft
+     * and others), at 1:4 or finer: whole towns in Africa, Asia and Latin America where OSM is thin. New worlds take this
+     * value; a world keeps its own.
+     */
+    public boolean overtureBuildings = true;
+    /**
+     * River lines OSM gives no width take the width GRWL measured from Landsat (rivers 30 m and wider, shipped with the mod),
+     * except where they run inside a mapped river area. New worlds take this value; a world keeps its own.
+     */
+    public boolean riverWidths = true;
+    /**
+     * Lake beds from Open Waters' Seascape where it holds them (the Great Lakes, Geneva, Neuchâtel, the Bodensee, Tahoe, Baikal,
+     * Victoria...), after NVE's and the national surveys. New worlds take this value; a world keeps its own.
+     */
+    public boolean seascapeLakes = true;
+    /**
+     * Quebec's surveyed lakes (GBLQ, about 2,200: depth contours and deepest points), fetched lake by lake when a world reaches
+     * them. New worlds take this value; a world keeps its own.
+     */
+    public boolean quebecLakes = true;
+    /**
+     * The real climate of each place (Köppen-Geiger classes, measured temperature and precipitation, shipped with the mod) picks
+     * its climate zone, biome and snow line, instead of latitude and height alone. New worlds take this value; a world keeps its own.
+     */
+    public boolean realClimate = true;
+    /**
      * Share of vanilla's mineshafts, trial chambers and Ancient Cities in new worlds (worldgen/StructureDensity: a
      * data pack written when the world is created). Vanilla's densities are per block, so a 1:2 world had four times
      * vanilla's per real square kilometre; 1 keeps vanilla's.
@@ -174,7 +218,7 @@ public class OrbisConfig {
     /**
      * With Voxy installed (singleplayer for now): its far view of land not generated yet, painted from the world's data
      * (compat/voxy/VoxyFarView), out to {@link #voxyFarViewChunks} chunks around the player. A prototype: off unless
-     * switched on (Mod Menu > Orbis Terrarum > Performance > Far view); applies at once.
+     * switched on (Video Settings: Sodium's Orbis Terrarum page, or Far view in Minecraft's own; client/FarViewOptions); applies at once.
      */
     public boolean voxyFarView = false;
     public int voxyFarViewChunks = 512;
@@ -703,6 +747,8 @@ public class OrbisConfig {
      * file for it: downloaded in the background, only the world's area imported (MapDataJob).
      */
     public boolean offerMapDownloads = true;
+    /** Geofabrik regions the player said "Never" to when offered their map data while travelling (worldgen/MapDataTrip). */
+    public java.util.List<String> mapDataDeclined = new java.util.ArrayList<>();
     /** Keep the downloaded Geofabrik files after the area is imported (for more worlds in the same country). */
     public boolean keepDownloadedMapFiles = false;
     /**
@@ -735,6 +781,18 @@ public class OrbisConfig {
     public int regionPrefetchRadius = 2;
     /** Block chunk generation until the region's OSM data has been fetched. If false, chunks whose data is not yet available are generated as terrain only. */
     public boolean waitForOsm = true;
+    /**
+     * Where the land is sparse (the map answers round a region all small), a region's map data comes out of one Overpass
+     * answer for its 2 x 2 block of regions (osm/OsmDataProvider.getDataFromBlock): a quarter of the requests in deserts,
+     * mountains and the countryside. Cities are asked region by region as before.
+     */
+    public boolean combineSparseRegions = true;
+    /**
+     * A "Map around you" bar for each player while the map data around them is still coming in (worldgen/LiveStatus): how many
+     * of the regions kept ready around them are ready, what is being downloaded or prepared, yellow when their own region
+     * is slow, red while terrain downloads keep failing. Gone a few seconds after everything is there.
+     */
+    public boolean liveStatusBar = true;
 
     // ---- feature toggles ----------------------------------------------------
     public boolean generateBuildings = true;
@@ -851,16 +909,32 @@ public class OrbisConfig {
             cfg.save(file);
             return cfg;
         } catch (IOException | RuntimeException e) {
-            System.err.println("[orbis] Could not read config " + file + ": " + e + " -- using defaults");
+            // Kept beside it before anything is written over it: the next save (any setting changed) wrote the defaults over a
+            // file with one typo in it, and every setting in it was lost.
+            String backup = file.getFileName() + ".unreadable-" + System.currentTimeMillis();
+            try {
+                if (Files.exists(file)) Files.copy(file, file.resolveSibling(backup));
+            } catch (IOException copyFailed) {
+                backup = null;
+            }
+            System.err.println("[orbis] Could not read config " + file + ": " + e + " -- using defaults"
+                    + (backup != null ? "; the file is kept as " + backup + " (fix it and put it back)" : ""));
             OrbisConfig cfg = new OrbisConfig();
             cfg.sanitize();
             return cfg;
         }
     }
 
+    /** Written to a file beside it, then moved over it: a crash leaves the old settings or the new ones, never half a file. */
     public void save(Path file) throws IOException {
         Files.createDirectories(file.getParent());
-        Files.writeString(file, GSON.toJson(this));
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, GSON.toJson(this));
+        try {
+            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /** Deep copy (used for the "effective" config of a world and for editing screens). */
@@ -986,6 +1060,21 @@ public class OrbisConfig {
             undergroundVersion = 1;
             reliefBiomes = false;
             kartverketWhenReachable = false;
+        }
+        if (configVersion < 19 && dedicatedServer()) {
+            // As above: a server's world keeps its tunnels (set surveyedTunnels to true for a new world).
+            surveyedTunnels = false;
+        }
+        if (configVersion < 20 && dedicatedServer()) {
+            // As above: a server's world keeps its ground, woods, buildings, rivers and lakes (set groundLayers, forestTypes,
+            // overtureBuildings, riverWidths, seascapeLakes, quebecLakes and realClimate to true for a new world).
+            groundLayers = false;
+            forestTypes = false;
+            overtureBuildings = false;
+            riverWidths = false;
+            seascapeLakes = false;
+            quebecLakes = false;
+            realClimate = false;
         }
         if (configVersion < 10 && elevationSources != null) {
             // The lidar terrain services went: Mapterhorn already carries Kartverket's and USGS's terrain.

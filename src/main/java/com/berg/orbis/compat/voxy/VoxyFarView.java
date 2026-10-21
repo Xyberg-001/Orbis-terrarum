@@ -305,7 +305,7 @@ final class VoxyFarView {
             dirty = false;
             try {
                 Files.createDirectories(file.getParent());
-                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
                 try (java.io.DataOutputStream out = new java.io.DataOutputStream(new java.io.BufferedOutputStream(
                         new java.util.zip.GZIPOutputStream(Files.newOutputStream(tmp))))) {
                     out.writeInt(0x4F465633);

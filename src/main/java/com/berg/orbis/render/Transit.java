@@ -398,6 +398,14 @@ public final class Transit {
         return demoted;
     }
 
+    /** The rail spots given a waiting cart this session (per world seed); a chunk is decorated once, so this only grows a little. */
+    private static final java.util.Set<Long> CART_SPOTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** A world was closed: a new world made with the same seed in this session gets its carts again. */
+    public static void clearCartSpots() {
+        CART_SPOTS.clear();
+    }
+
     /** A waiting minecart on the nearest plain rail, and a named post at the stop. */
     private static void station(OrbisConfig cfg, WorldGenLevel level, RegionRaster r, BlockPos.MutableBlockPos pos, int x, int z, int idx) {
         RailGrid g = of(level);
@@ -420,7 +428,10 @@ public final class Transit {
                 }
             }
         }
-        if (rail != null) {
+        // Two stop nodes of one station (a platform each side) can pick the same rail. Looking for a cart there finds none
+        // while chunks are generated (the generation view lists no entities), so both placed one with the same id and the
+        // game dropped the second with a duplicate-id warning in the log: the spots taken this session are remembered.
+        if (rail != null && CART_SPOTS.add(level.getSeed() * 31 + BlockPos.asLong(rail[0], railYFound, rail[1]))) {
             boolean taken = !level.getEntities((Entity) null, new net.minecraft.world.phys.AABB(rail[0], railYFound, rail[1], rail[0] + 1, railYFound + 1, rail[1] + 1),
                     e -> e instanceof net.minecraft.world.entity.vehicle.minecart.AbstractMinecart).isEmpty();
             if (!taken) {
@@ -437,7 +448,7 @@ public final class Transit {
         if (r.building[idx] != 0 || r.water[idx] != 0) return;
         RoadFeature here = r.roadAt(idx);
         if (here != null && r.roadDistAt(idx) <= here.halfWidth) return; // on the track / the road itself
-        int surface = level.getHeight(Heightmap.Types.OCEAN_FLOOR, x, z) - 1;
+        int surface = Decorator.groundY(level, x, z);
         if (surface <= cfg.minY || surface + 4 >= cfg.maxY()) return;
         if (!level.getBlockState(pos.set(x, surface, z)).isSolid()) return;
         level.setBlock(pos.set(x, surface + 1, z), Blocks.STONE_BRICK_WALL.defaultBlockState(), 3);

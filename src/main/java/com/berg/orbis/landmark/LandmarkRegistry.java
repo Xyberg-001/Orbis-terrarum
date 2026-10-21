@@ -93,7 +93,9 @@ public final class LandmarkRegistry {
                         } else {
                             y = terrainHeight.applyAsInt((int) Math.floor(centerBlockX), (int) Math.floor(centerBlockZ)) + 1;
                         }
-                        y += landmark.yOffset - schematic.offsetY;
+                        // Only the landmark's own yOffset: a schematic's "Offset" is no use here (WorldEdit's v2 files keep the
+                        // copied build's world corner there, so a build copied at y=64 sank 64 blocks into the ground).
+                        y += landmark.yOffset;
                         baseY = y;
                     }
                 }
@@ -226,6 +228,9 @@ public final class LandmarkRegistry {
         String roof = tags.get("roof:shape");
         if (roof != null) return "dome".equals(roof) || "onion".equals(roof);
         return "yes".equals(tags.get("dome"))
+                || "dome".equals(tags.get("man_made")) || "dome".equals(tags.get("building")) || "dome".equals(tags.get("building:part"))
+                || "gurdwara".equals(tags.get("building"))
+                || ("place_of_worship".equals(tags.get("amenity")) && "sikh".equals(tags.get("religion")))
                 || "mosque".equals(tags.get("building"))
                 || ("place_of_worship".equals(tags.get("amenity")) && "muslim".equals(tags.get("religion")))
                 || "planetarium".equals(tags.get("amenity"))

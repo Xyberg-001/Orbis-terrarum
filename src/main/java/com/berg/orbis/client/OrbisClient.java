@@ -31,13 +31,31 @@ public class OrbisClient implements ClientModInitializer {
         MAP_KEY = net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper.registerKeyMapping(
                 new net.minecraft.client.KeyMapping("key.orbisterrarum.map", com.mojang.blaze3d.platform.InputConstants.KEY_B, category)); // B by default (N until 5 Oct 2026)
         com.berg.orbis.compat.voxy.VoxyCompat.init(); // optional: only acts when Voxy is installed
+        MapTiles.warmUp(); // the map's first screens drawn onto the disk in the background
+        SelfTest.init(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("orbisterrarum"));
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
+            if (mc.level != null && mc.level.getGameTime() % 1200 == 0) LocalSeasons.tick();
+            LocalWeather.tick(mc);
+            SelfTest.tick(mc);
             while (MAP_KEY.consumeClick()) {
                 if (mc.gui.screen() == null && mc.player != null) mc.setScreenAndShow(new com.berg.orbis.client.map.WorldMapScreen(worldInfo));
             }
         });
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.WorldInfoPayload.TYPE,
                 (payload, context) -> worldInfo = payload);
+        // Rain or snow by the real temperature: the render thread draws what falls by it
+        com.berg.orbis.sky.RealPrecipitation.clientThread(Thread.currentThread());
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.SeasonInfoPayload.TYPE,
+                (payload, context) -> LocalSeasons.setInfo(payload));
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> LocalSeasons.chunkLoaded(chunk));
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> LocalSeasons.chunkUnloaded(chunk));
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.RealTemperaturePayload.TYPE,
+                (payload, context) -> {
+                    // the players' mean place: only while this player's own weather is not known
+                    if (!LocalWeather.active()) com.berg.orbis.sky.RealPrecipitation.setClient(payload.tempC(), payload.refY(), payload.metresPerBlock());
+                });
+        net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.LocalWeatherPayload.TYPE,
+                (payload, context) -> LocalWeather.receive(payload));
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.AllowedAreaPayload.TYPE,
                 (payload, context) -> allowedArea = payload);
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.registerGlobalReceiver(com.berg.orbis.net.PregenStatusPayload.TYPE,
@@ -88,6 +106,9 @@ public class OrbisClient implements ClientModInitializer {
         });
         net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents.DISCONNECT.register((handler, mc) -> {
             worldInfo = null;
+            com.berg.orbis.sky.RealPrecipitation.clearClient();
+            LocalSeasons.reset();
+            LocalWeather.reset();
             allowedArea = null;
             pregenStatus = com.berg.orbis.net.PregenStatusPayload.IDLE;
             pregenTasks = java.util.List.of();

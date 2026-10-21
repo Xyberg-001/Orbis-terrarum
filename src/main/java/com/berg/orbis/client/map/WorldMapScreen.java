@@ -637,8 +637,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
     private void toggleParts() {
         if (select == null || outline == null) return;
         outlineAll = !outlineAll;
-        select.undoLast();
-        select.addOutline(outlineAll ? outline.polygons() : outline.largestOnly().polygons());
+        select.swapOutline(outlineAll ? outline.polygons() : outline.largestOnly().polygons());
         noteOutline();
         fitTo(outlineAll ? outline : outline.largestOnly());
         showFoundCard();
@@ -858,6 +857,7 @@ public final class WorldMapScreen extends Screen implements MapAnswerSink {
             foundFull = r.name();
             outline = null;
             outlineNote = null;
+            outlineLooking = false; // an outline still being looked up was the last place's (its answer is dropped): Select area again
             canvas.centerOn(r.lat(), r.lon());
             if (mapper != null) canvas.showMetresAcross(r.lat(), Math.max(800, 600 * info.metersPerBlock()));
             showFoundCard();

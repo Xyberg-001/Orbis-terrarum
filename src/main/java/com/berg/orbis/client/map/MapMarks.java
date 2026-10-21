@@ -31,10 +31,29 @@ public final class MapMarks {
         return OrbisMod.configDir().resolve("map-marks.json");
     }
 
-    /** "sp:<save name>" or "mp:<server address>": the world the player is in now. */
+    /**
+     * The world the player is in now: "id:<world id>" when the server told it (two saves with the same name, or a server address
+     * that starts over with a new world, shared marks and selections by name), else "sp:<save name>" or "mp:<server address>".
+     * What was kept under the name moves to the id the first time.
+     */
     public static String worldKey(Minecraft mc) {
-        if (mc.getSingleplayerServer() != null) return "sp:" + mc.getSingleplayerServer().getWorldData().getLevelName();
-        return mc.getCurrentServer() != null ? "mp:" + mc.getCurrentServer().ip : "mp:?";
+        String byName;
+        if (mc.getSingleplayerServer() != null) byName = "sp:" + mc.getSingleplayerServer().getWorldData().getLevelName();
+        else byName = mc.getCurrentServer() != null ? "mp:" + mc.getCurrentServer().ip : "mp:?";
+        com.berg.orbis.net.WorldInfoPayload info = com.berg.orbis.client.OrbisClient.worldInfo;
+        if (info == null || info.worldId() == null || info.worldId().isEmpty()) return byName;
+        String key = "id:" + info.worldId();
+        adopt(byName, key);
+        MapSelectTool.adopt(byName, key);
+        return key;
+    }
+
+    /** Moves what is kept under the old key to the new one, unless the new one has its own already. */
+    private static synchronized void adopt(String from, String to) {
+        Map<String, List<Mark>> m = load();
+        if (m.containsKey(to) || !m.containsKey(from)) return;
+        m.put(to, m.remove(from));
+        save();
     }
 
     private static synchronized Map<String, List<Mark>> load() {

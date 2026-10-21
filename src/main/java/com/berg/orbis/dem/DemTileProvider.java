@@ -199,7 +199,7 @@ public class DemTileProvider implements TileSource {
         try {
             float[][] tile = f.join();
             TileCorrection c = correction;
-            if (c != null && zoom == correctionZoom) tile = c.correct(zoom, x, y, tile);
+            if (c != null && zoom == correctionZoom) tile = corrected(c, key, zoom, x, y, tile);
             remember(key, tile);
             recentFailures.remove(key);
             return tile;
@@ -210,6 +210,35 @@ public class DemTileProvider implements TileSource {
             throw e;
         } finally {
             loading.remove(key, f);
+        }
+    }
+
+    /** Corrections being worked out now, by tile: the threads waiting for one tile share one correction. */
+    private final ConcurrentHashMap<String, CompletableFuture<float[][]>> correcting = new ConcurrentHashMap<>();
+
+    /**
+     * The tile corrected once, however many threads were waiting for it: each of them worked the whole correction out again
+     * (neighbouring regions ask for the same tiles at once), on the calling thread so the download threads are never held
+     * by the bare-earth reads a correction can wait for.
+     */
+    private float[][] corrected(TileCorrection c, String key, int zoom, int x, int y, float[][] raw) {
+        synchronized (memoryCache) {
+            float[][] done = memoryCache.get(key);
+            if (done != null) return done; // corrected by another thread meanwhile
+        }
+        CompletableFuture<float[][]> mine = new CompletableFuture<>();
+        CompletableFuture<float[][]> other = correcting.putIfAbsent(key, mine);
+        if (other != null) return other.join();
+        try {
+            float[][] t = c.correct(zoom, x, y, raw);
+            remember(key, t);
+            mine.complete(t);
+            return t;
+        } catch (RuntimeException e) {
+            mine.completeExceptionally(e);
+            throw e;
+        } finally {
+            correcting.remove(key, mine);
         }
     }
 
@@ -242,6 +271,7 @@ public class DemTileProvider implements TileSource {
             Path cached = cacheDir.resolve(zoom + "_" + x + "_" + y + (legacyLayout ? ".png" : ".tile"));
             Path missing = cacheDir.resolve(zoom + "_" + x + "_" + y + ".missing");
             byte[] pngBytes;
+            boolean fresh = false;
             if (Files.exists(cached)) {
                 pngBytes = Files.readAllBytes(cached);
             } else if (Files.exists(missing)) {
@@ -254,9 +284,18 @@ public class DemTileProvider implements TileSource {
                     Files.write(missing, new byte[0]);
                     return fromParent(zoom, x, y);
                 }
-                writeCached(cached, pngBytes);
+                fresh = true;
             }
-            float[][] tile = decodeTerrarium(pngBytes);
+            // Cached only once it decodes, and a cached copy that does not is thrown away: a cut-short body or a page from a
+            // captive portal (HTTP 200) was kept and read again on every try, so the terrain there was never ready.
+            float[][] tile;
+            try {
+                tile = decodeTerrarium(pngBytes);
+            } catch (IOException | RuntimeException e) {
+                if (!fresh) Files.deleteIfExists(cached);
+                throw e;
+            }
+            if (fresh) writeCached(cached, pngBytes);
             if (zoom > 0 && !plausible(tile)) {
                 // A mis-decoded image (TwelveMonkeys 3.12 scrambled one lossless Mapterhorn WebP into +-32768 m, which
                 // built a 2 km stone pillar): trust the coarser tile over heights no place on Earth has.

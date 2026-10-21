@@ -53,12 +53,15 @@ public final class SolarClock {
                 double rate = (tick[i + 1] - tick[i]) / ((at[i + 1] - at[i]) * 86400.0 * 20.0);
                 // Before sunrise it is still the previous Minecraft day (its night).
                 double dayRise = i == 0 ? rise - 1 : rise;
-                long date = (long) Math.floor(i == 0 ? noon - 1 : noon);
+                // The place's own solar date: noon + lon/360 is that whole day less the equation of time (a few minutes). The floor
+                // of noon alone moved a day whenever lon/360 + eot/1440 changed sign (near the prime meridian up to four times a year:
+                // London, Paris, Madrid), and the clock jumped 8 Minecraft days back or 16 forward.
+                long date = Math.round((i == 0 ? noon - 1 : noon) + lon / 360.0);
                 long day = 8 * date + moonPhase(dayRise);
                 return new Time(t < 0 ? t + DAY : t, rate, day);
             }
         }
-        return new Time(18000, 1.0 / 72.0, 8 * (long) Math.floor(noon));
+        return new Time(18000, 1.0 / 72.0, 8 * Math.round(noon + lon / 360.0));
     }
 
     /** The moon's phase as Minecraft counts it (0 full, 1 waning gibbous ... 4 new ... 7 waxing gibbous). */

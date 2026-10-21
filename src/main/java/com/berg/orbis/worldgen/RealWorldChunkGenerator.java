@@ -593,9 +593,18 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                 .thenCompose(raster -> terrainReady(model, chunk, System.currentTimeMillis()).thenApply(v -> raster))
                 .thenApplyAsync(raster -> {
                     fillChunk(model, chunk, raster);
+                    if (raster != null) TERRAIN_RASTER.put(chunk, raster);
                     return chunk;
                 }, Util.backgroundExecutor());
     }
+
+    /**
+     * The map region each chunk's terrain was built from, until the chunk is decorated (the same chunk object goes through
+     * both steps). The decorator asked the region cache again and, when the region had been evicted in between, waited on a
+     * world-generation thread while it was rasterised again (up to a minute). Weak keys: a chunk dropped before its
+     * decoration takes its entry with it.
+     */
+    private static final java.util.Map<ChunkAccess, RegionRaster> TERRAIN_RASTER = java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
     private static final java.util.concurrent.atomic.AtomicInteger TERRAIN_WAITING = new java.util.concurrent.atomic.AtomicInteger();
     private static volatile long lastTerrainWarning;
@@ -642,7 +651,14 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
      */
     public void buildDirect(ChunkAccess chunk, RegionRaster raster, long seed) {
         fillChunk(model(), chunk, raster);
+        if (raster != null) TERRAIN_RASTER.put(chunk, raster);
         carve(seed, chunk);
+    }
+
+    /** The ground's block Y at a column outside the chunk, unsmoothed (far above everything where the elevation is unknown). */
+    private static int ringY(WorldModel model, int x, int z) {
+        double e = model.elevation(x, z);
+        return Double.isNaN(e) ? Integer.MAX_VALUE / 2 : model.blockY(e, x, z);
     }
 
     private static void fillChunk(WorldModel model, ChunkAccess chunk, RegionRaster raster) {
@@ -735,6 +751,18 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
         boolean layout2 = cfg.undergroundVersion >= 2;
         int deepslateBase = layout2 ? model.band().deepslateTop(minX >> 4, minZ >> 4) : cfg.seaLevelY - 60;
         int[][] deepslateLine = layout2 ? model.band().deepslateLine(minX >> 4, minZ >> 4) : null;
+        // Worlds with soil layers: the ground just outside the chunk on each side (west, east, north, south), so a cliff
+        // along a chunk border shows its rock as well as one inside the chunk.
+        int[][] ring = null;
+        if (cfg.groundLayers) {
+            ring = new int[4][16];
+            for (int i = 0; i < 16; i++) {
+                ring[0][i] = ringY(model, minX - 1, minZ + i);
+                ring[1][i] = ringY(model, minX + 16, minZ + i);
+                ring[2][i] = ringY(model, minX + i, minZ - 1);
+                ring[3][i] = ringY(model, minX + i, minZ + 16);
+            }
+        }
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int x = minX + lx, z = minZ + lz;
@@ -742,7 +770,16 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
                 BiomeClassifier.Climate climate = model.climateWithSnow(x, z, ok[lx][lz] ? raw[lx][lz] : Double.NaN);
                 try {
                     int deepslate = layout2 ? deepslateLine[lx][lz] : deepslateBase;
-                    painter.paint(sink, x, z, terrain[lx][lz], climate, raster, idx, deepslate);
+                    // How far the ground falls to its lowest neighbour (worlds with soil layers: cliffs show rock).
+                    int drop = 0;
+                    if (ring != null) {
+                        int t = terrain[lx][lz];
+                        drop = Math.max(drop, t - (lx > 0 ? terrain[lx - 1][lz] : ring[0][lz]));
+                        drop = Math.max(drop, t - (lx < 15 ? terrain[lx + 1][lz] : ring[1][lz]));
+                        drop = Math.max(drop, t - (lz > 0 ? terrain[lx][lz - 1] : ring[2][lx]));
+                        drop = Math.max(drop, t - (lz < 15 ? terrain[lx][lz + 1] : ring[3][lx]));
+                    }
+                    painter.paint(sink, x, z, terrain[lx][lz], climate, raster, idx, deepslate, null, drop);
                 } catch (RuntimeException e) {
                     // One bad column must not lose the chunk; fall back to bare terrain.
                     System.err.println("[orbis] Column " + x + "," + z + " failed: " + e);
@@ -883,8 +920,8 @@ public class RealWorldChunkGenerator extends ChunkGeneratorBridge {
             }
         }
         try {
-            // The region was awaited in fillFromNoise, so this lookup is instant.
-            model.decorator().decorateChunk(level, chunk.getPos().getMinBlockX(), chunk.getPos().getMinBlockZ());
+            // The region the terrain was built from (known when the terrain was made in this session).
+            model.decorator().decorateChunk(level, chunk.getPos().getMinBlockX(), chunk.getPos().getMinBlockZ(), TERRAIN_RASTER.remove(chunk));
         } catch (RuntimeException e) {
             System.err.println("[orbis] Decoration failed for chunk " + chunk.getPos() + ": " + e);
             e.printStackTrace();

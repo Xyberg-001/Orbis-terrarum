@@ -26,8 +26,10 @@ import java.util.concurrent.Executors;
  * when it really does there (long summer days and short winter ones in the north) and the moon shows its real
  * phase. The clock is set every 10 seconds and runs at the real sun's pace in between, so the sky moves smoothly.
  * Sleeping does not skip a real night: the next update puts the clock back.</li>
- * <li><b>Real weather</b>: clear, rain or thunder as the Norwegian Meteorological Institute's forecast has it for
- * the coming hour where the players are (the average of their positions; the origin when nobody is online).
+ * <li><b>Real weather</b>: clear, rain or thunder where the players are (the average of their positions; the origin
+ * when nobody is online), as measured where it can be ({@link LiveWeather}: rain radar in the Nordic countries,
+ * Germany and Canada, the nearest airport's report anywhere) and from the Norwegian Meteorological Institute's
+ * forecast for the coming hour where nothing is measured.
  * Whether the rain falls as snow is the biome's business, as always in Minecraft.</li>
  * </ul>
  * Both are installation settings that apply at once. Turning daylight off hands the clock back to Minecraft at its
@@ -39,7 +41,7 @@ public final class RealSky {
     private static final int WEATHER_EVERY = 2400;   // ticks (2 min); the forecast's own expiry decides real requests
     private static final int WEATHER_HOLD = 30 * 60 * 20; // how long Minecraft keeps a weather we set (30 min)
 
-    private static final MetWeather MET = new MetWeather();
+    private static final LiveWeather LIVE = new LiveWeather();
     private static final ExecutorService NET = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Orbis-weather");
         t.setDaemon(true);
@@ -47,9 +49,18 @@ public final class RealSky {
     });
 
     private static long ticks;
+    /**
+     * A tick to ask again before the usual two minutes: the first question goes out on the world's first tick, before
+     * the ground under the players is loaded, and without its height rain or snow stayed the biomes' for two minutes.
+     */
+    private static volatile long retryAt = -1;
     private static boolean clockTaken;
     private static volatile boolean fetching;
     private static volatile MetWeather.Report pending;
+    /** With the pending report: the block height its temperature stands for and the metres one block of height is. */
+    private static volatile double[] pendingRef;
+    /** Which world's run asked for the weather: an answer for an earlier one (in flight as it closed) is dropped. */
+    private static volatile int run;
     private static MetWeather.Report applied;
     private static String lastError;
 
@@ -57,11 +68,17 @@ public final class RealSky {
     }
 
     public static void register() {
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> RealPrecipitation.clear());
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            RealPrecipitation.serverThread(Thread.currentThread()); // this event runs on the server's thread
+            RealPrecipitation.clear();
             ticks = 0;
+            retryAt = -1;
             clockTaken = false;
             applied = null;
             pending = null;
+            run++;
+            fetching = false; // a request of the last world's may still be on its way: its answer is dropped
             // The season pack for the next time this world is loaded (a month may have turned while it ran, and a
             // world made before this existed gets its first one).
             WorldModel m = OrbisMod.model();
@@ -71,8 +88,11 @@ public final class RealSky {
                 java.nio.file.Path packs = server.getWorldPath(net.minecraft.world.level.storage.LevelResource.DATAPACK_DIR);
                 boolean seasons = m.cfg().realSeasons; // the world's own setting decides
                 Seasons.rememberWorldChoice(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT), m.cfg().realSeasons);
-                if (Seasons.update(packs, m.cfg().originLat, seasons)) {
-                    System.out.println("[orbis] Season now " + Seasons.seasonName(m.cfg().originLat) + ": the world shows it from the next time it is opened");
+                Seasons.rememberOrigin(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT), m.cfg().originLat, m.cfg().originLon);
+                java.nio.file.Path data = com.berg.orbis.OrbisMod.dataDir();
+                if (Seasons.update(packs, data, m.cfg().originLat, m.cfg().originLon, seasons)) {
+                    System.out.println("[orbis] Season now " + Seasons.seasonName(data, m.cfg().originLat, m.cfg().originLon)
+                            + ": the world shows it from the next time it is opened");
                 }
                 // A season pack the world has not switched on (new, or once left out of a reload and so disabled):
                 // switch it on with a reload once the server is idle, so the world shows it from the next opening.
@@ -96,14 +116,37 @@ public final class RealSky {
         long t = ticks++;
         if (t % CLOCK_EVERY == 0) daylight(server, overworld, m, daylight);
         if (weather) {
-            if (t % WEATHER_EVERY == 0 && !fetching) requestWeather(server, m);
+            if ((t % WEATHER_EVERY == 0 || t == retryAt) && !fetching) {
+                requestWeather(server, m);
+                requestLocalWeather(server, m);
+            }
             MetWeather.Report r = pending;
             if (r != null) {
                 pending = null;
                 applyWeather(overworld, r, m);
             }
         } else {
+            if (applied != null) {
+                RealPrecipitation.clear(); // the biomes decide rain or snow again
+                sendTemperature(server, null);
+                for (ServerPlayer p : server.getPlayerList().getPlayers()) { // and each player's own weather ends
+                    if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(p, com.berg.orbis.net.LocalWeatherPayload.TYPE)) {
+                        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, new com.berg.orbis.net.LocalWeatherPayload(false, false, false, Double.NaN, 0, 1, ""));
+                    }
+                }
+            }
             applied = null;
+        }
+    }
+
+    /** The real temperature for rain or snow to every player with Orbis (to one when {@code only} is given); none clears it. */
+    public static void sendTemperature(MinecraftServer server, ServerPlayer only) {
+        double[] t = RealPrecipitation.current();
+        var payload = t == null ? new com.berg.orbis.net.RealTemperaturePayload(Double.NaN, 0, 1) : new com.berg.orbis.net.RealTemperaturePayload(t[0], t[1], t[2]);
+        for (ServerPlayer p : only != null ? java.util.List.of(only) : server.getPlayerList().getPlayers()) {
+            if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(p, com.berg.orbis.net.RealTemperaturePayload.TYPE)) {
+                net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, payload);
+            }
         }
     }
 
@@ -132,6 +175,64 @@ public final class RealSky {
 
     // ------------------------------------------------------------------ weather
 
+    /**
+     * Each player's own weather, for their game to draw instead of the world's one weather (client/LocalWeather, players
+     * with Orbis) and for rain or snow on the server near them (every player: RealPrecipitation's areas, so snow builds
+     * up by the temperature where it falls): players grouped by 0.05 degree (about 5 km) so neighbours share one
+     * question; each group's report and the temperature's height where its first player stands, sent on the server's
+     * thread.
+     */
+    private static void requestLocalWeather(MinecraftServer server, WorldModel m) {
+        java.util.Map<Long, java.util.List<java.util.UUID>> groups = new java.util.LinkedHashMap<>();
+        java.util.Map<Long, double[]> where = new java.util.HashMap<>();
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (p.level() != server.overworld()) continue;
+            double[] ll = m.mapper().toLatLonExact(p.getX(), p.getZ());
+            long key = (long) Math.floor(ll[0] * 20) << 32 ^ ((long) Math.floor(ll[1] * 20) & 0xffffffffL);
+            groups.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(p.getUUID());
+            where.putIfAbsent(key, new double[]{ll[0], ll[1], Math.floor(p.getX()), Math.floor(p.getZ())});
+        }
+        if (groups.isEmpty()) return;
+        int askedIn = run;
+        double reachBlocks = 30_000 / Math.max(1e-6, m.cfg().metersPerBlock);
+        NET.execute(() -> {
+            java.util.List<double[]> readings = new java.util.ArrayList<>();
+            for (var g : groups.entrySet()) {
+                double[] at = where.get(g.getKey());
+                try {
+                    MetWeather.Report r = LIVE.now(at[0], at[1]);
+                    int bx = (int) at[2], bz = (int) at[3];
+                    double refY = Double.NaN, mpb = 1;
+                    try {
+                        double e = m.elevation(bx, bz);
+                        double y0 = m.vertical().toY(e, bx, bz), y1 = m.vertical().toY(e + 100, bx, bz);
+                        if (!Double.isNaN(y0) && y1 - y0 > 1e-6) {
+                            refY = y0;
+                            mpb = 100 / (y1 - y0);
+                        }
+                    } catch (RuntimeException ignored) {
+                        // no height yet: rain or snow stays the biome's for them this time
+                    }
+                    var payload = new com.berg.orbis.net.LocalWeatherPayload(true, r.sky() != MetWeather.Sky.CLEAR, r.sky() == MetWeather.Sky.THUNDER,
+                            Double.isNaN(refY) ? Double.NaN : r.temperatureC(), Double.isNaN(refY) ? 0 : refY, mpb, r.symbol());
+                    if (!Double.isNaN(refY)) readings.add(new double[]{bx, bz, r.temperatureC(), refY, mpb});
+                    server.execute(() -> {
+                        if (askedIn != run) return; // another world opened meanwhile
+                        for (java.util.UUID id : g.getValue()) {
+                            ServerPlayer p = server.getPlayerList().getPlayer(id);
+                            if (p != null && net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(p, com.berg.orbis.net.LocalWeatherPayload.TYPE)) {
+                                net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, payload);
+                            }
+                        }
+                    });
+                } catch (Exception e) {
+                    // that place's weather not had: its players keep the world's until the next round
+                }
+            }
+            if (askedIn == run) RealPrecipitation.setAreas(readings, reachBlocks);
+        });
+    }
+
     private static void requestWeather(MinecraftServer server, WorldModel m) {
         double x = 0, z = 0;
         int n = 0;
@@ -142,10 +243,27 @@ public final class RealSky {
             n++;
         }
         double[] ll = n == 0 ? new double[]{m.cfg().originLat, m.cfg().originLon} : m.mapper().toLatLonExact(x / n, z / n);
+        int bx = (int) Math.floor(n == 0 ? 0 : x / n), bz = (int) Math.floor(n == 0 ? 0 : z / n);
         fetching = true;
+        int askedIn = run;
         NET.execute(() -> {
             try {
-                pending = MET.now(ll[0], ll[1]);
+                MetWeather.Report report = LIVE.now(ll[0], ll[1]);
+                // where the temperature stands: the ground at the players' place, and how many real metres a block of height is there
+                double[] ref = null;
+                try {
+                    double e = m.elevation(bx, bz);
+                    double y0 = m.vertical().toY(e, bx, bz), y1 = m.vertical().toY(e + 100, bx, bz);
+                    if (!Double.isNaN(y0) && y1 - y0 > 1e-6) ref = new double[]{y0, 100 / (y1 - y0)};
+                } catch (RuntimeException ignored) {
+                    // no height there yet: rain or snow stays the biomes' this time
+                }
+                // the last world's weather was applied to the next one when it came after that one opened
+                if (askedIn == run) {
+                    if (ref == null) retryAt = ticks + 200; // the ground not loaded yet: again in ten seconds
+                    pendingRef = ref;
+                    pending = report;
+                }
                 lastError = null;
             } catch (Exception e) {
                 String msg = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
@@ -158,6 +276,10 @@ public final class RealSky {
     }
 
     private static void applyWeather(ServerLevel overworld, MetWeather.Report r, WorldModel m) {
+        double[] ref = pendingRef;
+        if (ref != null) RealPrecipitation.set(r.temperatureC(), ref[0], ref[1]);
+        else RealPrecipitation.clear();
+        sendTemperature(overworld.getServer(), null);
         WeatherData w = overworld.getWeatherData();
         boolean rain = r.sky() != MetWeather.Sky.CLEAR, thunder = r.sky() == MetWeather.Sky.THUNDER;
         // As /weather sets it, with a long hold so Minecraft's own cycle does not change it before the next report.

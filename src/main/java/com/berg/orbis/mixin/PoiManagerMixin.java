@@ -37,6 +37,15 @@ import java.util.stream.Stream;
 @Mixin(PoiManager.class)
 public abstract class PoiManagerMixin {
 
+    /**
+     * No point of interest is written while Export for Aternos copies the POI files: the export sets the world as /save-off does,
+     * which stops chunk saves but not these (a chunk's could be read half rewritten). They stay in memory and are written after.
+     */
+    @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
+    private void orbisterrarum$holdWhileExporting(java.util.function.BooleanSupplier haveTime, org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        if (com.berg.orbis.export.AternosExport.running()) ci.cancel();
+    }
+
     private static Holder<PoiType> orbisterrarum$portal;
 
     @Inject(method = "getInChunk", at = @At("HEAD"), cancellable = true)

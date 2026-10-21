@@ -1,0 +1,14 @@
+orbis-climate.bin.gz is derived from:
+
+  Köppen-Geiger classes 1991-2020 at 1 km: Beck, H. E., T. R. McVicar, N. Vergopolan, A. Berg, N. J. Lutsko, A. Dufour,
+  Z. Zeng, X. Jiang, A. I. J. M. van Dijk, and D. G. Miralles. High-resolution (1 km) Köppen-Geiger maps for 1901-2099
+  based on constrained CMIP6 projections. Scientific Data 10, 724 (2023). https://doi.org/10.6084/m9.figshare.21789074
+  Licensed under the Creative Commons Attribution 4.0 International licence (https://creativecommons.org/licenses/by/4.0/).
+  Changes: reduced to 0.05 degrees by the most common class in each cell.
+
+  CHELSA v2.1 climatologies 1981-2010 (bio1, bio11, bio12) and CHELSA's elevation grid: Karger, D. N. et al. Climatologies
+  at high resolution for the earth's land surface areas. Scientific Data 4, 170122 (2017); CHELSA V2.1 (EnviDat),
+  dedicated to the public domain (CC0). Changes: one row per 0.1 degree band averaged per 0.1 degree cell; temperatures
+  reduced to sea level at 6.5 degrees C per km.
+
+Made by tools/climate_pack.py.

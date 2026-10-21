@@ -24,6 +24,9 @@
     ],
     "modmenu": [
       "com.berg.orbis.client.ModMenuIntegration"
+    ],
+    "sodium:config_api_user": [
+      "com.berg.orbis.client.SodiumVideoOptions"
     ]
   },
   "mixins": [

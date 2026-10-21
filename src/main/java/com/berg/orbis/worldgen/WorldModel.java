@@ -103,16 +103,32 @@ public final class WorldModel {
      * to sea level, and the chunk would be saved flat for good.
      */
     public boolean terrainReady(int minBlockX, int minBlockZ) {
+        return terrainReady(minBlockX - 4, minBlockZ - 4, minBlockX + 19, minBlockZ + 19);
+    }
+
+    /** Whether the terrain tiles under a block box can all be read right now (see {@link #terrainReady(int, int)}). */
+    public boolean terrainReady(int minX, int minZ, int maxX, int maxZ) {
         com.berg.orbis.dem.DemTileProvider tiles = terrainTiles;
         if (tiles == null) return true;
         int z = terrainZoom;
         java.util.Set<Long> seen = new java.util.HashSet<>();
-        for (int[] c : new int[][]{{minBlockX - 4, minBlockZ - 4}, {minBlockX + 19, minBlockZ - 4}, {minBlockX - 4, minBlockZ + 19}, {minBlockX + 19, minBlockZ + 19}}) {
+        // Points 64 blocks apart and the far edges: closer than any tile is wide, so every tile under the box is met.
+        java.util.List<int[]> points = new java.util.ArrayList<>();
+        for (int x = minX; ; x = Math.min(x + 64, maxX)) {
+            for (int zz = minZ; ; zz = Math.min(zz + 64, maxZ)) {
+                points.add(new int[]{x, zz});
+                if (zz >= maxZ) break;
+            }
+            if (x >= maxX) break;
+        }
+        for (int[] c : points) {
             double[] ll = mapper.toLatLon(c[0], c[1]);
-            double n = Math.pow(2, z);
-            int tx = (int) Math.floor((ll[1] + 180) / 360 * n);
-            double lat = Math.toRadians(ll[0]);
-            int ty = (int) Math.floor((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n);
+            // The tile the sampler reads: latitude clamped to the map's ±85.05° as it does, longitude wrapped round ±180°
+            // (unclamped and unwrapped, a polar or Fiji world asked for tiles that do not exist and was never ready)
+            double[] f = com.berg.orbis.dem.DemTileProvider.latLonToTileFraction(ll[0], ll[1], z);
+            int n = 1 << z;
+            int tx = Math.floorMod((int) Math.floor(f[0]), n);
+            int ty = Math.max(0, Math.min(n - 1, (int) Math.floor(f[1])));
             if (!seen.add(((long) tx << 32) ^ (ty & 0xffffffffL))) continue;
             try {
                 tiles.getTile(z, tx, ty);
@@ -173,7 +189,7 @@ public final class WorldModel {
 
     public BiomeClassifier.Climate climate(int x, int z, double elevationMeters) {
         double[] ll = mapper.toLatLon(x, z);
-        return classifier.classify(ll[0], Double.isNaN(elevationMeters) ? 0.0 : elevationMeters);
+        return classifier.classify(ll[0], ll[1], Double.isNaN(elevationMeters) ? 0.0 : elevationMeters);
     }
 
     private volatile SnowCover snow;
@@ -183,6 +199,79 @@ public final class WorldModel {
     /** Today's snow cover (real snow on); null leaves the year-round climate guess in charge. */
     public void setSnowCover(SnowCover snow) {
         this.snow = snow;
+    }
+
+    /** Where snow lies and water is frozen today as seen (NOAA IMS, Northern Hemisphere); null without. */
+    private volatile com.berg.orbis.sky.ObservedSnow observed;
+
+    public void setObservedSnow(com.berg.orbis.sky.ObservedSnow observed) {
+        this.observed = observed;
+    }
+
+    /** Norway's 1 km snow depth (seNorge); null without. */
+    private volatile com.berg.orbis.sky.SeNorge seNorge;
+
+    public void setSeNorge(com.berg.orbis.sky.SeNorge seNorge) {
+        this.seNorge = seNorge;
+    }
+
+    /** Austria's 1 km snow depth (SNOWGRID); null without. */
+    private volatile com.berg.orbis.sky.AustriaSnow austria;
+
+    public void setAustriaSnow(com.berg.orbis.sky.AustriaSnow austria) {
+        this.austria = austria;
+    }
+
+    /** The lower 48 states' 1 km snow depth (SNODAS); null without. */
+    private volatile com.berg.orbis.sky.Snodas snodas;
+
+    public void setSnodas(com.berg.orbis.sky.Snodas snodas) {
+        this.snodas = snodas;
+    }
+
+    /**
+     * Today's snow depth. In Norway seNorge's 1 km depth, in Austria SNOWGRID's, in the lower 48 states SNODAS's. Elsewhere the modelled depth checked against what the satellites
+     * and analysts see in the place's 1 km cell: snow seen where the model has none gets a thin cover; a cell seen bare
+     * keeps only the model's deep mountain snow (its line raised by about 30 cm of depth), since a peak can hold snow in
+     * a cell that is mostly bare.
+     */
+    private double observedDepth(double lat, double lon, double modelDepth, long waitMs) {
+        com.berg.orbis.sky.SeNorge norway = seNorge;
+        if (norway != null && com.berg.orbis.sky.SeNorge.covers(lat, lon)) {
+            double d = norway.depthM(lat, lon, waitMs);
+            if (!Double.isNaN(d)) return d;
+        }
+        com.berg.orbis.sky.AustriaSnow at = austria;
+        if (at != null && com.berg.orbis.sky.AustriaSnow.covers(lat, lon)) {
+            double d = at.depthM(lat, lon, waitMs);
+            if (!Double.isNaN(d)) return d;
+        }
+        com.berg.orbis.sky.Snodas us = snodas;
+        if (us != null && com.berg.orbis.sky.Snodas.covers(lat, lon)) {
+            double d = us.depthM(lat, lon, waitMs);
+            if (!Double.isNaN(d)) return d;
+        }
+        com.berg.orbis.sky.ObservedSnow obs = observed;
+        if (obs == null || Double.isNaN(modelDepth)) return modelDepth;
+        int seen = obs.classAt(lat, lon);
+        if (seen == com.berg.orbis.sky.ObservedSnow.SNOW) return Math.max(modelDepth, 0.05);
+        if (seen == com.berg.orbis.sky.ObservedSnow.LAND) return Math.max(0, modelDepth - 0.3);
+        return modelDepth;
+    }
+
+    /** Whether water at a place is frozen today as seen: 1 ice, 0 open, -1 not known (a small lake in bare land: the climate decides). */
+    private int observedIce(double lat, double lon, double snowDepthM) {
+        com.berg.orbis.sky.ObservedSnow obs = observed;
+        if (obs == null) return -1;
+        return switch (obs.classAt(lat, lon)) {
+            case com.berg.orbis.sky.ObservedSnow.ICE -> 1;
+            case com.berg.orbis.sky.ObservedSnow.WATER -> 0;
+            // A lake too small for the 1 km cells, in land under snow: frozen too, once the snow lies 10 cm deep there.
+            // The first snow of autumn is no frozen lake (IMS saw snow round Yellowstone Lake on 18 Oct 2026, SNODAS
+            // 0 cm), and the national depths win over the satellites for the snow itself.
+            case com.berg.orbis.sky.ObservedSnow.SNOW -> !Double.isNaN(snowDepthM) && snowDepthM >= 0.10 ? 1 : -1;
+            default -> -1;
+        };
     }
 
     /**
@@ -198,7 +287,8 @@ public final class WorldModel {
         if (s == null || !cfg.realSnow) return c;
         double[] ll = mapper.toLatLon(x, z);
         double snowElevation = Double.isNaN(elevationMeters) ? 0.0 : snowElevationM(x, blockY(elevationMeters, x, z), z, true);
-        return c.withSnowDepth(s.depthM(ll[0], ll[1], snowElevation));
+        double depth = observedDepth(ll[0], ll[1], s.depthM(ll[0], ll[1], snowElevation), 20_000);
+        return c.withSnowDepth(depth).withIceNow(observedIce(ll[0], ll[1], depth));
     }
 
     /**
@@ -227,7 +317,7 @@ public final class WorldModel {
         double e = snowElevationM(x, y, z, false);
         if (Double.isNaN(e)) return -1;
         double[] ll = mapper.toLatLon(x, z);
-        double d = s.depthIfKnownM(ll[0], ll[1], e);
+        double d = observedDepth(ll[0], ll[1], s.depthIfKnownM(ll[0], ll[1], e), 0);
         if (Double.isNaN(d)) return -1;
         int layers = ColumnPainter.snowLayers(d, cfg.metersPerBlock);
         // As generation lays it: never bare on the ice cap.
@@ -303,6 +393,11 @@ public final class WorldModel {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /** The region builder (and the maps it reads), or null without map data. */
+    public com.berg.orbis.osm.FeatureRasterizer rasterizer() {
+        return regions == null ? null : regions.rasterizer();
     }
 
     /** OSM raster if it is already decoded, else null. Never blocks. */

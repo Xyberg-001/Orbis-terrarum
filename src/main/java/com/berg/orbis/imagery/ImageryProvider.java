@@ -137,7 +137,7 @@ public final class ImageryProvider {
         if (sources.isEmpty()) return -1;
         double[] f = DemTileProvider.latLonToTileFraction(lat, lon, zoom);
         int tx = (int) Math.floor(f[0]), ty = (int) Math.floor(f[1]);
-        Tile tile = tile(tx, ty, lat, lon);
+        Tile tile = tile(Math.floorMod(tx, 1 << zoom), ty, lat, lon); // round the globe past ±180°
         if (tile == null || tile == MISSING || tile.size == 0) return -1;
         int size = tile.size;
         int px = (int) ((f[0] - tx) * size), py = (int) ((f[1] - ty) * size);
@@ -171,8 +171,12 @@ public final class ImageryProvider {
         Tile cached = memory.get(key);
         if (cached != null) return CompletableFuture.completedFuture(cached);
         return loading.computeIfAbsent(key, k -> CompletableFuture.supplyAsync(() -> {
+            boolean[] failed = SOURCE_FAILED.get();
+            failed[0] = false;
             Tile t = load(x, y, lat, lon);
-            memory.put(key, t);
+            // Kept only when no source failed on the way: a tile without a photo that timed out (missing, or Esri's alone) was kept
+            // until it left memory, and the map regions built meanwhile were saved without the photo's colours.
+            if (!failed[0]) memory.put(key, t);
             loading.remove(key);
             return t;
         }, fetchPool));
@@ -223,9 +227,15 @@ public final class ImageryProvider {
     }
 
     /** One source's picture of a tile, from the disk cache or the service; null when it has none or fails. */
+    /** Set on the loading thread when a source failed (or was skipped for failing) while a tile was put together. */
+    private static final ThreadLocal<boolean[]> SOURCE_FAILED = ThreadLocal.withInitial(() -> new boolean[1]);
+
     private Picture fetch(OrbisConfig.ImagerySource s, int x, int y) {
         Long disabled = sourceDisabledUntil.get(s.name);
-        if (disabled != null && System.currentTimeMillis() < disabled) return null;
+        if (disabled != null && System.currentTimeMillis() < disabled) {
+            SOURCE_FAILED.get()[0] = true;
+            return null;
+        }
         String safeName = s.name.replaceAll("[^A-Za-z0-9_-]", "_");
         Path file = cacheDir.resolve(safeName + "_" + zoom + "_" + x + "_" + y + ".img");
         Path miss = cacheDir.resolve(safeName + "_" + zoom + "_" + x + "_" + y + ".missing");
@@ -250,7 +260,7 @@ public final class ImageryProvider {
                     Files.write(miss, new byte[0]);
                     return null;
                 }
-                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                Path tmp = file.resolveSibling(file.getFileName() + "." + Thread.currentThread().threadId() + ".tmp");
                 Files.write(tmp, bytes);
                 Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
@@ -263,6 +273,7 @@ public final class ImageryProvider {
             sourceFailures.remove(s.name);
             return t;
         } catch (IOException | InterruptedException | RuntimeException e) {
+            SOURCE_FAILED.get()[0] = true;
             int failures = sourceFailures.merge(s.name, 1, Integer::sum);
             if (failures >= 3) {
                 sourceDisabledUntil.put(s.name, System.currentTimeMillis() + 5 * 60_000L);

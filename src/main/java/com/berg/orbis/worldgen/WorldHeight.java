@@ -435,8 +435,10 @@ public final class WorldHeight {
                 StructureDensity.refresh(level.resolve("datapacks"));
                 // An existing world keeps its height; an Orbis one gets this month's season before it loads.
                 if (Files.isDirectory(level.resolve("datapacks").resolve(PACK_NAME))) {
-                    double lat = com.berg.orbis.sky.Seasons.worldLatitude(level);
-                    com.berg.orbis.sky.Seasons.update(level.resolve("datapacks"), Double.isNaN(lat) ? cfg.originLat : lat,
+                    double lat = com.berg.orbis.sky.Seasons.worldLatitude(level), lon = com.berg.orbis.sky.Seasons.worldLongitude(level);
+                    boolean known = !Double.isNaN(lat) && !Double.isNaN(lon);
+                    com.berg.orbis.sky.Seasons.update(level.resolve("datapacks"), com.berg.orbis.OrbisMod.dataDirFor(cfg),
+                            known ? lat : cfg.originLat, known ? lon : cfg.originLon,
                             cfg.realSeasons && com.berg.orbis.sky.Seasons.worldWantsSeasons(level));
                 }
                 return;

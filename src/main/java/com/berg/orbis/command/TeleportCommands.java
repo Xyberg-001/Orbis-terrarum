@@ -21,6 +21,14 @@ public class TeleportCommands {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 
             dispatcher.register(Commands.literal("orbis")
+                    // The chat buttons of the map data offered while travelling (worldgen/MapDataTrip).
+                    .then(Commands.literal("mapdata")
+                            .requires(com.berg.orbis.worldgen.MapDataTrip::mayDecide)
+                            .then(Commands.argument("action", StringArgumentType.word())
+                                    .suggests((c, b) -> net.minecraft.commands.SharedSuggestionProvider.suggest(java.util.List.of("download", "notnow", "never"), b))
+                                    .then(Commands.argument("region", StringArgumentType.word())
+                                            .executes(ctx -> reply(ctx, com.berg.orbis.worldgen.MapDataTrip.command(ctx.getSource(),
+                                                    StringArgumentType.getString(ctx, "action"), StringArgumentType.getString(ctx, "region")))))))
                     // The mod's performance and network settings, for a server's operators (no settings screen there).
                     .then(Commands.literal("settings")
                             .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
@@ -48,6 +56,7 @@ public class TeleportCommands {
                 {"prefetchSpawnAtStartup", "download the map around the spawn when the server starts"},
                 {"keepDownloadedMapFiles", "keep Geofabrik files after a map data download imported the area"},
                 {"regionPrefetchRadius", "map regions downloaded ahead of players, 0-6"},
+                {"liveStatusBar", "a 'Map around you' bar for each player while the map data around them comes in"},
                 {"displayFrameRange", "blocks within which shop display frames are sent to players (0 = vanilla's 160)"},
                 {"regionCacheSize", "map regions kept in memory, 8-256 (restart)"},
                 {"overpassConcurrentRequests", "parallel OpenStreetMap downloads, 1-8"},

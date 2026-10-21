@@ -67,6 +67,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
     private static final java.lang.management.MemoryPoolMXBean OLD_GEN = findOldGen();
 
     private volatile Run run;
+    /** The last sweep stopped on an error, its progress kept (see {@link #lastFailed}). */
+    private volatile boolean lastFailed;
 
     private CubicPregen() {
     }
@@ -94,6 +96,11 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
     }
 
     @Override
+    public boolean lastFailed() {
+        return this.lastFailed;
+    }
+
+    @Override
     public synchronized Component start(ServerLevel level, String label, AreaSweep area, boolean skipSea, String key) {
         if (this.run != null) return Component.literal("A pre-generation is already running (" + this.run.label + "); stop it on the world map (B) first.");
         CubeGenerator generator = CubicApi.cubeGenerator(level);
@@ -101,6 +108,7 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         Run r = new Run(level, label, area, skipSea, key, generator);
         if (r.total == 0) return Component.literal("The area has no cube columns.");
         this.run = r;
+        this.lastFailed = false;
         r.start();
         return Component.literal(String.format(Locale.ROOT,
                 "Pre-generating %s (cubic world): %,d cube columns, each from %d blocks under its ground to %d over it.%s Progress every 30 s; "
@@ -173,6 +181,8 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
         volatile boolean stopRequested;
         volatile String waiting;
         volatile boolean producerDone;
+        /** Why the column walk stopped before the end of the area (an error), or null. */
+        volatile String failure;
         Thread producer;
 
         final Semaphore slots = new Semaphore(MAX_IN_FLIGHT);
@@ -341,6 +351,7 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
             } catch (RuntimeException e) {
                 System.err.println("[orbis] Cubic pre-generation stopped by an error: " + e);
                 e.printStackTrace();
+                this.failure = e.toString();
             } finally {
                 this.producerDone = true;
             }
@@ -519,6 +530,15 @@ public final class CubicPregen implements PregenTask.CubicSweeper {
             if (now - this.lastChat >= 120_000) {
                 this.lastChat = now;
                 this.level.getServer().getPlayerList().broadcastSystemMessage(Component.literal(progress()), false);
+            }
+            if (this.producerDone && this.failure != null) {
+                // The walk died: stopped with its progress kept (it was reported finished, its progress deleted, and the
+                // rest of the area never generated).
+                lastFailed = true;
+                end(this, "stopped by an error", true);
+                this.level.getServer().getPlayerList().broadcastSystemMessage(Component.literal("Pre-generation of " + this.label
+                        + " stopped by an error (" + this.failure + "). Its progress is kept: resume it on the world map (B)."), false);
+                return;
             }
             if (this.producerDone && this.inFlight.get() == 0 && this.finished.isEmpty()) {
                 end(this, "finished", false);

@@ -65,6 +65,14 @@ public final class ColumnPainter {
     private static final BlockState SNOW_LAYER = Blocks.SNOW.defaultBlockState();
     private static final BlockState SNOW_BLOCK = Blocks.SNOW_BLOCK.defaultBlockState();
     private static final BlockState FARMLAND = Blocks.FARMLAND.defaultBlockState().setValue(BlockStateProperties.MOISTURE, 7);
+    private static final BlockState COARSE_DIRT = Blocks.COARSE_DIRT.defaultBlockState();
+    private static final BlockState MUD = Blocks.MUD.defaultBlockState();
+    private static final BlockState PACKED_MUD = Blocks.PACKED_MUD.defaultBlockState();
+    private static final BlockState CLAY = Blocks.CLAY.defaultBlockState();
+    private static final BlockState TERRACOTTA = Blocks.TERRACOTTA.defaultBlockState();
+    private static final BlockState TUFF = Blocks.TUFF.defaultBlockState();
+    private static final BlockState PACKED_ICE = Blocks.PACKED_ICE.defaultBlockState();
+    private static final BlockState BLUE_ICE = Blocks.BLUE_ICE.defaultBlockState();
 
     /** Depth the sea bed shelves down to from the shore where the elevation data has none, in metres. */
     private static final double SHELF_M = 12;
@@ -100,6 +108,25 @@ public final class ColumnPainter {
 
     /** As above, with the land cover to paint where there is no raster (the far view's, from ESA WorldCover), or null. */
     public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx, int deepslateTop, LandCover noRasterCover) {
+        paint(s, x, z, terrainY, climate, r, idx, deepslateTop, noRasterCover, 0);
+    }
+
+    /**
+     * As above, with how far the ground falls to its lowest neighbour, in blocks ({@code drop}; 0 when not known). In
+     * worlds with soil layers a column standing 2 blocks over a neighbour has no soil under its top, and one standing 3 or
+     * more is bare rock: a cliff shows its rock, not a face of dirt.
+     */
+    public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx, int deepslateTop, LandCover noRasterCover,
+                      int drop) {
+        paint(s, x, z, terrainY, climate, r, idx, deepslateTop, noRasterCover, drop, 0, 0);
+    }
+
+    /**
+     * As above, with the rock and soil codes to paint where there is no raster ({@code noRasterRock}, {@code noRasterSoil};
+     * 0 for none): the far view's, from the same maps the regions read.
+     */
+    public void paint(Sink s, int x, int z, int terrainY, BiomeClassifier.Climate climate, RegionRaster r, int idx, int deepslateTop, LandCover noRasterCover,
+                      int drop, int noRasterRock, int noRasterSoil) {
         terrainY = clampY(terrainY);
         boolean hasRaster = r != null && idx >= 0;
         LandCover lc = hasRaster ? r.landCoverAt(idx) : noRasterCover != null ? noRasterCover : LandCover.NONE;
@@ -272,8 +299,13 @@ public final class ColumnPainter {
             }
         }
         BlockState top, sub, deep;
+        // Blocks between the top block and the rock, and (worlds with soil layers) what they are made of.
+        int looseDepth = 3;
+        com.berg.orbis.geology.Soils.Profile profile = null;
+        com.berg.orbis.geology.Soils.Texture texture = com.berg.orbis.geology.Soils.Texture.UNKNOWN;
+        int iceDepth = 0;
         // The real rock under this column (bedrock map), else plain stone.
-        BlockState rock = hasRaster ? com.berg.orbis.geology.Rocks.Rock.of(r.rockAt(idx)).block : STONE;
+        BlockState rock = com.berg.orbis.geology.Rocks.Rock.of(hasRaster ? r.rockAt(idx) : noRasterRock).block;
         if (bf != null) {
             top = bf.minHeightBlocks > 0 ? groundBlock(lc, gc, climate, h, x, z) : bf.floor;
             sub = rock;
@@ -298,17 +330,43 @@ public final class ColumnPainter {
             }
             sub = subBlock(top, lc, climate);
             deep = rock;
+            if ((hasRaster || noRasterSoil != 0) && cfg.groundLayers) {
+                iceDepth = hasRaster ? r.iceDepthAt(idx) : 0;
+                if (iceDepth > 0) {
+                    // A glacier the inventory knows: its ice, thick in the middle and thin at the edges, then the rock.
+                    looseDepth = iceDepth;
+                } else if (sub == DIRT) {
+                    int known = hasRaster ? r.soilDepthAt(idx) : -1;
+                    if (known >= 0) looseDepth = known;
+                    int soil = hasRaster ? r.soilAt(idx) : noRasterSoil;
+                    profile = com.berg.orbis.geology.Soils.Profile.of(soil);
+                    texture = com.berg.orbis.geology.Soils.Texture.of(soil);
+                    if (drop >= 3) {
+                        top = STONE;
+                        looseDepth = 0;
+                    } else {
+                        if (drop == 2) looseDepth = 0;
+                        if (top == GRASS) top = soilTop(profile, lc, h);
+                    }
+                }
+            }
             // Bare rock, screes and outcrops show the rock they are made of.
             if (top == STONE) top = rock;
             if (sub == STONE) sub = rock;
         }
 
         if (cfg.generateBedrock) s.set(x, minY, z, BEDROCK);
-        int rockTop = groundTop - 4;
+        int rockTop = groundTop - 1 - looseDepth;
         // Deepslate below deepslateTop, stone above it, as two runs.
         s.fill(x, minY + 1, Math.min(rockTop, deepslateTop - 1), z, DEEPSLATE);
         s.fill(x, Math.max(minY + 1, deepslateTop), rockTop, z, deep);
-        s.fill(x, Math.max(minY + 1, groundTop - 3), groundTop - 1, z, sub);
+        if (iceDepth > 0 || (profile != null && profile != com.berg.orbis.geology.Soils.Profile.UNKNOWN)) {
+            for (int y = groundTop - 1, k = 1; y > rockTop && y > minY; y--, k++) {
+                s.set(x, y, z, iceDepth > 0 ? iceBlock(k) : looseBlock(profile, texture, k, x, y, z));
+            }
+        } else {
+            s.fill(x, Math.max(minY + 1, rockTop + 1), groundTop - 1, z, sub);
+        }
         // Layout 2: sandstone under sand, as vanilla has it. Buried treasure looks down from the surface for the
         // first block standing on sandstone or stone and puts its chest there; over a region's own rock (tuff,
         // basalt, ...) it found none and its chest ended up deep in the deepslate or nowhere.
@@ -319,10 +377,10 @@ public final class ColumnPainter {
         if (waterColumn) {
             s.fill(x, groundTop + 1, waterTop, z, WATER);
             // Seagrass and kelp come from the water biomes in the decoration step (SeaVegetation).
-            if (climate.frozenWater() && waterTop < maxY) {
+            if (climate.waterFrozen() && waterTop < maxY) {
                 s.set(x, waterTop, z, ICE);
             }
-            if (!climate.frozenWater() && wf != null && (wf.kind == WaterFeature.Kind.POND || wf.kind == WaterFeature.Kind.WETLAND_WATER)
+            if (!climate.waterFrozen() && wf != null && (wf.kind == WaterFeature.Kind.POND || wf.kind == WaterFeature.Kind.WETLAND_WATER)
                     && (h % 100) < 12 && waterTop < maxY) {
                 s.set(x, waterTop + 1, z, Blocks.LILY_PAD.defaultBlockState());
             }
@@ -380,6 +438,14 @@ public final class ColumnPainter {
         // ---- building ----------------------------------------------------------------
         if (bf != null) {
             paintBuilding(s, x, z, bf, r, idx, climate);
+            // Parts stacked over it, each in its own band (no doors, minarets or shaped roofs up there).
+            int[] stack = r.stackedAt(idx);
+            if (stack != null) {
+                for (int p : stack) {
+                    BuildingFeature up = r.buildings.get((p & 0xFFFF) - 1);
+                    if (!up.suppressed) paintBuilding(s, x, z, up, r, idx, climate, (p >>> 16) & 0xFF, (p >>> 24) & 0xFF, false);
+                }
+            }
             boolean railThrough = rf != null && rf.isRail() && !rf.tunnel && rf.layer >= 0;
             if ((rf != null && rf.tunnel && rf.layer >= 0) || railThrough || dec == DecorType.EMBEDDED_RAIL) {
                 // A passage through the building (tunnel=building_passage / covered), or a railway running into
@@ -572,6 +638,80 @@ public final class ColumnPainter {
                 return GRASS;
             }
         }
+    }
+
+    /**
+     * The top of grassy natural ground by its soil: moss on peat, more podzol on podzols, bare patches on sandy, dry,
+     * stony and frozen ground. Fields, gardens and parks keep their grass.
+     */
+    private static BlockState soilTop(com.berg.orbis.geology.Soils.Profile p, LandCover lc, long h) {
+        boolean wild = lc == LandCover.NONE || lc == LandCover.HEATH || lc == LandCover.SCRUB || lc == LandCover.MEADOW || lc == LandCover.WETLAND
+                || lc.isForest();
+        if (!wild) return GRASS;
+        int r = (int) ((h >>> 20) % 100);
+        return switch (p) {
+            case PEAT -> r < 18 ? Blocks.MOSS_BLOCK.defaultBlockState() : r < 24 ? Blocks.MUD.defaultBlockState() : GRASS;
+            case PODZOL -> r < 30 ? Blocks.PODZOL.defaultBlockState() : GRASS;
+            case SANDY, GRAVELLY, FROZEN -> r < 12 ? Blocks.COARSE_DIRT.defaultBlockState() : GRASS;
+            case DRY -> r < 20 ? Blocks.COARSE_DIRT.defaultBlockState() : GRASS;
+            case WET -> r < 6 ? Blocks.MUD.defaultBlockState() : GRASS;
+            default -> GRASS;
+        };
+    }
+
+    /**
+     * The loose ground {@code k} blocks under the top (1 = right under it): a block or two of topsoil, then what the soil
+     * group is made of further down; under ordinary soils (loam, podzol, dry, stony) the deep ground follows the subsoil's
+     * texture: sand, clay or gravel. Sand and gravel only near the top: deeper they would pour into every cave opened under
+     * them, so deep sand is sandstone (as vanilla has it under deserts) and deep gravel coarse dirt.
+     */
+    private static BlockState looseBlock(com.berg.orbis.geology.Soils.Profile p, com.berg.orbis.geology.Soils.Texture t, int k, int x, int y, int z) {
+        int r = (int) (hash(x, z, 0x5E1L + y) % 100);
+        boolean ordinary = p == com.berg.orbis.geology.Soils.Profile.LOAM || p == com.berg.orbis.geology.Soils.Profile.PODZOL
+                || p == com.berg.orbis.geology.Soils.Profile.DRY || p == com.berg.orbis.geology.Soils.Profile.GRAVELLY;
+        if (k > 2 && ordinary) {
+            switch (t) {
+                case SANDY -> {
+                    return k <= 4 ? SAND : SANDSTONE;
+                }
+                case CLAY -> {
+                    return r < 20 ? DIRT : CLAY;
+                }
+                case GRAVELLY -> {
+                    return r < 40 ? gravelNearTop(k) : COARSE_DIRT;
+                }
+                default -> { }
+            }
+        }
+        return switch (p) {
+            case PODZOL -> k == 1 ? DIRT : r < 15 ? gravelNearTop(k) : COARSE_DIRT;
+            case PEAT -> k <= 2 ? MUD : PACKED_MUD;
+            case SANDY -> k <= 3 ? SAND : SANDSTONE;
+            case CLAY -> k == 1 || r < 20 ? DIRT : CLAY;
+            case WET -> k == 1 ? MUD : r < 15 ? DIRT : CLAY;
+            case RED -> k == 1 ? DIRT : r < 15 ? COARSE_DIRT : TERRACOTTA;
+            case GRAVELLY -> k == 1 ? COARSE_DIRT : k <= 3 ? GRAVEL : r < 25 ? gravelNearTop(k) : COARSE_DIRT;
+            case DRY -> k <= 2 ? COARSE_DIRT : r < 20 ? SANDSTONE : COARSE_DIRT;
+            case FROZEN -> k == 1 ? DIRT : r < 20 ? PACKED_ICE : COARSE_DIRT;
+            case VOLCANIC -> k == 1 ? DIRT : r < 30 ? TUFF : COARSE_DIRT;
+            case ALLUVIAL -> {
+                if (k == 1) yield DIRT;
+                // Beds laid down by floods: clay, silt and gravel in bands a few blocks thick.
+                int band = Math.floorMod(y + (int) (hash(x >> 4, z >> 4, 0xA11L) % 3), 7);
+                yield band < 2 ? CLAY : band < 5 ? DIRT : gravelNearTop(k);
+            }
+            default -> r < 12 && k > 2 ? COARSE_DIRT : DIRT;
+        };
+    }
+
+    /** Gravel near the top, coarse dirt deeper (where it would fall into caves). */
+    private static BlockState gravelNearTop(int k) {
+        return k <= 3 ? GRAVEL : COARSE_DIRT;
+    }
+
+    /** Glacier ice {@code k} blocks under the surface: packed ice, blue ice deep inside thick glaciers. */
+    private BlockState iceBlock(int k) {
+        return k * cfg.verticalMetersPerBlock() > 40 ? BLUE_ICE : PACKED_ICE;
     }
 
     /** True when a 4-neighbour of the column has a different land cover (the outline of the polygon). */
@@ -840,17 +980,22 @@ public final class ColumnPainter {
     // ------------------------------------------------------------------ buildings
 
     private void paintBuilding(Sink s, int x, int z, BuildingFeature bf, RegionRaster r, int idx, BiomeClassifier.Climate climate) {
+        paintBuilding(s, x, z, bf, r, idx, climate, r.buildingFlags[idx], r.roofExtraAt(idx), true);
+    }
+
+    /** One building's band of a column ({@code own}: the column's own building, else a part stacked over it). */
+    private void paintBuilding(Sink s, int x, int z, BuildingFeature bf, RegionRaster r, int idx, BiomeClassifier.Climate climate,
+                               int flags, int extra, boolean own) {
         int base = clampY(bf.baseY);
-        int flags = r.buildingFlags[idx];
+        if (!own) flags &= ~(RegionRaster.FLAG_DOOR | RegionRaster.FLAG_MINARET);
         boolean edge = (flags & RegionRaster.FLAG_EDGE) != 0;
         boolean corner = (flags & RegionRaster.FLAG_CORNER) != 0;
         boolean door = (flags & RegionRaster.FLAG_DOOR) != 0 && cfg.buildingDoors;
         boolean gableEnd = (flags & RegionRaster.FLAG_GABLE_END) != 0;
         boolean minaret = (flags & RegionRaster.FLAG_MINARET) != 0;
         boolean roofOnly = (flags & RegionRaster.FLAG_ROOF_ONLY) != 0;
-        int extra = r.roofExtraAt(idx);
         // Pitched roofs are shingled with stairs and capped with a slab (RoofBlocks picks the family).
-        RoofBlocks.Set3 roofSet = bf.roofShape.isPitched() ? RoofBlocks.of(bf.roof) : null;
+        RoofBlocks.Set3 roofSet = bf.roofShape.isPitched() && own ? RoofBlocks.of(bf.roof) : null;
         BlockState roof = roofSet != null ? roofSet.full() : bf.roof;
 
         int wallBottom = base + 1 + bf.minHeightBlocks;

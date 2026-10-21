@@ -3,6 +3,7 @@
   "minVersion": "0.8",
   "package": "com.berg.orbis.mixin",
   "compatibilityLevel": "JAVA_25",
+  "server": ["DedicatedServerPauseMixin"],
   "mixins": [
     "ServerPlayerMixin",
     "DimensionTypeMixin",
@@ -21,6 +22,7 @@
     "IOWorkerAccessor",
     "PoiManagerMixin",
     "ServerLevelSeasonMixin",
+    "BiomePrecipitationMixin",
     "VillagerClockMixin",
     "ServerLevelWritesMixin",
     "ServerChunkCacheTicketsMixin",
@@ -29,7 +31,7 @@
     "RegionFileAccessor",
     "JigsawPlacementMixin",
     "LocateCommandMixin",
-    "ChunkGeneratorLocateMixin"
+    "ChunkGeneratorLocateMixin", "PalettedContainerPackMixin"
   ],
   "client": [
     "client.ClientLevelDataMixin",
@@ -37,7 +39,11 @@
     "client.CreateWorldScreenInvoker",
     "client.CreateWorldScreenMixin",
     "client.MinecraftPauseMixin",
-    "client.WorldOpenFlowsMixin"
+    "client.WorldOpenFlowsMixin",
+    "client.BiomeGrassColourMixin",
+    "client.BiomeColorsFoliageMixin",
+    "client.LevelLocalWeatherMixin",
+    "VideoSettingsFarViewMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -172,6 +172,22 @@ public final class WorldSettings {
     public int undergroundVersion = 1;
     /** OrbisConfig.reliefBiomes; false for worlds made before it existed (their biomes must meet their new chunks). */
     public boolean reliefBiomes = false;
+    /** OrbisConfig.surveyedTunnels; false for worlds made before it existed (their tunnels must meet their new chunks). */
+    public boolean surveyedTunnels = false;
+    /** OrbisConfig.groundLayers; false for worlds made before it existed (their new chunks must meet their old ground). */
+    public boolean groundLayers = false;
+    /** OrbisConfig.forestTypes; false for worlds made before it existed. */
+    public boolean forestTypes = false;
+    /** OrbisConfig.overtureBuildings; false for worlds made before it existed. */
+    public boolean overtureBuildings = false;
+    /** OrbisConfig.riverWidths; false for worlds made before it existed. */
+    public boolean riverWidths = false;
+    /** OrbisConfig.seascapeLakes; false for worlds made before it existed. */
+    public boolean seascapeLakes = false;
+    /** OrbisConfig.quebecLakes; false for worlds made before it existed. */
+    public boolean quebecLakes = false;
+    /** OrbisConfig.realClimate; false for worlds made before it existed (their biomes must meet their new chunks). */
+    public boolean realClimate = false;
 
     public static WorldSettings fromConfig(OrbisConfig c) {
         WorldSettings s = new WorldSettings();
@@ -264,6 +280,14 @@ public final class WorldSettings {
         s.bareEarthTerrain = c.bareEarthTerrain;
         s.undergroundVersion = c.undergroundVersion;
         s.reliefBiomes = c.reliefBiomes;
+        s.surveyedTunnels = c.surveyedTunnels;
+        s.groundLayers = c.groundLayers;
+        s.forestTypes = c.forestTypes;
+        s.overtureBuildings = c.overtureBuildings;
+        s.riverWidths = c.riverWidths;
+        s.seascapeLakes = c.seascapeLakes;
+        s.quebecLakes = c.quebecLakes;
+        s.realClimate = c.realClimate;
         return s;
     }
 
@@ -357,6 +381,14 @@ public final class WorldSettings {
         c.bareEarthTerrain = bareEarthTerrain;
         c.undergroundVersion = undergroundVersion;
         c.reliefBiomes = reliefBiomes;
+        c.surveyedTunnels = surveyedTunnels;
+        c.groundLayers = groundLayers;
+        c.forestTypes = forestTypes;
+        c.overtureBuildings = overtureBuildings;
+        c.riverWidths = riverWidths;
+        c.seascapeLakes = seascapeLakes;
+        c.quebecLakes = quebecLakes;
+        c.realClimate = realClimate;
     }
 
     /** The installation config with this world's settings applied (a copy; the base is untouched). */

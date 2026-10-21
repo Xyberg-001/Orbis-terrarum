@@ -93,7 +93,9 @@ public final class YaclScreens {
                 .category(storageCategory(c))
                 .category(performanceCategory(c))
                 .category(networkCategory(c))
-                .save(() -> OrbisMod.replaceConfig(c))
+                .save(() -> {
+                    if (OrbisMod.replaceConfig(c)) toast(t("saved.title"), t("saved.reopen"));
+                })
                 .build()
                 .generateScreen(parent);
     }
@@ -604,17 +606,12 @@ public final class YaclScreens {
                         .option(bool("parallelChunkCompression", true, () -> c.parallelChunkCompression, v -> c.parallelChunkCompression = v))
                         .option(bool("pregenPauseWorld", true, () -> c.pregenPauseWorld, v -> c.pregenPauseWorld = v))
                         .option(intSlider("regionPrefetchRadius", 2, 0, 6, 1, () -> c.regionPrefetchRadius, v -> c.regionPrefetchRadius = v, v -> Component.literal(v + " (" + (2 * v + 1) * 512 + " m)")))
+                        .option(bool("liveStatusBar", true, () -> c.liveStatusBar, v -> c.liveStatusBar = v))
                         .option(intSlider("regionCacheSize", 64, 8, 256, 8, () -> c.regionCacheSize, v -> c.regionCacheSize = v, v -> Component.literal(v + " (~" + (v * 6) + " MB)")))
                         .option(intSlider("displayFrameRange", 48, 0, 160, 8, () -> c.displayFrameRange, v -> c.displayFrameRange = v,
                                 v -> v == 0 ? Component.translatable("orbisterrarum.opt.displayFrameRange.vanilla") : Component.literal(v + " blocks")))
                         .build())
-                .group(OptionGroup.createBuilder()
-                        .name(t("group.farView"))
-                        .option(bool("farViewFromData", true, () -> c.farViewFromData, v -> c.farViewFromData = v))
-                        .option(bool("voxyFarView", false, () -> c.voxyFarView, v -> c.voxyFarView = v))
-                        .option(intSlider("voxyFarViewChunks", 512, 64, 1024, 64, () -> c.voxyFarViewChunks, v -> c.voxyFarViewChunks = v,
-                                v -> Component.literal(v + " chunks")))
-                        .build())
+                // The far view settings are in the video settings (client/FarViewOptions) since 17 Oct 2026.
                 .build();
     }
 

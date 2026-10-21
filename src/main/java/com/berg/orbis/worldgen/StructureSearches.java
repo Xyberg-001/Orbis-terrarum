@@ -98,8 +98,32 @@ public final class StructureSearches {
                         });
             }
         }
+        if (createReference) {
+            // An exploration map (a cartographer's trade, a shipwreck's chest) asks once: answered "not yet", it was thrown away and
+            // never offered again. A short wait, the server's other work going on meanwhile (the search needs it for its chunks):
+            // where the map data is in already, the map comes out whole; else none this time, as before.
+            Search waiting = SEARCHES.get(key);
+            if (waiting != null) {
+                long until = System.currentTimeMillis() + ONE_SHOT_WAIT_MS;
+                level.getServer().managedBlock(() -> {
+                    // the level's chunk tasks too (the server's own pump leaves them in the middle of a tick), as vanilla's blocking
+                    // chunk requests do
+                    while (!waiting.done && System.currentTimeMillis() < until && level.getChunkSource().pollTask()) {
+                        // run the next one
+                    }
+                    return waiting.done || System.currentTimeMillis() >= until;
+                });
+                if (waiting.done) {
+                    SEARCHES.remove(key, waiting); // the structure is now known: the next map looks for another
+                    return new Answer(true, waiting.result);
+                }
+            }
+        }
         return new Answer(true, null);
     }
+
+    /** How long a one-off search (an exploration map's) is waited for on the server thread. */
+    private static final long ONE_SHOT_WAIT_MS = 5_000;
 
     private static void finish(Search search, BlockPos found) {
         search.result = found;

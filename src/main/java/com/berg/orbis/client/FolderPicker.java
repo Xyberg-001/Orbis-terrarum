@@ -25,7 +25,9 @@ public final class FolderPicker {
             String startPath = start == null ? "" : start.toAbsolutePath().toString();
             List<List<String>> commands;
             if (os.contains("win")) {
-                String ps = "Add-Type -AssemblyName System.Windows.Forms;"
+                // UTF-8 out: the console's code page (850 or 437) garbled a path like C:\Users\Bjørn read as UTF-8
+                String ps = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false;"
+                        + "Add-Type -AssemblyName System.Windows.Forms;"
                         + "$f = New-Object System.Windows.Forms.Form -Property @{TopMost = $true};"
                         + "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
                         + "$d.Description = '" + title.replace("'", "''") + "';"
@@ -45,7 +47,7 @@ public final class FolderPicker {
                     Process p = new ProcessBuilder(cmd).redirectErrorStream(false).start();
                     String out;
                     try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-                        out = r.lines().reduce("", String::concat).trim();
+                        out = r.lines().reduce("", String::concat).replace("﻿", "").trim();
                     }
                     p.waitFor();
                     if (!out.isEmpty()) return Path.of(out);

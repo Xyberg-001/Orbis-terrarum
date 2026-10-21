@@ -59,10 +59,12 @@ public final class OsmTags {
         String t = s.trim().replace(',', '.');
         StringBuilder num = new StringBuilder();
         boolean seenDigit = false;
+        int end = 0; // where the number ends: the unit follows (not at its length, which missed words before it: "approx. 40 ft")
         for (int i = 0; i < t.length(); i++) {
             char c = t.charAt(i);
             if (Character.isDigit(c) || (c == '.' && seenDigit) || (c == '-' && num.length() == 0)) {
                 num.append(c);
+                end = i + 1;
                 if (Character.isDigit(c)) seenDigit = true;
             } else if (seenDigit) {
                 break;
@@ -71,7 +73,7 @@ public final class OsmTags {
         if (!seenDigit) return fallback;
         try {
             double v = Double.parseDouble(num.toString());
-            String rest = t.substring(num.length()).trim().toLowerCase();
+            String rest = t.substring(end).trim().toLowerCase();
             if (rest.startsWith("'") || rest.startsWith("ft") || rest.startsWith("feet")) v *= 0.3048;
             else if (rest.startsWith("km")) v *= 1000.0;
             else if (rest.startsWith("mi")) v *= 1609.344;

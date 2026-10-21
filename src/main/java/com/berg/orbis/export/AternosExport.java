@@ -64,6 +64,43 @@ import java.util.zip.ZipOutputStream;
  */
 public final class AternosExport {
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
+
+    /** Whether an export is copying the world now. */
+    public static boolean running() {
+        return RUNNING.get();
+    }
+
+    /** Set when the world closes during an export: the copy stops at its next file, its half-made folder is deleted. */
+    private static volatile boolean cancelled;
+
+    /**
+     * The world is closing: an export still copying stops (the server is about to write every chunk, and the copy would
+     * hold half of them), and nothing of it is left for the next world opened in this session (its "running" flag held
+     * the next world's villager points of interest still, and its bars showed there).
+     */
+    public static void serverStopping() {
+        if (RUNNING.get()) cancelled = true;
+        if (bar != null) {
+            bar.removeAllPlayers();
+            stepBar.removeAllPlayers();
+            bar = null;
+            stepBar = null;
+        }
+        // Wait a little for the copy to notice, so the next world does not open with the flag still set.
+        for (int i = 0; i < 100 && RUNNING.get(); i++) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        if (RUNNING.get()) System.err.println("[orbis] The export is still finishing a file; it stops without writing an upload");
+    }
+
+    private static void checkCancelled() {
+        if (cancelled) throw new java.util.concurrent.CancellationException("the world was closed");
+    }
     /** The whole zip, world files included: under Aternos' 1 GB with room (a 941 MB zip was refused on 2026-09-28). */
     private static final long ZIP_BUDGET = 900L << 20;
     private static final long STORAGE_BUDGET = 3400L << 20;
@@ -78,6 +115,7 @@ public final class AternosExport {
     public static Component start(MinecraftServer server, boolean forOrbis, boolean zipOnly) {
         if (PregenTask.isRunning()) return Component.literal("A pre-generation is running: export once it is done (or pause it on the world map).");
         if (!RUNNING.compareAndSet(false, true)) return Component.literal("An export is already running.");
+        cancelled = false;
         ServerLevel ow = server.overworld();
         server.saveEverything(true, true, true);
         // No chunk is written while the export reads the world (as /save-off: no autosave, chunks kept in memory
@@ -102,6 +140,8 @@ public final class AternosExport {
         Thread t = new Thread(() -> {
             try {
                 run(text -> say(server, text), root, name, spawn.getX() >> 4, spawn.getZ() >> 4, seaTop, minY, allowed, forOrbis, zipOnly, games, mapInfo);
+            } catch (java.util.concurrent.CancellationException e) {
+                System.out.println("[orbis] Export stopped: " + e.getMessage());
             } catch (Exception e) {
                 e.printStackTrace();
                 say(server, "The export failed: " + e);
@@ -149,6 +189,7 @@ public final class AternosExport {
     private static int barTicks;
 
     private static void step(Step s, long total) {
+        checkCancelled();
         step = s;
         stepTotal = Math.max(1, total);
         stepDone.set(0);
@@ -268,6 +309,7 @@ public final class AternosExport {
             runSteps(say, root, name, spawnCx, spawnCz, seaTop, minY, allowed, forOrbis, zipOnly, gameDir, mapInfo, t0);
         } finally {
             step = null;
+            stepDetail = "";
         }
     }
 
@@ -280,6 +322,17 @@ public final class AternosExport {
         if (folder.isEmpty()) folder = "world";
         String stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"));
         Path out = gameDir.resolve("orbis-exports").resolve(folder + "-aternos-" + stamp);
+        try {
+            runSteps(say, root, name, spawnCx, spawnCz, seaTop, minY, allowed, forOrbis, zipOnly, gameDir, mapInfo, t0, regionDir, ow, folder, out);
+        } catch (java.util.concurrent.CancellationException e) {
+            deleteTree(out); // half an export is no use to anyone
+            throw e;
+        }
+    }
+
+    private static void runSteps(java.util.function.Consumer<String> say, Path root, String name, int spawnCx, int spawnCz, int seaTop, int minY,
+                                 ChunkSelection allowed, boolean forOrbis, boolean zipOnly, Path gameDir, String mapInfo, long t0,
+                                 Path regionDir, Path ow, String folder, Path out) throws IOException {
         // The terrain without light and heightmaps, made once: measured for the budget here, copied from in step 3.
         Path stripped = out.resolve("stripped");
         Files.createDirectories(stripped);
@@ -303,6 +356,7 @@ public final class AternosExport {
             }
             Map<Path, long[]> lengths = new java.util.concurrent.ConcurrentHashMap<>();
             parallel(list, f -> {
+                checkCancelled();
                 lengths.put(f, terrain ? stripRegion(f, stripped.resolve(f.getFileName()), rawTerrain, lightTerrain) : chunkLengths(f));
                 if (terrain) {
                     long n = stepDone.incrementAndGet();
@@ -405,6 +459,7 @@ public final class AternosExport {
             Files.createDirectories(dest);
             boolean terrain = e.getKey().equals("region");
             parallel(e.getValue(), f -> {
+                checkCancelled();
                 // Terrain from the stripped copy made in step 1 (nothing is stripped twice); entities and POI as saved.
                 Path src = terrain && Files.exists(stripped.resolve(f.getFileName())) ? stripped.resolve(f.getFileName()) : f;
                 if (rewriteRegion(src, dest.resolve(f.getFileName()), regionOf(f), keep, false)) writtenFiles.incrementAndGet();
@@ -781,13 +836,21 @@ public final class AternosExport {
         Files.createDirectories(pack.resolve("data/orbis_lock/function"));
         Files.createDirectories(pack.resolve("data/minecraft/tags/function"));
         com.google.gson.JsonObject meta = new com.google.gson.JsonObject(), packInfo = new com.google.gson.JsonObject();
-        packInfo.addProperty("description", "Orbis Terrarum: locks the museum and shop display frames; where the world sits on Earth, for the map");
+        packInfo.addProperty("description", "Orbis Terrarum: locks the museum and shop display frames");
         com.berg.orbis.worldgen.WorldHeight.putPackFormat(packInfo); // this version's format (107 alone was 26.2's)
         meta.add("pack", packInfo);
         Files.writeString(pack.resolve("pack.mcmeta"), new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(meta), StandardCharsets.UTF_8);
         if (mapInfo != null) {
-            // The world's placement for the Orbis map of players who have the mod (the server does not need it).
-            Path chat = pack.resolve("data/orbisterrarum/chat_type");
+            // The world's placement for the Orbis map of players who have the mod (the server does not need it), in a
+            // pack of its own: switching the frame lock off (to let players take what the frames hold) took the map with it.
+            Path mapPack = stage.resolve("datapacks").resolve("orbis-map-info");
+            com.google.gson.JsonObject mapMeta = new com.google.gson.JsonObject(), mapPackInfo = new com.google.gson.JsonObject();
+            mapPackInfo.addProperty("description", "Orbis Terrarum: where the world sits on Earth, for the map (no gameplay changes)");
+            com.berg.orbis.worldgen.WorldHeight.putPackFormat(mapPackInfo);
+            mapMeta.add("pack", mapPackInfo);
+            Files.createDirectories(mapPack);
+            Files.writeString(mapPack.resolve("pack.mcmeta"), new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(mapMeta), StandardCharsets.UTF_8);
+            Path chat = mapPack.resolve("data/orbisterrarum/chat_type");
             Files.createDirectories(chat);
             Files.writeString(chat.resolve("world_info.json"), "{\n  \"chat\": {\"parameters\": [\"sender\", \"content\"], \"translation_key\": \""
                     + mapInfo + "\"},\n  \"narration\": {\"parameters\": [\"sender\", \"content\"], \"translation_key\": \"chat.type.text.narrate\"}\n}\n",
@@ -911,7 +974,9 @@ public final class AternosExport {
         t.append(forOrbis
                 ? "Made for a server that runs Orbis Terrarum (same version as here): the world keeps its generator and settings.\n\n"
                 : "Made for a plain Minecraft server (no Orbis needed; the server needs the same Minecraft version): outside the upload the world is flat\n"
-                + "open sea, the world border goes round the uploaded area, and a small datapack locks the museum and shop display frames.\n\n");
+                + "open sea, the world border goes round the uploaded area, and a small datapack locks the museum and shop display frames\n"
+                + "(orbis-display-lock; /datapack disable \"file/orbis-display-lock\" lets players take what they hold).\n"
+                + "The Orbis map finds the world through a second datapack, orbis-map-info: keep that one on.\n\n");
         t.append("The terrain was uploaded without its lighting (about a fifth of its size): the server works the light out the first\n"
                 + "time each area is visited, so the first walk or flight through a new area loads a little slower than later ones.\n\n");
         t.append("1. On aternos.org, stop the server, then Worlds -> Upload and choose ").append(zip.getFileName()).append(".\n");

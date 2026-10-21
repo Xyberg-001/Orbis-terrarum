@@ -30,7 +30,9 @@ import java.util.function.Consumer;
  * with the tools on the left (hand, rectangle, ellipse, lasso; Shift adds, Alt cuts out), or type a place or a
  * radius in km at the top to add its outline the same way. The panel beside the map describes the selection: its
  * real area, size in blocks, crossing times, chunks, region files, disk size and generation time, and whether the
- * world generates it by itself when it is created. Right-click sets the spawn point.
+ * world generates it by itself when it is created. Right-click opens a menu: set the spawn point there, or What's
+ * here (the place, its climate, the national data there, the landmarks near it). Gold pins mark the landmarks the world
+ * would get as advancements.
  */
 public final class AreaPreviewScreen extends Screen {
     private static final int TOP_H = 26;
@@ -40,6 +42,30 @@ public final class AreaPreviewScreen extends Screen {
     private static final int WHITE = 0xFFFFFFFF, GREY = 0xFFA0A8B0, GREEN = 0xFF4ADE80, RED = 0xFFF87171, AMBER = 0xFFF59E0B;
     private static MapTiles.Layer layer = MapTiles.Layer.STREET;
     private Button nightButton;
+    /** Where Orbis has national data, shaded (on until turned off, for the rest of the game session). */
+    /** The data viewer (the layers button): its card on the map, and the national data shade when zoomed out. Off until opened. */
+    private static boolean coverageOn = false;
+    private Button coverageButton;
+    private com.berg.orbis.client.map.CoverageOverlay coverage;
+    /** Whether the map shows national data now (on, and zoomed out far enough to see borders). */
+    private boolean coverageShown;
+    /** The view must be this wide (km) for the national data shade: zoomed in, a view is one country and a shade said nothing. */
+    private static final double COVERAGE_MIN_KM = 150;
+    /** The data viewer's lines: for which place (rounded), and the lines. */
+    private String dataKey;
+    private List<ViewerLine> dataLines = List.of();
+    /** How wide the view is, in km (for the shade). */
+    private double viewKm;
+    /** The landmarks the world would get, as gold pins (looked up when the centre or scale settles). */
+    private final LandmarkPreview landmarks = new LandmarkPreview();
+    /** The What's here card, and the right-click menu. */
+    private com.berg.orbis.client.map.PlaceCard card;
+    private String hereId;
+    private int hereSeq;
+    private double[] menuAt;
+    private final List<String> menuItems = new ArrayList<>();
+    private int menuX, menuY;
+    private com.berg.orbis.biome.BiomeClassifier climate;
 
     private final Screen parent;
     /** The world's centre (block 0, 0), which is also where players spawn: right-click or a search moves it. */
@@ -225,6 +251,10 @@ public final class AreaPreviewScreen extends Screen {
         }).bounds(px, height - 48, pw, 20).tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.layer.tip"))).build());
         // Night mode for the street map: on the map's right edge, under the credit line.
         nightButton = addRenderableWidget(MapTiles.nightButton(() -> layer, l -> layer = l, mapRight() - 24, TOP_H + 14));
+        // Coverage: under the night button (in its place when the map has none).
+        coverageButton = addRenderableWidget(Button.builder(Component.empty(), b -> coverageOn = !coverageOn)
+                .bounds(mapRight() - 24, TOP_H + 38, 20, 20)
+                .tooltip(Tooltip.create(Component.translatable("orbisterrarum.preview.coverage.tip"))).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose()).bounds(px, height - 24, pw, 20).build());
 
         if (!viewSet) {
@@ -245,6 +275,8 @@ public final class AreaPreviewScreen extends Screen {
             statusUntil = System.currentTimeMillis() + 10000;
         }
         select.addWidgets(this::addRenderableWidget, 4, TOP_H + 4, mapRight(), height);
+        if (card == null) card = new com.berg.orbis.client.map.PlaceCard(font);
+        card.addWidgets(this::addRenderableWidget);
     }
 
     private Component limitLabel() {
@@ -400,7 +432,15 @@ public final class AreaPreviewScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent e, boolean doubleClick) {
+        if (!menuItems.isEmpty()) {
+            int i = menuItemAt(e.x(), e.y());
+            if (i >= 0) runMenu(menuItems.get(i));
+            menuItems.clear();
+            return true;
+        }
         if (super.mouseClicked(e, doubleClick)) return true;
+        if (inViewer(e.x(), e.y())) return true;
+        if (card != null && card.click(e.x(), e.y())) return true;
         if (!onMap(e.x(), e.y())) return false;
         setFocused(null);
         if (e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
@@ -422,6 +462,175 @@ public final class AreaPreviewScreen extends Screen {
             return true;
         }
         return false;
+    }
+
+    // ------------------------------------------------------------------ menu, What's here, landmarks
+
+    /** Right-click: Set the spawn here, or What's here. */
+    private void openMenu(int x, int y) {
+        menuAt = latLonAt(x, y);
+        menuItems.clear();
+        menuItems.add("spawn");
+        menuItems.add("here");
+        int w = 0;
+        for (String s : menuItems) w = Math.max(w, font.width(menuLabel(s)));
+        menuX = Math.min(x, mapRight() - w - 12);
+        menuY = Math.min(y, height - menuItems.size() * 12 - 6);
+    }
+
+    private String menuLabel(String item) {
+        return Component.translatable("orbisterrarum.preview.menu." + item).getString();
+    }
+
+    private int menuItemAt(double x, double y) {
+        int w = 0;
+        for (String s : menuItems) w = Math.max(w, font.width(menuLabel(s)));
+        if (x < menuX || x > menuX + w + 10) return -1;
+        int i = (int) Math.floor((y - menuY - 2) / 12);
+        return i >= 0 && i < menuItems.size() ? i : -1;
+    }
+
+    private void runMenu(String item) {
+        double[] at = menuAt;
+        if (at == null) return;
+        switch (item) {
+            case "spawn" -> {
+                moveCentre(at);
+                spawnMessage();
+            }
+            case "here" -> showHere(at[0], at[1]);
+            default -> { }
+        }
+    }
+
+    private void drawMenu(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        int w = 0;
+        for (String s : menuItems) w = Math.max(w, font.width(menuLabel(s)));
+        g.fill(menuX - 1, menuY - 1, menuX + w + 11, menuY + menuItems.size() * 12 + 5, 0xFF000000);
+        g.fill(menuX, menuY, menuX + w + 10, menuY + menuItems.size() * 12 + 4, 0xF0202830);
+        int hover = menuItemAt(mouseX, mouseY);
+        for (int i = 0; i < menuItems.size(); i++) {
+            int y = menuY + 2 + i * 12;
+            if (i == hover) g.fill(menuX + 1, y - 1, menuX + w + 9, y + 11, 0xFF3B4A5A);
+            g.text(font, menuLabel(menuItems.get(i)), menuX + 5, y + 1, WHITE);
+        }
+    }
+
+    /**
+     * What's here, before the world exists: the place's name (looked up), where it lands in the world at this scale, its
+     * climate (from the climate pack, at the climate grid's height), the national data there, the landmarks near it, and
+     * whether it is in the selection; with a button to put the spawn there.
+     */
+    private void showHere(double lat, double lon) {
+        if (card == null) return;
+        hereId = String.valueOf(++hereSeq);
+        String id = hereId;
+        String title = Component.translatable("orbisterrarum.map.card.here").getString();
+        card.show(new double[]{lat, lon}, title, hereLines(lat, lon), List.of(spawnAction(lat, lon)));
+        Geocoder.reverse(lat, lon).whenComplete((name, error) -> minecraft.execute(() -> {
+            if (!id.equals(hereId) || card == null || !card.shown()) return;
+            String t = title;
+            List<String> lines = hereLines(lat, lon);
+            if (error == null && name != null && !name.isBlank()) {
+                String[] parts = name.split(",", 2);
+                t = parts[0].trim();
+                if (parts.length > 1) lines.add(0, parts[1].trim());
+            }
+            card.set(t, lines, List.of(spawnAction(lat, lon)));
+        }));
+    }
+
+    private com.berg.orbis.client.map.PlaceCard.Action spawnAction(double lat, double lon) {
+        return new com.berg.orbis.client.map.PlaceCard.Action(Component.translatable("orbisterrarum.preview.here.spawn"),
+                Component.translatable("orbisterrarum.preview.here.spawn.tip"), () -> {
+            moveCentre(new double[]{lat, lon});
+            spawnMessage();
+            if (card != null) card.hide();
+        });
+    }
+
+    private List<String> hereLines(double lat, double lon) {
+        List<String> out = new ArrayList<>();
+        out.add(String.format(Locale.ROOT, "%.5f, %.5f", lat, lon));
+        int[] b = mapper.toBlock(lat, lon);
+        out.add(tr("orbisterrarum.preview.here.block") + "\t" + String.format(Locale.ROOT, "%,d, %,d (1 block = %s m)", b[0], b[1], PreviewPlan.fmt(mpb)));
+        try {
+            com.berg.orbis.biome.ClimateMap map = com.berg.orbis.biome.ClimateMap.get();
+            double e = map.cellElevationM(lat, lon);
+            if (Double.isNaN(e)) e = 0;
+            if (climate == null) climate = new com.berg.orbis.biome.BiomeClassifier(com.berg.orbis.OrbisMod.config());
+            com.berg.orbis.biome.BiomeClassifier.Climate c = climate.classify(lat, lon, e);
+            out.add(tr("orbisterrarum.preview.here.climate") + "\t" + String.valueOf(c.zone()).toLowerCase(Locale.ROOT).replace('_', ' ')
+                    + String.format(Locale.ROOT, ", %.1f °C a year", c.meanTempC()) + (c.snowy() ? ", snowy" : ""));
+        } catch (RuntimeException ignored) {
+            // no climate pack: nothing to say
+        }
+        List<String> national = new ArrayList<>();
+        for (com.berg.orbis.config.DataSources.Source s : com.berg.orbis.config.DataSources.list(com.berg.orbis.OrbisMod.config())) {
+            if (s.kind() == com.berg.orbis.config.DataSources.Kind.NATIONAL && s.overlaps(lat - 0.005, lon - 0.005, lat + 0.005, lon + 0.005)) national.add(s.label());
+        }
+        out.add(tr("orbisterrarum.preview.here.national") + "\t" + (national.isEmpty() ? tr("orbisterrarum.preview.here.national.none") : String.join(", ", national)));
+        List<String> near = new ArrayList<>();
+        for (LandmarkPreview.Pin p : landmarks.pins()) {
+            double dx = (p.lon() - lon) * 111_320 * Math.cos(Math.toRadians(lat)), dz = (p.lat() - lat) * 111_320;
+            if (Math.hypot(dx, dz) <= 1_500) near.add(p.name());
+        }
+        if (!near.isEmpty()) out.add(tr("orbisterrarum.preview.here.landmarks") + "\t" + String.join(", ", near.subList(0, Math.min(4, near.size()))));
+        ChunkSelection sel = select == null ? null : select.selection();
+        if (sel != null && !sel.isEmpty()) {
+            boolean in = sel.contains(Math.floorDiv(b[0], 16), Math.floorDiv(b[1], 16));
+            out.add(tr("orbisterrarum.preview.here.selection") + "\t" + tr(in ? "orbisterrarum.preview.here.in" : "orbisterrarum.preview.here.out"));
+        }
+        return out;
+    }
+
+    private static String tr(String key) {
+        return Component.translatable(key).getString();
+    }
+
+    /** The landmarks the world would get, as small gold diamonds; the one under the cursor named. */
+    private void drawLandmarks(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        LandmarkPreview.Pin hover = null;
+        int hx = 0, hy = 0;
+        double best = 6;
+        for (LandmarkPreview.Pin p : landmarks.pins()) {
+            double[] s = view.gui(p.lat(), p.lon());
+            int x = (int) Math.round(s[0]), y = (int) Math.round(s[1]);
+            if (x < -4 || x > mapRight() + 4 || y < TOP_H - 4 || y > height + 4) continue;
+            diamond(g, x, y, 3, 0xFF000000);
+            diamond(g, x, y, 2, 0xFFFACC15);
+            double d = Math.hypot(mouseX - x, mouseY - y);
+            if (d < best) {
+                best = d;
+                hover = p;
+                hx = x;
+                hy = y;
+            }
+        }
+        if (hover != null && menuItems.isEmpty()) {
+            String name = hover.name();
+            int w = font.width(name);
+            int x = Math.max(2, Math.min(mapRight() - w - 8, hx - w / 2 - 3)), y = hy - 16;
+            g.fill(x, y, x + w + 6, y + 12, 0xD0000000);
+            g.text(font, name, x + 3, y + 2, 0xFFFACC15);
+        }
+    }
+
+    private static void diamond(GuiGraphicsExtractor g, int x, int y, int r, int colour) {
+        for (int dy = -r; dy <= r; dy++) {
+            int half = r - Math.abs(dy);
+            g.fill(x - half, y + dy, x + half + 1, y + dy + 1, colour);
+        }
+    }
+
+    /** The side panel's landmark line: how many the world would get here. */
+    private int landmarksLine(GuiGraphicsExtractor g, boolean draw, int y, int w) {
+        String value = landmarks.loading() ? tr("orbisterrarum.preview.landmarks.loading")
+                : landmarks.failed() ? tr("orbisterrarum.preview.landmarks.failed")
+                : landmarks.pins().isEmpty() ? tr("orbisterrarum.preview.landmarks.none")
+                : Component.translatable("orbisterrarum.preview.landmarks.count", landmarks.pins().size()).getString();
+        y = row(g, draw, w, y, "orbisterrarum.preview.landmarks", value);
+        return y + 4;
     }
 
     /** Right-click: players spawn here, and the world is centred on it (block 0, 0). */
@@ -473,7 +682,7 @@ public final class AreaPreviewScreen extends Screen {
         if (select.mouseReleased(e)) return true;
         if (rightDown && e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
             rightDown = false;
-            if (!rightMoved) setSpawn(rightX, rightY);
+            if (!rightMoved) openMenu((int) rightX, (int) rightY);
             return true;
         }
         if (dragging && (e.button() == InputConstants.MOUSE_BUTTON_LEFT || e.button() == InputConstants.MOUSE_BUTTON_MIDDLE)) {
@@ -485,7 +694,7 @@ public final class AreaPreviewScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double sx, double sy) {
-        if (sy != 0 && onMap(x, y)) {
+        if (sy != 0 && onMap(x, y) && !inViewer(x, y)) {
             zoomAt(x, y, Math.pow(2, sy * 0.5));
             return true;
         }
@@ -533,6 +742,7 @@ public final class AreaPreviewScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         tiles.pump(minecraft);
+        landmarks.want(lat0, lon0, mpb);
         int gs = gs(), mw = mapW(), mh = mapH();
 
         g.enableScissor(0, TOP_H, mapRight(), height);
@@ -542,12 +752,25 @@ public final class AreaPreviewScreen extends Screen {
         drawTiles(g, layer.service, mw, mh, true);
         if (layer.labels != null) drawTiles(g, layer.labels, mw, mh, false);
         g.pose().popMatrix();
+        // National data, over the map but under the selection and the markers.
+        double[] mid = latLonAt(mapRight() / 2, (TOP_H + height) / 2);
+        double km = mapW() / (scale * PreviewPlan.mercPerMeter(mid[0])) / 1000;
+        if ((km >= COVERAGE_MIN_KM) != (viewKm >= COVERAGE_MIN_KM)) dataKey = null; // the "zoom out" hint comes or goes
+        viewKm = km;
+        coverageShown = coverageShownFor(false);
+        if (coverageShown) {
+            if (coverage == null) coverage = new com.berg.orbis.client.map.CoverageOverlay();
+            long key = Double.doubleToLongBits(cx) * 31 + Double.doubleToLongBits(cy) * 17 + Double.doubleToLongBits(scale) * 7 + width * 131L + height;
+            coverage.draw(g, view::gui, 0, TOP_H, mapRight(), height, key);
+        }
         g.disableScissor();
         select.draw(g, font, mouseX, mouseY);
         if (onMap(mouseX, mouseY)) drawHoveredChunk(g, mouseX, mouseY);
         g.enableScissor(0, TOP_H, mapRight(), height);
         drawBeyondReach(g);
         drawSpawn(g);
+        drawLandmarks(g, mouseX, mouseY);
+        if (card != null) card.draw(g, view, 0, mapRight(), TOP_H, height);
         g.disableScissor();
 
         g.fill(0, 0, mapRight(), TOP_H, TOP_BG);
@@ -562,6 +785,8 @@ public final class AreaPreviewScreen extends Screen {
         if (onMap(mouseX, mouseY)) drawCursorReadout(g, mouseX, mouseY);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
         MapTiles.drawNightIcon(g, nightButton, layer);
+        drawCoverageButton(g, mouseX, mouseY);
+        if (!menuItems.isEmpty()) drawMenu(g, mouseX, mouseY);
         select.drawIcons(g);
     }
 
@@ -574,6 +799,7 @@ public final class AreaPreviewScreen extends Screen {
         double left = cx * scale - mw / 2.0, top = cy * scale - mh / 2.0;
         int tx0 = (int) Math.floor(left / tpx), tx1 = (int) Math.floor((left + mw) / tpx);
         int ty0 = Math.max(0, (int) Math.floor(top / tpx)), ty1 = Math.min(n - 1, (int) Math.floor((top + mh) / tpx));
+        tiles.view(service, z, tx0, tx1, ty0, ty1);
         for (int ty = ty0; ty <= ty1; ty++) {
             for (int tx = tx0; tx <= tx1; tx++) {
                 int sx0 = (int) Math.round(tx * tpx - left), sx1 = (int) Math.round((tx + 1) * tpx - left);
@@ -585,10 +811,16 @@ public final class AreaPreviewScreen extends Screen {
                     continue;
                 }
                 boolean drawn = false;
+                // The nearest coarser tile on the GPU, asked for down the levels while the finer one could not be had (as the world
+                // map does: asking only the level above left the elevation map empty two zooms past its finest)
+                boolean below = tiles.failed(service, z, x, ty);
                 for (int k = 1; k <= 8 && z - k >= 0; k++) {
                     int pz = z - k, pxT = x >> k, pyT = ty >> k;
-                    Identifier pid = tiles.get(service, pz, pxT, pyT, k == 1 && tiles.failed(service, z, x, ty));
-                    if (pid == null) continue;
+                    Identifier pid = tiles.get(service, pz, pxT, pyT, below);
+                    if (pid == null) {
+                        below = below && tiles.failed(service, pz, pxT, pyT);
+                        continue;
+                    }
                     float sub = 1f / (1 << k);
                     float u0 = (x - (pxT << k)) * sub, v0 = (ty - (pyT << k)) * sub;
                     g.blit(pid, sx0, sy0, sx1, sy1, u0, u0 + sub, v0, v0 + sub);
@@ -763,6 +995,22 @@ public final class AreaPreviewScreen extends Screen {
         }
     }
 
+    /**
+     * The data viewer button's symbol, three stacked layers (teal when open, grey when closed), and the viewer under it.
+     * It sits under the night button, or in its place on maps without one.
+     */
+    private void drawCoverageButton(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        if (coverageButton == null) return;
+        coverageButton.setY(nightButton != null && nightButton.visible ? TOP_H + 38 : TOP_H + 14);
+        int x = coverageButton.getX() + 4, y = coverageButton.getY() + 5;
+        int colour = coverageOn ? 0xFF2DD4BF : 0xFF8A949E;
+        for (int i = 0; i < 3; i++) {
+            int yy = y + i * 4, inset = i == 1 ? 0 : 1;
+            g.fill(x + inset, yy, x + 12 - inset, yy + 2, colour);
+        }
+        if (coverageOn) drawDataViewer(g, mouseX, mouseY);
+    }
+
     private void drawStatus(GuiGraphicsExtractor g) {
         if (statusUntil > 0 && System.currentTimeMillis() > statusUntil) {
             status = null;
@@ -829,6 +1077,7 @@ public final class AreaPreviewScreen extends Screen {
                 y += 10;
             }
             y += 6;
+            y = landmarksLine(g, draw, y, w);
             return help(g, draw, y, w) - y0;
         }
         if (sel != statsFor) {
@@ -887,7 +1136,133 @@ public final class AreaPreviewScreen extends Screen {
             }
         }
         y += 6;
+        y = landmarksLine(g, draw, y, w);
         return help(g, draw, y, w) - y0;
+    }
+
+    // ------------------------------------------------------------------ data viewer
+
+    /**
+     * A line of the data viewer: its text, colour and indent, whether a little space goes before it, and a marker square
+     * before it (filled teal: national data; hollow grey: worldwide; 0: none). Squares, not ● and ○: the font's
+     * symbols have come out wrong before (its ☾ read as a "C").
+     */
+    private record ViewerLine(String text, int colour, int indent, boolean gap, int mark) {
+        ViewerLine(String text, int colour, int indent, boolean gap) {
+            this(text, colour, indent, gap, 0);
+        }
+    }
+
+    private static final int TEAL_TEXT = 0xFF2DD4BF;
+    /** The viewer's box on the screen while it is open (x0, y0, x1, y1), for clicks and the cursor. */
+    private final int[] viewerBox = new int[4];
+
+    private boolean inViewer(double x, double y) {
+        return coverageOn && x >= viewerBox[0] && x < viewerBox[2] && y >= viewerBox[1] && y < viewerBox[3];
+    }
+
+    /**
+     * The data viewer, opened with the layers button: what Orbis reads at the cursor (the spawn while the cursor is off the
+     * map; the last place while it is over the viewer), by what it improves (buildings, aerial photos, roads, nature),
+     * every national service by name in teal, the worldwide sources in grey where there is none; and the key of the map's
+     * shade, or how to see it.
+     */
+    private void drawDataViewer(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        if (!inViewer(mouseX, mouseY)) {
+            boolean cursor = onMap(mouseX, mouseY);
+            dataAt = cursor ? latLonAt(mouseX, mouseY) : new double[]{lat0, lon0};
+            dataAtCursor = cursor;
+        }
+        int w = Math.min(230, Math.max(150, mapW() / 2 - 20));
+        int x1 = mapRight() - 4, x0 = x1 - w, y0 = coverageButton.getY() + 24;
+        List<ViewerLine> lines = new ArrayList<>(viewerLines(dataAt[0], dataAt[1]));
+        lines.add(0, new ViewerLine(tr(dataAtCursor ? "orbisterrarum.preview.data.cursor" : "orbisterrarum.preview.data.spawn")
+                + String.format(Locale.ROOT, "  %.4f, %.4f", dataAt[0], dataAt[1]), GREY, 0, false));
+        lines.add(0, new ViewerLine(tr("orbisterrarum.preview.data.title"), WHITE, 0, false));
+        // Wrapped to the box, then measured.
+        List<Object[]> rows = new ArrayList<>();
+        int h = 6;
+        for (ViewerLine l : lines) {
+            if (l.gap()) h += 5;
+            boolean first = true;
+            for (FormattedCharSequence part : font.split(Component.literal(l.text()), w - 12 - l.indent())) {
+                rows.add(new Object[]{part, l.colour(), l.indent() + (first ? 0 : 6), l.gap() && first, first ? l.mark() : 0});
+                first = false;
+                h += 10;
+            }
+        }
+        boolean key = coverageShown;
+        h += key ? 27 : 0;
+        int y1 = Math.min(height - 4, y0 + h);
+        viewerBox[0] = x0;
+        viewerBox[1] = y0;
+        viewerBox[2] = x1;
+        viewerBox[3] = y1;
+        g.fill(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 0xFF2A3440);
+        g.fill(x0, y0, x1, y1, 0xF0101418);
+        g.enableScissor(x0, y0, x1, y1);
+        int y = y0 + 4;
+        for (Object[] r : rows) {
+            if ((Boolean) r[3]) y += 5;
+            int mark = (Integer) r[4];
+            if (mark != 0) {
+                g.fill(x0 + 6, y + 1, x0 + 12, y + 7, mark);
+                if (mark != TEAL_TEXT) g.fill(x0 + 7, y + 2, x0 + 11, y + 6, 0xFF101418);
+            }
+            g.text(font, (FormattedCharSequence) r[0], x0 + 6 + (Integer) r[2], y, (Integer) r[1]);
+            y += 10;
+        }
+        if (key) {
+            y += 4;
+            g.fill(x0 + 6, y - 2, x1 - 6, y - 1, 0xFF2A3440);
+            for (int lv = 2; lv >= 1; lv--) {
+                g.fill(x0 + 6, y + 1, x0 + 16, y + 8, com.berg.orbis.client.map.CoverageOverlay.swatch(lv));
+                g.text(font, Component.translatable(lv == 2 ? "orbisterrarum.preview.data.key.best" : "orbisterrarum.preview.data.key.other"), x0 + 20, y, GREY);
+                y += 10;
+            }
+        }
+        g.disableScissor();
+    }
+
+    private double[] dataAt = {0, 0};
+    private boolean dataAtCursor;
+
+    /** The viewer's lines for a place (kept until the place moves by about 100 m). */
+    private List<ViewerLine> viewerLines(double lat, double lon) {
+        String k = String.format(Locale.ROOT, "%.3f,%.3f", lat, lon);
+        if (k.equals(dataKey)) return dataLines;
+        com.berg.orbis.config.OrbisConfig cfg = com.berg.orbis.OrbisMod.config();
+        java.util.Map<com.berg.orbis.config.DataSources.Topic, List<com.berg.orbis.config.DataSources.Source>> by =
+                new java.util.EnumMap<>(com.berg.orbis.config.DataSources.Topic.class);
+        boolean worldPhotos = false;
+        for (com.berg.orbis.config.DataSources.Source s : com.berg.orbis.config.DataSources.list(cfg)) {
+            com.berg.orbis.config.DataSources.Topic t = com.berg.orbis.config.DataSources.topic(s, cfg);
+            if (s.kind() == com.berg.orbis.config.DataSources.Kind.BUILT_IN && t == com.berg.orbis.config.DataSources.Topic.PHOTOS) worldPhotos = true;
+            if (s.kind() != com.berg.orbis.config.DataSources.Kind.NATIONAL || !s.overlaps(lat - 0.002, lon - 0.002, lat + 0.002, lon + 0.002)) continue;
+            by.computeIfAbsent(t, x -> new ArrayList<>()).add(s);
+        }
+        List<ViewerLine> out = new ArrayList<>();
+        for (com.berg.orbis.config.DataSources.Topic t : com.berg.orbis.config.DataSources.Topic.values()) {
+            String name = t.name().toLowerCase(Locale.ROOT);
+            List<com.berg.orbis.config.DataSources.Source> list = by.getOrDefault(t, List.of());
+            out.add(new ViewerLine(tr("orbisterrarum.preview.data." + name), list.isEmpty() ? GREY : WHITE, 10, true, list.isEmpty() ? GREY : TEAL_TEXT));
+            if (list.isEmpty()) {
+                String fallback = t == com.berg.orbis.config.DataSources.Topic.PHOTOS && !worldPhotos ? "orbisterrarum.preview.data.photos.none"
+                        : "orbisterrarum.preview.data." + name + ".world";
+                out.add(new ViewerLine(tr(fallback), GREY, 10, false));
+            } else {
+                for (com.berg.orbis.config.DataSources.Source s : list) out.add(new ViewerLine(s.label(), TEAL_TEXT, 10, false));
+            }
+        }
+        if (!coverageShownFor(true)) out.add(new ViewerLine(tr("orbisterrarum.preview.data.zoomout"), GREY, 0, true));
+        dataKey = k;
+        dataLines = out;
+        return out;
+    }
+
+    /** Whether the map can show the shade (with {@code ignoreSwitch}, whatever the button says): zoomed out far enough. */
+    private boolean coverageShownFor(boolean ignoreSwitch) {
+        return (ignoreSwitch || coverageOn) && viewKm >= COVERAGE_MIN_KM;
     }
 
     private int help(GuiGraphicsExtractor g, boolean draw, int y, int w) {

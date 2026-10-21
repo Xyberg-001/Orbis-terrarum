@@ -92,8 +92,11 @@ public final class SkySwitches {
             }
         }
         WorldModel model = OrbisMod.model();
-        if (model != null) applyTo(model.cfg());
-        if (!OVERRIDES.isEmpty()) System.out.println("[orbis] Real sky switched in this world by command: " + OVERRIDES);
+        if (model != null && !OVERRIDES.isEmpty()) {
+            applyTo(model.cfg());
+            OrbisMod.modelChangedInWorld(); // not handed on to the next world with the same settings
+            System.out.println("[orbis] Real sky switched in this world by command: " + OVERRIDES);
+        }
     }
 
     /** Puts this world's switched settings over a model's (as the model for the running world is made). */
@@ -109,6 +112,7 @@ public final class SkySwitches {
         }
         OVERRIDES.put(s, on);
         s.write(model.cfg(), on);
+        OrbisMod.modelChangedInWorld(); // the next world with the same settings gets a fresh model, not this switch
         save();
         StringBuilder msg = new StringBuilder(s.label).append(" is ").append(on ? "on" : "off").append(" in this world.");
         switch (s) {
@@ -120,7 +124,13 @@ public final class SkySwitches {
                 msg.append(" Grass and leaf colours change the next time the world is opened.");
             }
             case SNOW -> {
-                if (on) model.setSnowCover(SnowCover.shared(OrbisMod.dataDir().resolve("snow-cache")));
+                if (on) {
+                    model.setSnowCover(SnowCover.shared(OrbisMod.dataDir().resolve("snow-cache")));
+                    model.setObservedSnow(ObservedSnow.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("observed")));
+                    model.setSeNorge(SeNorge.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("senorge")));
+                    model.setSnodas(Snodas.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("snodas")));
+                    model.setAustriaSnow(AustriaSnow.shared(OrbisMod.dataDir().resolve("snow-cache").resolve("snowgrid")));
+                }
                 msg.append(on ? " New ground gets today's snow; snow already there settles and melts as the real snow does."
                         : " Snow already lying stays; no real snow is added.");
             }

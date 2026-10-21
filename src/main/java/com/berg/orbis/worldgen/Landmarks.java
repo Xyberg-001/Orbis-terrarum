@@ -40,7 +40,11 @@ public final class Landmarks {
     private static final int MAX_LANDMARKS = 36;
     private static final int MAX_PER_KIND = 12;
 
-    public record Landmark(String name, double lat, double lon, String kind, int score, String eleTag) {
+    /**
+     * A landmark: {@code name} is shown (English where the map has it), {@code localName} is the map's own name, which
+     * the advancement's id is made from, so worlds made before names were English keep their progress.
+     */
+    public record Landmark(String name, double lat, double lon, String kind, int score, String eleTag, String localName) {
     }
 
     private Landmarks() {
@@ -267,6 +271,9 @@ public final class Landmarks {
     /** Writes the datapack for these landmarks; returns the number of advancements. */
     public static int writePack(List<Landmark> chosen, OrbisConfig cfg, CoordinateMapper mapper, Path dir) throws IOException {
         Path adv = dir.resolve("data").resolve("orbisterrarum").resolve("advancement");
+        // The last build's advancements go first: a landmark no longer among those chosen (new map data changes them) stayed in the tab
+        // and on the map, though the Grand Tour no longer asked for it; switched off, the whole tab stayed.
+        clearAdvancements(adv);
         Files.createDirectories(adv.resolve("landmark"));
         var gson = new GsonBuilder().setPrettyPrinting().create();
 
@@ -307,8 +314,11 @@ public final class Landmarks {
         Set<String> slugs = new HashSet<>();
         int count = 0;
         for (Landmark l : chosen) {
-            String slug = slug(l.name);
-            if (slug.isEmpty() || !slugs.add(slug)) continue;
+            String slug = slug(l.localName);
+            // A name in another script (Эльбрус, 富士山, Ακρόπολη) has no Latin letters to keep: named by its hash instead (it was
+            // skipped, and a world in Russia, Japan or Greece had an empty tab)
+            if (slug.isEmpty()) slug = "place_" + Integer.toHexString(l.localName.hashCode());
+            if (!slugs.add(slug)) continue;
             int[] b = mapper.toBlock(l.lat, l.lon);
             int radius = (int) Math.max(4, Math.round((l.kind.equals("peak") ? 60 : 30) / cfg.metersPerBlock));
             JsonObject a = new JsonObject();
@@ -339,12 +349,9 @@ public final class Landmarks {
 
     private static void consider(List<Landmark> out, Map<String, String> t, double lat, double lon) {
         if (t == null) return;
-        String name = t.get("name");
-        if (name == null || name.isBlank()) return;
-        int semi = name.indexOf(';');
-        if (semi > 0) name = name.substring(0, semi); // "Fløibanen, nedre stasjon;Fløibanen"
-        name = name.trim();
-        if (name.length() > 60) name = name.substring(0, 60).trim();
+        String local = tidy(t.get("name"));
+        if (local == null) return;
+        String name = english(t, local);
         String kind = null;
         int score = 0;
         String tourism = t.get("tourism"), historic = t.get("historic"), natural = t.get("natural"), building = t.get("building");
@@ -381,7 +388,39 @@ public final class Landmarks {
         if (kind == null) return;
         if (t.containsKey("wikipedia") || t.containsKey("wikidata")) score += 3;
         if (t.containsKey("heritage")) score += 1;
-        out.add(new Landmark(name.trim(), lat, lon, kind, score, t.get("ele")));
+        out.add(new Landmark(name, lat, lon, kind, score, t.get("ele"), local));
+    }
+
+    /**
+     * The name shown: English where the map has it ({@code name:en}, then {@code int_name} when it is in Latin letters:
+     * the Kaaba, not الكعبة; the Eiffel Tower, not Tour Eiffel), else the map's own name.
+     */
+    static String english(Map<String, String> t, String local) {
+        String en = tidy(t.get("name:en"));
+        if (en != null) return en;
+        String intl = tidy(t.get("int_name"));
+        if (intl != null && latin(intl)) return intl;
+        return local;
+    }
+
+    /** Whether a name is written in Latin letters (accents allowed): no letter of another script in it. */
+    private static boolean latin(String s) {
+        for (int i = 0; i < s.length(); ) {
+            int c = s.codePointAt(i);
+            i += Character.charCount(c);
+            if (Character.isLetter(c) && Character.UnicodeScript.of(c) != Character.UnicodeScript.LATIN) return false;
+        }
+        return true;
+    }
+
+    /** A name as kept: its first value ("Fløibanen, nedre stasjon;Fløibanen"), trimmed, at most 60 characters; null when blank. */
+    private static String tidy(String name) {
+        if (name == null || name.isBlank()) return null;
+        int semi = name.indexOf(';');
+        if (semi > 0) name = name.substring(0, semi);
+        name = name.trim();
+        if (name.length() > 60) name = name.substring(0, 60).trim();
+        return name.isEmpty() ? null : name;
     }
 
     private static double parse(String s) {
@@ -467,6 +506,20 @@ public final class Landmarks {
         r.addProperty("min", min);
         r.addProperty("max", max);
         return r;
+    }
+
+    /** Removes the advancements a previous build wrote (the landmarks, the root and the Grand Tour). */
+    private static void clearAdvancements(Path adv) throws IOException {
+        Path landmarks = adv.resolve("landmark");
+        if (Files.isDirectory(landmarks)) {
+            try (var files = Files.list(landmarks)) {
+                for (Path f : (Iterable<Path>) files::iterator) {
+                    if (f.getFileName().toString().endsWith(".json")) Files.deleteIfExists(f);
+                }
+            }
+        }
+        Files.deleteIfExists(adv.resolve("root.json"));
+        Files.deleteIfExists(adv.resolve("grand_tour.json"));
     }
 
     static String slug(String name) {

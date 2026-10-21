@@ -83,8 +83,19 @@ public final class PlacesImporter {
         for (Map.Entry<String, List<String>> e : cells.entrySet()) {
             Path file = placesDir.resolve(e.getKey());
             Path tmp = file.resolveSibling(e.getKey() + ".tmp");
+            // Added to what the cell holds already: an import that only partly covered a cell replaced it, and the places an
+            // earlier import had put there were gone. The same place from both is kept once.
+            java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>();
+            if (Files.exists(file)) {
+                try (BufferedReader old = open(file)) {
+                    for (String l = old.readLine(); l != null; l = old.readLine()) if (!l.isEmpty()) lines.add(l);
+                } catch (IOException ex) {
+                    System.err.println("[orbis] Places: could not read " + file.getFileName() + " to add to it (" + ex + "); it is written anew");
+                }
+            }
+            lines.addAll(e.getValue());
             try (Writer w = new OutputStreamWriter(new GZIPOutputStream(Files.newOutputStream(tmp)), StandardCharsets.UTF_8)) {
-                for (String line : e.getValue()) {
+                for (String line : lines) {
                     w.write(line);
                     w.write('\n');
                 }
@@ -191,7 +202,7 @@ public final class PlacesImporter {
         String c = cat.toLowerCase(Locale.ROOT);
         // eating and drinking
         if (c.contains("fast_food") || c.contains("burger") || c.contains("pizza") || c.contains("kebab") || c.contains("sandwich")) return tag("amenity", "fast_food");
-        if (c.equals("bar") || c.endsWith("_bar") || c.contains("pub") || c.contains("beer_garden") || c.contains("brewery") || c.contains("lounge")) return tag("amenity", "bar");
+        if (c.equals("bar") || c.endsWith("_bar") || c.endsWith("pub") || c.contains("beer_garden") || c.contains("brewery") || c.contains("lounge")) return tag("amenity", "bar");
         if (c.contains("night_club") || c.contains("nightclub") || c.contains("dance_club") || c.contains("casino")) return tag("amenity", "nightclub");
         if (c.contains("coffee") || c.equals("cafe") || c.contains("_cafe") || c.contains("tea_room") || c.contains("bubble_tea")) return tag("amenity", "cafe");
         if (c.contains("bakery") || c.contains("patisserie") || c.contains("pastry")) return tag("shop", "bakery");

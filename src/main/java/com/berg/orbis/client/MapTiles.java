@@ -24,6 +24,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * preview: downloaded by a few background threads, newest requests first, decoded off the render thread and
  * uploaded as textures a few per frame. Tiles are kept on disk like a browser keeps them (TileDiskCache, up to
  * 300 MB) and the latest few MB in memory, so reopening the preview is instant; textures are freed on close.
+ *
+ * Ahead of need: once the view has been still for a moment, the tiles one zoom out, one tile beyond each edge and one
+ * zoom in (the middle half of the view) are downloaded and drawn onto the disk on two of the threads, after every tile
+ * on screen ({@link #view}); and a while after the game starts, the whole world (zooms 1 and 2) and the world generator
+ * map's opening view of the spawn are drawn ({@link #warmUp}). A first visit costs downloading (1.6-2.7 s a screen,
+ * measured 17 Oct 2026) and drawing (0.2-2 s, the whole world the slowest); a drawn tile is read back in 25 ms.
  */
 public final class MapTiles {
     public enum Layer {
@@ -110,13 +116,29 @@ public final class MapTiles {
     private final LinkedBlockingDeque<Tile> queue = new LinkedBlockingDeque<>();
     private final ConcurrentLinkedQueue<Tile> decoded = new ConcurrentLinkedQueue<>();
     private final List<Thread> workers = new ArrayList<>();
+    /** Tiles to have on disk before they are needed, nearest the view first (see {@link #view}). */
+    private final LinkedBlockingDeque<Tile> ahead = new LinkedBlockingDeque<>();
+    /** Tiles drawn or downloaded ahead this game session (or found already there). */
+    private static final java.util.Set<String> AHEAD_DONE = ConcurrentHashMap.newKeySet();
+    private static final int AHEAD_THREADS = 2;
+    private static final long AHEAD_SETTLE_MS = 400;
+
+    /** The tiles a layer shows now and since when (render thread). */
+    private static final class ViewState {
+        String key;
+        long since;
+        boolean queued;
+    }
+
+    private final Map<String, ViewState> views = new java.util.HashMap<>();
     private volatile boolean closed;
     private volatile long frame;
     private int ready;
 
     public MapTiles() {
         for (int i = 0; i < THREADS; i++) {
-            Thread t = new Thread(this::work, "Orbis map tiles " + i);
+            int index = i;
+            Thread t = new Thread(() -> work(index), "Orbis map tiles " + i);
             t.setDaemon(true);
             t.start();
             workers.add(t);
@@ -187,13 +209,19 @@ public final class MapTiles {
         }
     }
 
-    private void work() {
+    private void work(int index) {
         while (!closed) {
             Tile t;
             try {
-                t = queue.takeFirst();
+                // Two of the threads turn to the tiles ahead of need when none on screen is waiting.
+                t = index < AHEAD_THREADS ? queue.pollFirst(150, java.util.concurrent.TimeUnit.MILLISECONDS) : queue.takeFirst();
             } catch (InterruptedException e) {
                 return;
+            }
+            if (t == null) {
+                Tile a = ahead.pollFirst();
+                if (a != null) warm(disk, a.service, a.z, a.x, a.y);
+                continue;
             }
             if (t.wanted < frame - 3) {
                 // Scrolled or zoomed away before its turn: forget it, it is asked for again if it comes back.
@@ -403,6 +431,131 @@ public final class MapTiles {
         return img;
     }
 
+    /**
+     * The tiles of a layer on screen (zoom {@code z}, columns {@code tx0..tx1} unwrapped, rows {@code ty0..ty1}); call it
+     * each frame for each layer drawn (render thread). Once they have been the same for a moment, the tiles around
+     * them are queued to be had ahead of need: one zoom out over the view (what zooming out shows first), one tile
+     * beyond each edge (panning), then one zoom in over the middle half (zooming in).
+     */
+    public void view(String service, int z, int tx0, int tx1, int ty0, int ty1) {
+        String key = z + "/" + tx0 + "/" + tx1 + "/" + ty0 + "/" + ty1;
+        ViewState v = views.computeIfAbsent(service, s -> new ViewState());
+        long now = System.currentTimeMillis();
+        if (!key.equals(v.key)) {
+            v.key = key;
+            v.since = now;
+            v.queued = false;
+            ahead.removeIf(t -> t.service.equals(service));
+            return;
+        }
+        if (v.queued || now - v.since < AHEAD_SETTLE_MS) return;
+        v.queued = true;
+        int n = 1 << z;
+        if (z >= 2) {
+            for (int ty = ty0 >> 1; ty <= ty1 >> 1; ty++) {
+                for (int tx = tx0 >> 1; tx <= tx1 >> 1; tx++) ahead(service, z - 1, Math.floorMod(tx, n >> 1), ty);
+            }
+        }
+        for (int ty = ty0 - 1; ty <= ty1 + 1; ty++) {
+            if (ty < 0 || ty >= n) continue;
+            for (int tx = tx0 - 1; tx <= tx1 + 1; tx++) {
+                if (ty >= ty0 && ty <= ty1 && tx >= tx0 && tx <= tx1) continue;
+                ahead(service, z, Math.floorMod(tx, n), ty);
+            }
+        }
+        if (z < MAX_ZOOM) {
+            int qx = (tx1 - tx0) / 4, qy = (ty1 - ty0) / 4;
+            for (int ty = 2 * (ty0 + qy); ty <= 2 * (ty1 - qy) + 1; ty++) {
+                if (ty < 0 || ty >= 2 * n) continue;
+                for (int tx = 2 * (tx0 + qx); tx <= 2 * (tx1 - qx) + 1; tx++) ahead(service, z + 1, Math.floorMod(tx, 2 * n), ty);
+            }
+        }
+    }
+
+    private void ahead(String service, int z, int x, int y) {
+        String k = key(service, z, x, y);
+        if (AHEAD_DONE.contains(k)) return;
+        Tile have = tiles.get(k);
+        if (have != null && have.state != State.FAILED) return;
+        ahead.offerLast(new Tile(service, z, x, y));
+    }
+
+    /** A tile downloaded (and for the street map drawn) onto the disk, nothing kept in memory; failures are left for later. */
+    private static void warm(TileDiskCache disk, String service, int z, int x, int y) {
+        String k = key(service, z, x, y);
+        if (AHEAD_DONE.size() > 50_000) AHEAD_DONE.clear();
+        if (!AHEAD_DONE.add(k)) return;
+        try {
+            if (ElevationTiles.SERVICE.equals(service)) ElevationTiles.fetch(z, x, y);
+            else if (StreetTiles.SERVICE.equals(service) || StreetTiles.SERVICE_DARK.equals(service)) {
+                StreetTiles.render(disk, z, x, y, StreetTiles.SERVICE_DARK.equals(service));
+            } else disk.fetch(service, z, x, y);
+        } catch (InterruptedException e) {
+            AHEAD_DONE.remove(k);
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            AHEAD_DONE.remove(k);
+        }
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean WARMED = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * A while after the game starts, on three background threads: the street map of the whole world (zooms 1 and 2,
+     * 20 tiles, the slowest to draw) and the world generator map's opening view (30 km across the chosen spawn, at the
+     * zooms a screen 400 to 1,200 pixels wide shows it at), drawn onto the disk so the map opens at once even the first
+     * time. Once a game session; nothing is shown, failures (offline) are left for the map to try again.
+     */
+    public static void warmUp() {
+        if (!WARMED.compareAndSet(false, true)) return;
+        Thread t = new Thread(() -> {
+            try {
+                Thread.sleep(15_000); // after the game has loaded
+                var cfg = com.berg.orbis.OrbisMod.config();
+                String service = cfg != null && cfg.streetMapDark ? StreetTiles.SERVICE_DARK : StreetTiles.SERVICE;
+                TileDiskCache disk = new TileDiskCache(com.berg.orbis.OrbisMod.dataDir().resolve("map-tile-cache"), USER_AGENT);
+                List<int[]> want = new ArrayList<>();
+                for (int z = 1; z <= 2; z++) {
+                    for (int y = 0; y < 1 << z; y++) for (int x = 0; x < 1 << z; x++) want.add(new int[]{z, x, y});
+                }
+                double[] c = com.berg.orbis.client.map.PreviewChoices.centre();
+                if (c != null) {
+                    double mx = PreviewPlan.mercX(c[1]), my = PreviewPlan.mercY(c[0]), half = 22_000 * PreviewPlan.mercPerMeter(c[0]);
+                    int zLo = zoomFor(400 / (30_000 * PreviewPlan.mercPerMeter(c[0]))), zHi = zoomFor(1200 / (30_000 * PreviewPlan.mercPerMeter(c[0])));
+                    for (int z = zLo; z <= zHi; z++) {
+                        int n = 1 << z;
+                        for (int y = (int) Math.floor((my - half) * n); y <= (int) Math.floor((my + half) * n); y++) {
+                            if (y < 0 || y >= n) continue;
+                            for (int x = (int) Math.floor((mx - half) * n); x <= (int) Math.floor((mx + half) * n); x++) {
+                                want.add(new int[]{z, Math.floorMod(x, n), y});
+                            }
+                        }
+                    }
+                }
+                java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(3, r -> {
+                    Thread w = new Thread(r, "Orbis map warm-up");
+                    w.setDaemon(true);
+                    w.setPriority(Thread.MIN_PRIORITY);
+                    return w;
+                });
+                for (int[] w : want) pool.execute(() -> warm(disk, service, w[0], w[1], w[2]));
+                pool.shutdown();
+            } catch (InterruptedException ignored) {
+                // the game is closing
+            } catch (RuntimeException e) {
+                System.err.println("[orbis] Map warm-up skipped: " + e);
+            }
+        }, "Orbis map warm-up");
+        t.setDaemon(true);
+        t.setPriority(Thread.MIN_PRIORITY);
+        t.start();
+    }
+
+    /** The tile zoom the maps draw at for a scale (screen pixels across the whole world), as they choose it. */
+    private static int zoomFor(double scale) {
+        return Math.max(1, Math.min(MAX_ZOOM, (int) Math.round(Math.log(scale / 256) / Math.log(2))));
+    }
+
     /** How many tiles are still on their way (for the "loading map" hint). */
     public int loading() {
         return queue.size() + decoded.size();
@@ -414,6 +567,7 @@ public final class MapTiles {
         for (Thread t : workers) t.interrupt();
         disk.trimLater();
         queue.clear();
+        ahead.clear();
         decoded.clear();
         for (Tile t : tiles.values()) {
             if (t.state == State.READY && t.id != null) mc.getTextureManager().release(t.id);

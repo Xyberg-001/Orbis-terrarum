@@ -56,7 +56,8 @@ public final class LocalClock {
                 if (r.status() != 200) return;
                 JsonObject o = JsonParser.parseString(r.text()).getAsJsonObject();
                 ZoneId z = ZoneId.of(o.get("timezone").getAsString());
-                zone = z;
+                // Only while the place is still this one: an answer that came after the next world opened set its villagers' clock
+                if (key.equals(zoneFor)) zone = z;
                 if (file != null) Files.writeString(file, key + " " + z.getId(), StandardCharsets.UTF_8);
                 System.out.println("[orbis] Local time at the world's place: " + z.getId());
             } catch (Exception e) {

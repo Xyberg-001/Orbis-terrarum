@@ -3,8 +3,11 @@
 Everything to paste into Modrinth's project settings and "Upload version" forms.
 The description below is the project body (Modrinth renders Markdown).
 
-1.0.0 (28 Sep 2026) was the beta; 2.0.0 (13 Oct 2026) is the first full release, a complete overhaul. (It was
-published as 1.1.0 for two days, 11 to 13 Oct, after a first 1.1.0 build of 3 Oct that was on GitHub only.) On Modrinth, 1.0.0 stays
+1.0.0 (28 Sep 2026) was the beta; 2.0.0 is the first full release, a complete overhaul. (It was
+published as 1.1.0 for two days, 11 to 13 Oct, after a first 1.1.0 build of 3 Oct that was on GitHub only; then
+as a first 2.0.0 build of 13 Oct, and while Modrinth was still reviewing the project the work up to 21 Oct went
+into 2.0.0 itself: delete the two 13 Oct versions and upload these two jars as 2.0.0, as Modrinth can't swap a
+version's file.) On Modrinth, 1.0.0 stays
 in the **Beta** channel (Versions → 1.0.0 → Edit → Release channel, if it was ever set to Release), and its
 title can read "Orbis Terrarum 1.0.0 (beta)". The git tag `v1.0.0` stays as it is.
 
@@ -92,6 +95,24 @@ New
 - Export for Aternos (world map, World window): an upload of your world for an Aternos server.
 - Mod Menu settings: downloads by country, a data folder on any drive, performance and
   network settings.
+- Real nature in new worlds: the real climate of every place (Köppen-Geiger, CHELSA),
+  real soil and its depth, glacier ice as thick as surveys measured it, conifer or
+  broadleaf forests (spruce, pine or broadleaf per stand in Norway), measured river
+  widths, more real lake beds, and buildings OpenStreetMap lacks from Overture.
+- Tunnels follow their surveyed heights in Norway, France, Finland and Switzerland.
+- Live weather: rain from radar in Europe, the US and Canada, lightning from the US
+  network and the MTG satellite over Europe and Africa, airport reports everywhere;
+  rain or snow by the real temperature.
+- Snow and ice as satellites see them today, both hemispheres; snow depth from national
+  models in Norway, Austria and the US.
+- Seasons follow each world's own climate (dry seasons, mild or snowy winters). With the
+  mod installed, every place shows its own season on grass and leaves, and every player
+  sees the weather where they are.
+- World generator map: national data coverage, What's here, landmark pins (English
+  names) and a data viewer.
+- Map around you: a bar shows the map data being prepared as you walk.
+- Map data for trips: while travelling, the offer to download the country's map file.
+- Far view settings are in the video settings.
 
 Fixed
 - Terrain walls along tile edges where only 30 m terrain data exists (most of the world
@@ -107,6 +128,13 @@ Fixed
   ground outside.
 - Cities with many shops stay smooth: shop display frames are shown within 48 blocks
   (a setting), and new shops hang fewer.
+- Roads, bridges and tunnels meet without steps where map regions join.
+- Landmarks: building parts stacked and standing on their building, nothing left hanging.
+- Street map glitches at some zoom levels (empty tiles drawn as sea).
+- Faster generation where map data is slow (deserts and empty land), and faster
+  pre-generation (more chunks at once, no pause on an empty server).
+- Freezes, one world's state carried into the next, and pre-generation errors that
+  ended it instead of pausing (an audit of the code).
 - And many smaller fixes.
 ```
 
@@ -121,7 +149,7 @@ Fixed
 - **Every building** from OpenStreetMap, with its real height, roof shape and colour; walkable floors and doors.
 - **Roads, rails, bridges and tunnels** at their real width, with markings, sidewalks, street lamps and street name signs.
 - **Nature:** water, forests, fields and parks; real rock under the ground and real lake beds.
-- **Real sky:** real daylight and moon, real weather, seasons and today's snow depth.
+- **Real sky:** real daylight and moon, real weather from radar and airports (each player sees their own with the mod installed), seasons by each place's climate and today's snow depth.
 - **Any scale:** 1:1 down to 1:32 for a whole country.
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.
 - **World map (B):** street, satellite and elevation map of your world, with search and teleport.

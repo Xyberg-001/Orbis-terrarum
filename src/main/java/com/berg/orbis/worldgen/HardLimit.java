@@ -40,8 +40,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * inside the allowed area later (the area grew, or the limit was switched off) its saved copy is ignored the next
  * time it loads (ChunkMapMixin), so it generates properly.
  * <p>
- * On or off is the world's setting ("Only generate the selection"), overridden by {@code /orbis hardlimit on|off}
- * (kept in {@code hard-limit.txt}).
+ * On or off is the world's setting ("Only generate the selection"), overridden by the world map's hard-limit button
+ * (operators; kept in {@code orbis-pregen/hard-limit.txt}, "on" or "off", read as the world loads). The
+ * {@code /orbis hardlimit} command went with the other commands the world map replaced.
  */
 public final class HardLimit {
     private static final BlockState BARRIER = Blocks.BARRIER.defaultBlockState();
@@ -50,6 +51,8 @@ public final class HardLimit {
     private static volatile ChunkSelection allowed;
     private static final Set<Long> voidChunks = ConcurrentHashMap.newKeySet();
     private static volatile boolean voidDirty;
+    /** Empty chunks being generated properly now: they leave the empty list once saved (see {@link #saved}). */
+    private static final Set<Long> regenerating = ConcurrentHashMap.newKeySet();
     private static volatile Path dir;
     private static long lastVoidSave;
     private static final Map<UUID, double[]> lastInside = new HashMap<>();
@@ -63,9 +66,11 @@ public final class HardLimit {
         });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> saveVoid());
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            saveVoid(); // again: the last chunk saves (after SERVER_STOPPING) take chunks generated in place of empty ones off the list
             enabled = false;
             allowed = null;
             voidChunks.clear();
+            regenerating.clear();
             lastInside.clear();
             dir = null;
         });
@@ -113,13 +118,30 @@ public final class HardLimit {
         broadcast(server);
         Path f = d.resolve("allowed-extra.json");
         ChunkSelection extra = readRows(f);
+        if (extra == null && Files.exists(f)) {
+            // There but unreadable (locked by a backup or antivirus, or cut short by a crash): writing only the new chunks over it
+            // dropped every area pre-generated before, for good. Left as it is; the area joins it next time.
+            System.err.println("[orbis] The allowed area file could not be read, so it was left as it is (this area is allowed until the server stops)");
+            return;
+        }
         if (extra == null) extra = new ChunkSelection();
         extra.addAll(chunks);
         try {
             Files.createDirectories(d);
-            Files.writeString(f, extra.toJson(), StandardCharsets.UTF_8);
+            writeAtomic(f, extra.toJson());
         } catch (IOException e) {
             System.err.println("[orbis] Could not save the allowed area: " + e);
+        }
+    }
+
+    /** Writes the text to a file next to it, then moves that over it: a crash leaves the old file or the new one, never half of one. */
+    static void writeAtomic(Path f, String text) throws IOException {
+        Path tmp = f.resolveSibling(f.getFileName() + ".tmp");
+        Files.writeString(tmp, text, StandardCharsets.UTF_8);
+        try {
+            Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, f, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -186,14 +208,26 @@ public final class HardLimit {
     public static boolean regenerate(int cx, int cz) {
         long key = ChunkPos.pack(cx, cz);
         if (!voidChunks.contains(key) || blocks(cx, cz)) return false;
-        voidChunks.remove(key);
-        voidDirty = true;
+        // Still listed as empty until the new chunk is saved: dropped from the list now (written within 30 s), a crash before the chunk's
+        // own save left the empty chunk on disk, no longer listed, and never generated again.
+        regenerating.add(key);
         System.out.println("[orbis] Chunk " + cx + ", " + cz + " was left empty by the hard limit and is inside the area now: generating it");
         return true;
     }
 
+    /** A chunk was saved: one generated properly in place of an empty one leaves the empty list now. */
+    public static void saved(int cx, int cz) {
+        if (regenerating.isEmpty()) return;
+        long key = ChunkPos.pack(cx, cz);
+        if (regenerating.remove(key)) {
+            voidChunks.remove(key);
+            voidDirty = true;
+        }
+    }
+
     private static void loadVoid() {
         voidChunks.clear();
+        regenerating.clear();
         Path f = dir.resolve("void-chunks.bin");
         if (!Files.exists(f)) return;
         try (DataInputStream in = new DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(f)))) {
