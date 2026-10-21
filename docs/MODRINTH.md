@@ -44,7 +44,7 @@ Two uploads, one jar per Minecraft version (the same changelog for both):
 | Release channel | Release | Release |
 | Loaders | Fabric | Fabric |
 | Game versions | 26.3 | 26.2 |
-| Dependencies | Fabric API — required; Mod Menu — required (it opens the settings; YetAnotherConfigLib comes inside the jar, LGPL, unmodified) | the same |
+| Dependencies | Fabric API — required; Mod Menu — required (it opens the settings; YetAnotherConfigLib comes inside the jar, LGPL, unmodified); Distant Horizons, Voxy, Sodium — optional (Cubic Worlds is not on Modrinth: linked in the description) | the same |
 
 Changelog:
 
@@ -149,12 +149,17 @@ Fixed
 - **Every building** from OpenStreetMap, with its real height, roof shape and colour; walkable floors and doors.
 - **Roads, rails, bridges and tunnels** at their real width, with markings, sidewalks, street lamps and street name signs.
 - **Nature:** water, forests, fields and parks; real rock under the ground and real lake beds.
-- **Real sky:** real daylight and moon, real weather from radar and airports (each player sees their own with the mod installed), seasons by each place's climate and today's snow depth.
+- **Real sky:** real daylight and moon, real weather from radar, satellite lightning and airports, rain or snow by the real temperature, seasons by each place's climate and today's snow depth. With the mod installed, each player sees the weather and the season where they are.
 - **Any scale:** 1:1 down to 1:32 for a whole country.
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.
 - **World map (B):** street, satellite and elevation map of your world, with search and teleport.
 - **Fast pre-generation** of a whole area before you play.
-- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft. The world map (B) and the settings screens need the mod on the player's own game too.
+- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft. Some things need the mod on the player's own game too: the world map (B), the settings screens, their own place's weather and season colours (without it: the world's one weather, and the spawn's season everywhere) and rain or snow falling by the real temperature (without it: the biome's choice; the snow that settles is the same for everyone).
+
+### Works with (optional)
+- **Distant Horizons or Voxy:** Orbis fills the far view with land that is not generated yet. Its settings are in **Video Settings**: Sodium's **Orbis Terrarum** page, or **Far view** at the bottom without Sodium.
+- **Sodium and Iris:** supported (one Voxy combination on 26.2 has a problem, see Known issues).
+- **[Cubic Worlds](https://github.com/Xyberg-001/CubicWorlds/releases)** (Minecraft 26.3): true height. Switch on its **Cubic Worlds** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest. A server with it needs every player to have it.
 
 ### Getting started
 1. Install Fabric API, **Mod Menu** and the Orbis Terrarum jar for your Minecraft version (26.2 or 26.3). Mod Menu opens the settings (map data and storage folder, performance, logging); a server doesn't need it, it uses `/orbis settings`.
@@ -203,8 +208,6 @@ Everything else is on the world map (B): Teleport, What's here, pre-generating (
 Install the mod on the server only and set `level-type=orbisterrarum\:earth` in `server.properties` before the first start. Easiest: create and pre-generate the world in singleplayer, then upload it.
 
 > **Pre-generating on a server:** it gets slower when the server is short of memory (4 GB is tight for big areas; give it 6–8 GB, more for cubic worlds). **Map data: Download** fetches the region's whole Geofabrik file onto the server's storage (tens of MB for a small region, several GB for a big country); the area cut out of it stays there for good, and the file itself is deleted afterwards unless `keepDownloadedMapFiles` is on. Check the server has the space, or use **Live**.
-
-**True height (optional, Minecraft 26.3):** add [Cubic Worlds](https://github.com/Xyberg-001/CubicWorlds/releases) and switch on its **Cubic Worlds** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest.
 
 ### Internet and privacy
 New areas download map data from public map services while they generate (everything is cached). Orbis sends **no personal data and no telemetry**: the services only see the area being generated, the text of your place searches and, as with any download, your IP address. Every service and what it is sent: [PRIVACY.md](https://github.com/Xyberg-001/Orbis-terrarum/blob/main/docs/PRIVACY.md).

@@ -10,12 +10,12 @@ coastlines, rivers, every building, roads, bridges, railways and forests. Minecr
 - **Roads, rails, bridges and tunnels** at their real width, with markings, sidewalks, street lamps and street name signs.
 - **Real climate:** deserts, rainforests, oceanic coasts and frozen interiors where they really are, from measured climate data.
 - **Nature:** water, forests of the real kind (conifer or broadleaf), fields and parks; real rock under the ground, real soil (peat, podzol, clay, sand) as deep as it really is, glaciers with thick ice, rivers at their measured width, and real lake beds.
-- **Real sky:** real daylight and moon, real weather (radar, satellite lightning and airport reports; each player sees their own with Orbis installed), seasons, and today's snow and ice as satellites see them.
+- **Real sky:** real daylight and moon, real weather (radar, satellite lightning and airport reports), rain or snow by the real temperature, seasons by each place's climate, and today's snow and ice as satellites see them. With Orbis installed, each player sees the weather and the season where they are.
 - **Any scale:** 1:1 down to 1:32 for a whole country.
 - **Survival still works:** ores, caves (Lush, Dripstone, Deep Dark), animals, villages and other structures, placed around the map.
 - **World map (B):** street, satellite and elevation map of your world, with search and teleport.
 - **Fast pre-generation** of a whole area before you play.
-- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft. The world map (B) and the settings screens need the mod on the player's own game too.
+- **Friends don't need the mod:** anyone joins an Orbis server with plain Minecraft. Some things need the mod on the player's own game too: the world map (B), the settings screens, their own place's weather and season colours (without it: the world's one weather, and the spawn's season everywhere) and rain or snow falling by the real temperature (without it: the biome's choice; the snow that settles is the same for everyone).
 
 ## Install
 
@@ -30,10 +30,14 @@ New areas need an internet connection while they generate; everything downloaded
 **Create New World → World Type: Orbis Terrarum → Customize**, open the **World generator map**, search a place or right-click
 where you want to spawn (**Set the spawn here**; **What's here** tells you about the place, gold pins are the landmarks to find), and create the world. The other tabs (Features, Look & Climate, Data Sources, Advanced) have sensible defaults.
 
-## Far view
+## Works with (optional)
 
-With Distant Horizons or Voxy, Orbis fills the far view with land that is not generated yet. Its settings are in
-**Video Settings**: Sodium's **Orbis Terrarum** page, or **Far view** at the bottom without Sodium.
+- **Distant Horizons or Voxy:** Orbis fills the far view with land that is not generated yet. Its settings are in
+  **Video Settings**: Sodium's **Orbis Terrarum** page, or **Far view** at the bottom without Sodium.
+- **Sodium and Iris:** supported (one Voxy combination on 26.2 has a problem, see Known issues).
+- **[Cubic Worlds](https://github.com/Xyberg-001/CubicWorlds/releases)** (Minecraft 26.3): true height. Switch on its
+  **Cubic Worlds** tab when you create the world: the Earth at 1:1 from the deepest sea floor to the top of Everest. A
+  server with it needs every player to have it.
 
 ## World map (B)
 
