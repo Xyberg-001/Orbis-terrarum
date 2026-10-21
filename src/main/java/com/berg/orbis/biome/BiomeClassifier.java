@@ -16,7 +16,7 @@ import java.util.Locale;
  * {@code climateOverride} in the config lets a player force "arid" or
  * "humid" for the area they are generating.
  *
- * Worlds with real climate ({@code realClimate}, new worlds from 2.0.1) take it from the climate pack shipped with
+ * Worlds with real climate ({@code realClimate}, new worlds from 2.0.0) take it from the climate pack shipped with
  * the mod ({@link ClimateMap}): the place's Köppen-Geiger class picks the zone (Bergen oceanic, the Sahara desert,
  * Manaus rainforest, Yakutsk taiga, whatever their latitude), and the temperature is the measured one at sea level
  * with the block's own height taken off (6.5 °C per km). A block that stands 400 m or more above or below the mean

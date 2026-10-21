@@ -231,7 +231,7 @@ public final class RoadDatabases {
                 both = true;
                 lanes = Integer.parseInt(p[1].substring(1));
             } else {
-                // files written before 2.0.1: both directions as a negative count (-100: unknown)
+                // files written before 2.0.0: both directions as a negative count (-100: unknown)
                 int l = Integer.parseInt(p[1]);
                 both = l < -1;
                 lanes = l == -100 ? -1 : both ? -l : l;

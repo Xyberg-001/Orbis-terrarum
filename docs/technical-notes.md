@@ -13,7 +13,7 @@ at Y -1700, so a column's Y is roughly `elevation - 1700` (see "Vertical
 mapping" for what happens above 1500 m).
 
 
-> **Versions.** 2.0.0 (13 October 2026) is the first full release, a complete overhaul of the 1.0.0 beta; it was published as 1.1.0 for two days (11 to 13 October) and replaced a first 1.1.0 build of 3 October that was only on GitHub. Where these notes say "before 2.0.0", worlds made with those 1.1.0 builds of 3 October count as before.
+> **Versions.** 2.0.0 is the first full release, a complete overhaul of the 1.0.0 beta. It was published as 1.1.0 for two days (11 to 13 October 2026), replacing a first 1.1.0 build of 3 October that was only on GitHub, then as a first 2.0.0 build of 13 October; while Modrinth was still reviewing it, the work of 13 to 21 October went into 2.0.0 itself (21 October). Where these notes say "before 2.0.0" or "new worlds from 2.0.0", worlds made with the 1.1.0 builds and with the first 2.0.0 build of 13 October count as before.
 
 ## Installing
 
@@ -740,7 +740,7 @@ Kartverket's surface model (building heights) stays.
   railings (stone wall / fence / iron bars by road type), pillars every 12 m
   where nothing runs below.
 - `tunnel=yes` → the road follows a guide line: a straight line between the
-  two portals, or (new worlds from 2.0.1, world setting `surveyedTunnels`)
+  two portals, or (new worlds from 2.0.0, world setting `surveyedTunnels`)
   the shape of the floor a national road database surveyed in the tunnel:
   NVDB in Norway, BD TOPO in France (road sections under ground, those IGN
   has heights for: the Mont Blanc tunnel has none), Digiroad in Finland
@@ -972,11 +972,11 @@ Kartverket's surface model (building heights) stays.
   domes, minarets, spires (`roof:shape=cone`), roof profiles.
 
 ### Climate and biomes (`biome/`)
-- Worlds made before 2.0.1: mean annual temperature from latitude + elevation
+- Worlds made before 2.0.0: mean annual temperature from latitude + elevation
   lapse rate (+ configurable offset); zones: ice cap, tundra, alpine, taiga,
   temperate, subtropical, arid, savanna, tropical. `climateOverride`
   ("arid" / "humid") resolves the precipitation ambiguity for a region.
-- Real climate (`realClimate`, new worlds from 2.0.1, config v20; servers keep
+- Real climate (`realClimate`, new worlds from 2.0.0, config v20; servers keep
   false; a `climateOverride` still takes over): `ClimateMap` reads the climate
   pack shipped with the mod, `src/main/resources/orbis-climate.bin.gz` (3.4 MB,
   made by `tools/climate_pack.py`, 21 MB in memory: the classes kept as runs per
@@ -1075,7 +1075,7 @@ as plain stone. Adjectives are told apart by their endings (-ic, -ique, -ico,
 an andesite. Generic world-map units ("sedimentary rocks") stay plain stone.
 
 ### Soil and glacier ice (`geology/Soils`, `RowTiff`, `Glaciers`)
-New worlds from 2.0.1 (world setting `groundLayers`, config v20; servers keep
+New worlds from 2.0.0 (world setting `groundLayers`, config v20; servers keep
 false) draw the ground between the top block and the rock from soil maps; older
 worlds keep three blocks of dirt everywhere. One rasteriser step after the rock
 (`rasterizeGround`) fills three raster arrays: `soil` (a soil profile and a
@@ -1087,7 +1087,7 @@ probable WRB reference soil group (`wrb.map`, coverage `MostProbable`: the 30
 groups in alphabetical order from 0, and 0 is also the map's no-data, so it
 counts as Acrisols only where there is texture and within 38° of the equator)
 and the subsoil's sand, clay and stones at 30-60 cm (`sand`, `clay`, `cfvo`,
-per mille). Each is a WCS 2.0.1 GetCoverage in lat/lon for tiles of 0.25°
+per mille). Each is a WCS 2.0.0 GetCoverage in lat/lon for tiles of 0.25°
 (about 120 pixels a side, 2-11 kB each), kept as `soil-cache/<s>_<w>.bin.gz`.
 Groups map to profiles: Histosols peat, Podzols podzol, Arenosols sandy,
 Gleysols / Stagnosols / Planosols wet, Vertisols clay, Ferralsols / Nitisols /
@@ -1163,7 +1163,7 @@ outlet of Jostedalsbreen, has no survey of its own). The underground band starts
 buried structures can lie in the ice, as before but more often.
 
 ### Forest types (`landcover/ForestTypes`, `TileTiff`)
-New worlds from 2.0.1 (world setting `forestTypes`, config v20; servers keep
+New worlds from 2.0.0 (world setting `forestTypes`, config v20; servers keep
 false): after WorldCover fills the gaps (`refineForests`), every generic
 `FOREST` cell (OSM forest or wood without `leaf_type` / `wood`, and WorldCover's
 tree cover) becomes `FOREST_CONIFER` or `FOREST_BROADLEAF` where the maps say
@@ -1232,7 +1232,7 @@ birch to spruce and pine on podzol, the Flow Country from grass to podzol and
 mud in patches.
 
 ### Buildings OSM lacks (`osm/OvertureBuildings`)
-New worlds from 2.0.1 at 1:4 or finer (world setting `overtureBuildings`, config
+New worlds from 2.0.0 at 1:4 or finer (world setting `overtureBuildings`, config
 v20; servers keep false). Overture's buildings theme (ODbL) merges OSM with
 Google Open Buildings, Microsoft's ML buildings and others, and marks each
 footprint's `@geometry_source`. The mod reads Overture's PMTiles archive
@@ -1264,7 +1264,7 @@ building or building part is left out (OSM's is newer, or the same building).
 A Lagos region went from 55 buildings to 4,209; central Bergen stays at 428.
 
 ### River widths (`water/RiverWidths`)
-New worlds from 2.0.1 (world setting `riverWidths`, config v20; servers keep
+New worlds from 2.0.0 (world setting `riverWidths`, config v20; servers keep
 false). A `waterway=river` line without a `width` tag was drawn 12 m wide. GRWL
 (Global River Widths from Landsat, Allen & Pavelsky 2018, CC BY 4.0) measured
 every river 30 m and wider; its summary statistics give each stretch of about
@@ -1294,7 +1294,7 @@ only as a line went from 7,547 water cells to 45,883. The channel's depth
 follows the width used.
 
 ### Lake beds from Seascape (`water/WaterBeds`)
-New worlds from 2.0.1 (world setting `seascapeLakes`, config v20; servers keep
+New worlds from 2.0.0 (world setting `seascapeLakes`, config v20; servers keep
 false). Open Waters' Seascape, read for the sea floor anyway, also holds the
 beds of many big lakes as depth below the lake's surface (Lake Geneva -309 m at
 its deepest, Tahoe -482 m, Superior -252 m in its eastern basin: depths, not
@@ -1317,7 +1317,7 @@ come only as whole-lake ASCII grids of 15-390 MB (40 minutes for Lucerne at the
 speed swisstopo answers here), so they are left out.
 
 ### Quebec's lake surveys (`water/QuebecLakes`, `SqliteTables`)
-New worlds from 2.0.1 (world setting `quebecLakes`, config v20; servers keep
+New worlds from 2.0.0 (world setting `quebecLakes`, config v20; servers keep
 false). The Géobase des bathymétries de lacs du Québec (GBLQ, CC BY 4.0) has
 about 2,200 lakes with survey data, each only as a zip of its own (a GeoPackage
 with depth contours `iso_<lake>_<year>_<who>`, deepest point `fos_...`, often
@@ -1364,7 +1364,7 @@ server, so players need nothing:
   light or dark. The day count is chosen so day % 8 is the real moon's phase
   and it never decreases (checked hourly over a year at Tromsø). Sleeping does
   not skip the night (the next update puts the clock back). Off: rate 1 again.
-- **Live weather** (`sky/LiveWeather`, from 2.0.1): the forecast below only
+- **Live weather** (`sky/LiveWeather`, from 2.0.0): the forecast below only
   fills in where nothing is measured. Rain: radar where it exists, the
   precipitation rate of the last minutes at the players' place, wet from 0.1
   mm/h: MET Norway's nowcast 2.0 in the Nordic countries (when its
@@ -2981,7 +2981,7 @@ default): world_gen_settings' overworld generator becomes flat cold ocean
 goes round the kept chunks' square, the frame-lock datapack is added (with
 this version's pack format; it had 26.2's 107 alone) and orbis-map dropped.
 The world's placement for the map goes in a pack of its own, `orbis-map-info`
-(it shared the frame lock's until 2.0.1, so switching the lock off took the map with it), as a chat type,
+(it shared the frame lock's until 2.0.0, so switching the lock off took the map with it), as a chat type,
 `orbisterrarum:world_info`, whose translation key carries origin, scale,
 projection and world id (`WorldInfoPayload.encode`): chat types are synced to
 every player by any server, plain Minecraft never uses this one, and an Orbis
@@ -3478,5 +3478,5 @@ tunnel such as e4mc or playit) handles fresh exploration comfortably.
   close-coloured stairs in the running Minecraft version stays in full-block
   steps (bright concrete colours on 26.2, gold domes, thatch).
 - Interiors are empty shells (floors only).
-- Worlds made before 2.0.1 have no precipitation data; use `climateOverride`
+- Worlds made before 2.0.0 have no precipitation data; use `climateOverride`
   where the latitude default is wrong.
